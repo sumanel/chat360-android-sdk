@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Chat360AppTheme" parent="Theme.MaterialComponents.Light" />
+
+    <style name="Chat360AppTheme.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+    </style>
+
+    <style name="Chat360AppTheme.AppBarOverlay" parent="ThemeOverlay.AppCompat.Dark.ActionBar" />
+
+    <style name="Chat360AppTheme.PopupOverlay" parent="ThemeOverlay.AppCompat.Light" />
+</resources>
