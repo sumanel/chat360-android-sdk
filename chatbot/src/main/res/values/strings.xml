@@ -1,4 +1,8 @@
 <resources>
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
+
+
+    <string name="application_id_for_provider">com.chat360.chatbot.fileprovider</string>
+    <string name="chat360_file_provider">@string/application_id_for_provider</string>
 </resources>
