@@ -1,27 +1,32 @@
-package com.chat360.chatbot
+package com.chat360.chatbot.android
 
 import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Message
 import android.provider.MediaStore
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
+import android.util.Log
+import android.view.*
 import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.graphics.drawable.DrawableCompat
 import androidx.fragment.app.Fragment
 import androidx.viewbinding.ViewBinding
+import com.chat360.chatbot.R
+import com.chat360.chatbot.common.models.ConfigService
 import com.chat360.chatbot.common.utils.viewBinding
 import com.chat360.chatbot.databinding.FragmentChatBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -29,7 +34,6 @@ import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
-
 
 class ChatFragment : Fragment() {
     private val fragmentBinding by viewBinding(FragmentChatBinding::inflate)
@@ -45,18 +49,34 @@ class ChatFragment : Fragment() {
     private var shouldKeepApplicationInBackground = true
     private var mFilePathCallback: ValueCallback<Array<Uri?>>? = null
 
+    private var isMediaUploadOptionSelected = false
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
+        setCloseButtonColor()
+        setStatusBarColor()
         setupViews()
         return initBinding(fragmentBinding)
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(initBinding(fragmentBinding), savedInstanceState)
+
+        showCloseButton()
+        setStatusBarColorFromHex()
+        setCloseButtonColorFromHex()
+    }
+
+    private fun showCloseButton() {
+        fragmentBinding.imageViewClose.visibility = View.VISIBLE
     }
 
     private fun setupViews() {
         val fileName = "chat360_cache.mht"
 
         fragmentBinding.apply {
-
+            //Initializing WebView Client
             webView.webViewClient = object : WebViewClient() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -87,20 +107,28 @@ class ChatFragment : Fragment() {
                 javaScriptEnabled = true
                 databaseEnabled = true
                 setSupportZoom(true)
-                webView.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
             }
+
+            webChromeClient()
             val file = File(requireActivity().cacheDir, fileName)
             if (file.exists()) {
                 webView.loadUrl("file://" + requireActivity().cacheDir.absolutePath + "/" + fileName)
             }
             else {
-                webView.loadUrl("https://app.gaadibaazar.in/page?h=1869e4dc-24e7-424d-b5a2-d871da890b14&store_session=1")
+                //Starting the WebView by loading the URL with bot ID and store_session is to store Chache
+                val botId = ConfigService.getInstance()?.getConfig()?.botId//coreConfig?.botId
+                val chat360BaseUrl = requireContext().resources.getString(R.string.chat360_base_url)
+                webView.loadUrl("$chat360BaseUrl$botId&store_session=1")
             }
-        }
+            imageViewClose.setOnClickListener {
+                requireActivity().onBackPressed()
+            }
 
-        webChromeClient()
+        }
     }
 
+    //Adding callbacks and the permission function for webview requirements
     private fun webChromeClient() {
         fragmentBinding.webView.webChromeClient = object : WebChromeClient() {
             private var mCustomView: View? = null
@@ -108,10 +136,10 @@ class ChatFragment : Fragment() {
             private var mOriginalOrientation = 0
             private var mOriginalSystemUiVisibility = 0
             override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-
                 return true
             }
 
+            private var isMultimediaConsole = true
             private var isMediaUploadOptionSelected = false
 
             // For Android 5.0
@@ -126,7 +154,7 @@ class ChatFragment : Fragment() {
                 }
                 mFilePathCallback = filePath as ValueCallback<Array<Uri?>>?
                 isMediaUploadOptionSelected = false
-                showBottomSheet()
+                showBottomSheet()  //Opening the bottomsheet to select if you wan't to use camera or files
                 return true
             }
 
@@ -138,7 +166,6 @@ class ChatFragment : Fragment() {
             }
 
             override fun onHideCustomView() {
-
                 if (activity != null) {
                     (activity!!.window.decorView as FrameLayout).removeView(mCustomView)
                     if (activity != null) {
@@ -150,7 +177,6 @@ class ChatFragment : Fragment() {
                 mCustomViewCallback!!.onCustomViewHidden()
                 mCustomViewCallback = null
             }
-
 
             override fun onShowCustomView(
                 paramView: View, paramCustomViewCallback: CustomViewCallback
@@ -193,11 +219,76 @@ class ChatFragment : Fragment() {
                 }
                 return true
             }
-
         }
-
     }
 
+    //Setting the statusBar Color from the resources
+    private fun setStatusBarColor() {
+        try {
+            val color = ConfigService.getInstance()?.getConfig()?.statusBarColor
+            if (color != -1) {
+                val window: Window = requireActivity().window
+                // clear FLAG_TRANSLUCENT_STATUS flag:
+                window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+                // add FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS flag to the window
+                window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+                // finally change the color
+                context?.let {
+                    window.statusBarColor = ContextCompat.getColor(it, color!!)
+                }
+            }
+        } catch (e: java.lang.Exception) {
+            Log.e("StatusBarException", e.toString())
+        }
+    }
+
+    //Setting the statusBarColor froom hexadecmal Code
+    private fun setStatusBarColorFromHex() {
+        try {
+            val color = ConfigService.getInstance()?.getConfig()?.statusBarColorFromHex
+            if (color != null && color.isNotEmpty() && activity != null) {
+                val window: Window = requireActivity().window
+                window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+                window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+                window.statusBarColor = Color.parseColor(color)
+            }
+        } catch (e: java.lang.Exception) {
+            Log.e("StatusBarException", e.toString())
+        }
+    }
+
+    //Setting the Close Button Color from the resources
+    private fun setCloseButtonColor() {
+        try {
+            val color = ConfigService.getInstance()?.getConfig()?.closeButtonColor
+            if (color != -1 && context != null) {
+                DrawableCompat.setTint(
+                    DrawableCompat.wrap(fragmentBinding.imageViewClose.drawable),
+                    ContextCompat.getColor(requireContext(), color!!)
+                )
+            }
+        } catch (e: java.lang.Exception) {
+            Log.e("CloseButtonException", e.toString())
+        }
+    }
+
+    //Setting the Close Button Color Code From Hex Color Code
+    private fun setCloseButtonColorFromHex() {
+        try {
+            val color = ConfigService.getInstance()?.getConfig()?.closeButtonColorFromHex
+            if (color != null && color.isNotEmpty()) {
+                DrawableCompat.setTint(
+                    DrawableCompat.wrap(fragmentBinding.imageViewClose.drawable
+                ),
+                Color.parseColor(color)
+                )
+            }
+        } catch (e: java.lang.Exception) {
+            Log.e("CloseButtonException", e.toString())
+        }
+    }
+
+    //while uploading the file it'll show the bottomsheet layout
     private fun showBottomSheet() {
         if (context != null) {
             val bottomSheetDialog = BottomSheetDialog(requireContext())
@@ -205,53 +296,79 @@ class ChatFragment : Fragment() {
             val cameraLayout = bottomSheetDialog.findViewById<ImageView>(R.id.imageViewCamera)
             val fileLayout = bottomSheetDialog.findViewById<ImageView>(R.id.imageViewfile)
             cameraLayout?.setOnClickListener {
+                isMediaUploadOptionSelected = true
                 checkAndLaunchCamera()
                 bottomSheetDialog.dismiss()
             }
             fileLayout?.setOnClickListener {
+                isMediaUploadOptionSelected = true
                 checkAndLaunchFilePicker()
                 bottomSheetDialog.dismiss()
             }
             bottomSheetDialog.setOnDismissListener {
-                resetFilePathCallback()
+                if (!isMediaUploadOptionSelected) {
+                    resetFilePathCallback()
+                }
             }
             bottomSheetDialog.show()
         }
     }
 
+    //Checking if User Has Given the Storage Permission
     private fun checkForStoragePermission(context: Context): Boolean {
-        if (ContextCompat.checkSelfPermission(
+        return if (ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.READ_EXTERNAL_STORAGE
-            ) != PackageManager.PERMISSION_GRANTED
+            )
+            == PackageManager.PERMISSION_GRANTED
         ) {
+            true
+        }
+        else {
             requestedPermission = Manifest.permission.READ_EXTERNAL_STORAGE
             requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-            return false
+            false
         }
-        return true
     }
 
-
+    //Checking the permission is true and launching the file intent to choose the file from storage
     private fun checkAndLaunchFilePicker() {
         if (context != null) {
-            if (checkForStoragePermission(requireContext())) {
+            if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 launchFileIntent()
+            }
+            else{
+                if (checkForStoragePermission(requireContext())) {
+                launchFileIntent()
+                 }
             }
         }
     }
 
+
+    //Will create the image_file
     @Throws(IOException::class)
     private fun createImageFile(): File? {
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val imageFileName = "Chat360JPEG_$timeStamp"
+
+        // Create an image file name
+        val timeStamp =
+            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                .format(Date())
+        val imageFileName = "Chat360JPEG_" + timeStamp + "_"
         val storageDir = requireContext().externalCacheDir
-        return File.createTempFile(imageFileName, ".jpg", storageDir)
+        return File.createTempFile(
+            imageFileName,  /* prefix */
+            ".jpg",  /* suffix */
+            storageDir /* directory */
+        )
     }
+
+    //Will Start Camera
 
     private fun launchCameraIntent() {
         val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         if (activity != null && takePictureIntent.resolveActivity(requireActivity().packageManager) != null) {
+            // Create the File where the photo should go
             var photoFile: File? = null
             try {
                 photoFile = createImageFile()
@@ -259,14 +376,24 @@ class ChatFragment : Fragment() {
             } catch (ex: IOException) {
                 //IO exception occurred
             }
+            // Continue only if the File was successfully created
             if (photoFile != null) {
                 mCameraPhotoPath = "file:" + photoFile.absolutePath
-                val photoURI = FileProvider.getUriForFile(
-                    requireContext(), getString(R.string.chat360_file_provider), photoFile
-                )
+                val photoURI: Uri = if (context != null) {
+                    FileProvider.getUriForFile(
+                        requireContext(),
+                        getString(R.string.chat360_file_provider),
+                        photoFile
+                    )
+                }
+                else {
+                    Uri.fromFile(photoFile)
+                }
                 takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
                 disableShouldKeepApplicationInBackground()
-                startCameraActivity.launch(takePictureIntent)
+                startCameraActivity.launch(
+                    takePictureIntent
+                )
             }
         }
     }
@@ -274,68 +401,98 @@ class ChatFragment : Fragment() {
     private val startCameraActivity =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             if (it.resultCode == Activity.RESULT_OK) {
+                // do whatever with the data in the callback
                 val data = it.data
                 var results: Array<Uri?>? = null
-                when {
-                    data != null && data.dataString != null -> results =
-                        arrayOf(Uri.parse(data.dataString))
-                    data != null && data.clipData != null -> {
-                        val count = data.clipData!!.itemCount
-                        if (count > 0) {
-                            results = arrayOfNulls(count)
-                            for (i in 0 until count) {
-                                results[i] = data.clipData!!.getItemAt(i).uri
-                            }
+                // Check that the response is a good one
+                if (data != null && data.dataString != null) {
+                    val dataString = data.dataString
+                    results = arrayOf(Uri.parse(dataString))
+                }
+                else if (data != null && data.clipData != null) {
+                    val count = data.clipData!!.itemCount
+                    if (count > 0) {
+                        results = arrayOfNulls(count)
+                        for (i in 0 until count) {
+                            results[i] = data.clipData!!.getItemAt(i).uri
                         }
                     }
-                    mCameraPhotoPath != null -> results = arrayOf(Uri.parse(mCameraPhotoPath))
+                }
+                else {
+                    // If there is no data, then we may have taken a photo
+                    if (mCameraPhotoPath != null) {
+                        results = arrayOf(Uri.parse(mCameraPhotoPath))
+                    }
                 }
 
-                mFilePathCallback?.onReceiveValue(results)
+                mFilePathCallback!!.onReceiveValue(results)
                 mFilePathCallback = null
             }
         }
 
-
+    //Will verify if using camera is allowed by user
     private fun checkForCameraPermission(context: Context): Boolean {
-        if (ContextCompat.checkSelfPermission(
+        return if (ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.CAMERA
-            ) != PackageManager.PERMISSION_GRANTED
+            )
+            == PackageManager.PERMISSION_GRANTED
         ) {
+            true
+        }
+        else {
             requestedPermission = Manifest.permission.CAMERA
             requestPermissionLauncher.launch(Manifest.permission.CAMERA)
-            return false
+            false
         }
-        return true
     }
-
+    //If permission is given camera will be started
     private fun checkAndLaunchCamera() {
         if (context != null) {
-            if (hasCameraPermissionInManifest(requireContext()) && checkForCameraPermission(
-                    requireContext()
-                )
-            ) {
+            if (hasCameraPermissionInManifest(requireContext())) {
+                if (checkForCameraPermission(requireContext())) {
+                    launchCameraIntent()
+                }
+            }
+            else {
                 launchCameraIntent()
             }
         }
     }
 
+    //Checking if Permissions are added in AndroidManifest File
     private fun hasCameraPermissionInManifest(context: Context): Boolean {
-        val packageInfo = context.packageManager.getPackageInfo(
-            context.packageName, PackageManager.GET_PERMISSIONS
-        )
-        return packageInfo.requestedPermissions?.contains(Manifest.permission.CAMERA) ?: false
+        val packageInfo: PackageInfo?
+        try {
+            packageInfo = context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_PERMISSIONS
+            )
+            val permissions = packageInfo.requestedPermissions
+            if (permissions == null || permissions.isEmpty()) {
+                return false
+            }
+            for (perm in permissions) {
+                if (perm == Manifest.permission.CAMERA) return true
+            }
+        } catch (e: PackageManager.NameNotFoundException) {
+            //Exception occurred
+            return false
+        }
+        return false
     }
 
+    //Upload multiple files
     private fun isMultiFileUpload(): Boolean {
         return isMultiFileUpload
     }
 
+    //Keeping application in background is stopped
     private fun disableShouldKeepApplicationInBackground() {
         shouldKeepApplicationInBackground = false
     }
 
+    //Launching file intent to upload any file
     private fun launchFileIntent() {
         val contentSelectionIntent = Intent(Intent.ACTION_GET_CONTENT)
         contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE)
@@ -343,17 +500,34 @@ class ChatFragment : Fragment() {
         if (isMultiFileUpload()) {
             contentSelectionIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
         }
-        disableShouldKeepApplicationInBackground()
-        startCameraActivity.launch(contentSelectionIntent)
+        if (activity != null) {
+            disableShouldKeepApplicationInBackground()
+            startCameraActivity.launch(
+                contentSelectionIntent
+            )
+        }
     }
 
-    private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-            when (requestedPermission) {
-                Manifest.permission.READ_EXTERNAL_STORAGE -> if (isGranted) launchFileIntent() else resetFilePathCallback()
-                Manifest.permission.CAMERA -> if (isGranted) launchCameraIntent() else resetFilePathCallback()
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+            if (requestedPermission == Manifest.permission.READ_EXTERNAL_STORAGE) {
+                if (isGranted) {
+                    launchFileIntent()
+                }
+                else {
+                    resetFilePathCallback()
+                }
+            }
+          else if (requestedPermission == Manifest.permission.CAMERA) {
+            if (isGranted) {
+                launchCameraIntent()
+            }
+            else {
+                resetFilePathCallback()
             }
         }
+    }
 
     private fun resetFilePathCallback() {
         if (mFilePathCallback != null) {
@@ -362,11 +536,13 @@ class ChatFragment : Fragment() {
         }
     }
 
+    //For Caches
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         fragmentBinding.webView.saveState(outState)
     }
 
+    //For Caches
     override fun onViewStateRestored(savedInstanceState: Bundle?) {
         super.onViewStateRestored(savedInstanceState)
         if (savedInstanceState != null) {

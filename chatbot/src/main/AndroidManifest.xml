@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
 
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <queries>
-
         <!-- Camera -->
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
@@ -17,7 +17,7 @@
     <application>
 
         <activity
-            android:name=".ChatActivity"
+            android:name=".android.ChatActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize"
             android:fitsSystemWindows="true"
