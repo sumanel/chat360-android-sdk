@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">Chat360DemoApp</string>
+    <string name="open_activity">Open Activity</string>
+    <string name="open_activity_fragment">Open Activity + Fragment</string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="take_me_to_a_bot">Take me to a bot</string>
 </resources>

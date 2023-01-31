@@ -1,26 +1,26 @@
 package com.chat360.chat360demoapp
 
-import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.util.Log
+import androidx.activity.OnBackPressedCallback
+import androidx.fragment.app.Fragment
 import com.chat360.chatbot.common.Chat360
 import com.chat360.chatbot.common.CoreConfigs
-import com.google.android.material.button.MaterialButton
 
-class MainActivity : AppCompatActivity() {
+class ChatBotDemoActivity : AppCompatActivity() {
     private val botId = "172ecc59-90ef-4a2f-93e3-b57351d57e1f"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        setContentView(R.layout.activity_chat_bot_demo)
+        loadFragment(ChatBotDemoFragment())
+        //backPressed()
+    }
 
-
+    private fun initialiseBot(): Chat360 {
+        //Get Chat360 instance
         val chat360 = Chat360().getInstance()
-        
-        findViewById<MaterialButton>(R.id.buttonOpenActivityFragment).setOnClickListener {
-            startActivity(Intent(this,ChatBotDemoActivity::class.java))
-        }
-
         chat360.coreConfig = CoreConfigs(botId,applicationContext)
 
         // Choose version(1 or 2), default is 1
@@ -45,8 +45,37 @@ class MainActivity : AppCompatActivity() {
         // To set closeButtonColor from hexadecimal color code
         chat360.coreConfig!!.closeButtonColorFromHex = "#ffffff"
 
-        findViewById<MaterialButton>(R.id.buttonOpenActivity).setOnClickListener {
-            chat360.startBot(this)
+
+        return chat360
+    }
+
+
+    private fun loadFragment(frag: Fragment) {
+
+        val transaction = supportFragmentManager.beginTransaction()
+        transaction.replace(R.id.fragmentContainerViewChatBot, frag)
+        transaction.addToBackStack(null)
+        transaction.commit()
+    }
+
+    fun showBotView() {
+        val chat360 = initialiseBot()
+        loadFragment(chat360.getChatBotView(this)!!)
+    }
+
+    override fun onBackPressed() {
+        try {
+            if (supportFragmentManager.backStackEntryCount == 1) {
+                finish()
+            }
+            else {
+                onBackPressedDispatcher.onBackPressed()
+            }
+        } catch (e: Exception) {
+            //Some problem occurred please relaunch the bot
+            finish()
         }
     }
+
+
 }
