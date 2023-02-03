@@ -6,9 +6,10 @@ import android.os.Bundle
 import com.chat360.chatbot.common.Chat360
 import com.chat360.chatbot.common.CoreConfigs
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 
 class MainActivity : AppCompatActivity() {
-    private val botId = "172ecc59-90ef-4a2f-93e3-b57351d57e1f"
+    private val botId = "949aa72d-0317-4de6-acac-2fdef98aa7b0"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,7 +27,6 @@ class MainActivity : AppCompatActivity() {
         // Choose version(1 or 2), default is 1
         chat360.coreConfig!!.version = 2
 
-
         // To Change the color of status bar, by default it will pick app theme
         chat360.coreConfig!!.statusBarColor = R.color.purple_500
 
@@ -37,7 +37,7 @@ class MainActivity : AppCompatActivity() {
          * statusBarColorFromHex will take priority
          * */
         // To set statusBarColor from hexadecimal color code
-        chat360.coreConfig!!.statusBarColorFromHex = "#49c656"
+        chat360.coreConfig!!.statusBarColorFromHex = "#4299E1"
 
         /* Note: if color is set from both closeButtonColor and closeButtonColorHex,
          * closeButtonColorHex will take priority
@@ -46,6 +46,10 @@ class MainActivity : AppCompatActivity() {
         chat360.coreConfig!!.closeButtonColorFromHex = "#ffffff"
 
         findViewById<MaterialButton>(R.id.buttonOpenActivity).setOnClickListener {
+            chat360.startBot(this)
+        }
+
+        findViewById<FloatingActionButton>(R.id.floatingActionButton).setOnClickListener {
             chat360.startBot(this)
         }
     }

@@ -19,13 +19,18 @@ import android.view.*
 import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.content.PermissionChecker
+import androidx.core.content.PermissionChecker.checkSelfPermission
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.fragment.app.Fragment
 import androidx.viewbinding.ViewBinding
 import com.chat360.chatbot.R
+import com.chat360.chatbot.common.Chat360SnackBarHelper
 import com.chat360.chatbot.common.models.ConfigService
 import com.chat360.chatbot.common.utils.viewBinding
 import com.chat360.chatbot.databinding.FragmentChatBinding
@@ -34,6 +39,7 @@ import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
+
 
 class ChatFragment : Fragment() {
     private val fragmentBinding by viewBinding(FragmentChatBinding::inflate)
@@ -45,15 +51,20 @@ class ChatFragment : Fragment() {
 
     private var requestedPermission: String? = null
     private var mCameraPhotoPath: String? = null
+
+    private var mAudioPath: String? = null
     private var isMultiFileUpload = false
     private var shouldKeepApplicationInBackground = true
     private var mFilePathCallback: ValueCallback<Array<Uri?>>? = null
+    private var geoCallback: GeolocationPermissions.Callback? = null
+    private var geoOrigin: String? = null
 
     private var isMediaUploadOptionSelected = false
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
+        (activity as AppCompatActivity?)?.supportActionBar?.hide()
         setCloseButtonColor()
         setStatusBarColor()
         setupViews()
@@ -69,7 +80,14 @@ class ChatFragment : Fragment() {
     }
 
     private fun showCloseButton() {
-        fragmentBinding.imageViewClose.visibility = View.VISIBLE
+        val showCloseButton = ConfigService.getInstance()?.getConfig()?.showCloseButton
+        if (showCloseButton!!) {
+            fragmentBinding.imageViewClose.visibility = View.VISIBLE
+            setCloseButtonColor()
+        }
+        else {
+            fragmentBinding.imageViewClose.visibility = View.GONE
+        }
     }
 
     private fun setupViews() {
@@ -117,9 +135,12 @@ class ChatFragment : Fragment() {
             }
             else {
                 //Starting the WebView by loading the URL with bot ID and store_session is to store Chache
-                val botId = ConfigService.getInstance()?.getConfig()?.botId//coreConfig?.botId
+                val botId = ConfigService.getInstance()?.getConfig()?.botId
                 val chat360BaseUrl = requireContext().resources.getString(R.string.chat360_base_url)
-                webView.loadUrl("$chat360BaseUrl$botId&store_session=1")
+                val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
+                val applicationContext = requireContext().applicationContext
+                val appId = applicationContext.packageName
+                webView.loadUrl("$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId")
             }
             imageViewClose.setOnClickListener {
                 requireActivity().onBackPressed()
@@ -219,8 +240,102 @@ class ChatFragment : Fragment() {
                 }
                 return true
             }
+
+            override fun onPermissionRequest(request: PermissionRequest) {
+
+                for (permission in request.resources) {
+                    when (permission) {
+                        "android.webkit.resource.AUDIO_CAPTURE" -> {
+                            if (checkSelfPermission(
+                                    requireContext(), Manifest.permission.RECORD_AUDIO
+                                ) != PermissionChecker.PERMISSION_GRANTED
+                            ) {
+                                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+                            }
+                            else {
+                                request.grant(request.resources)
+                                //checkAndLaunchAudioRecord()
+                            }
+                        }
+                    }
+                }
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String, callback: GeolocationPermissions.Callback
+            ) {
+                if (context == null) return
+                if (!hasLocationPermissionInManifest(requireContext())) {
+                    Chat360SnackBarHelper().showMessageInSnackBar(
+                        requireView(), "No location permission in manifest"
+                    )
+                    return
+                }
+                if (checkForLocationPermission(requireContext())) {
+                    callback.invoke(origin, true, false)
+                }
+                else {
+                    geoOrigin = origin
+                    geoCallback = callback
+                }
+            }
         }
     }
+
+    private fun hasAudioPermissionInManifest(context: Context): Boolean {
+        var packageInfo: PackageInfo? = null
+        try {
+            packageInfo = context.packageManager.getPackageInfo(
+                context.packageName, PackageManager.GET_PERMISSIONS
+            )
+            val permissions = packageInfo.requestedPermissions
+            if (permissions == null || permissions.isEmpty()) {
+                return false
+            }
+            for (perm in permissions) {
+                if (perm == Manifest.permission.RECORD_AUDIO) return true
+            }
+        } catch (e: PackageManager.NameNotFoundException) {
+            //Exception occurred
+            return false
+        }
+        return false
+    }
+
+    private fun hasLocationPermissionInManifest(context: Context): Boolean {
+        var packageInfo: PackageInfo? = null
+        try {
+            packageInfo = context.packageManager.getPackageInfo(
+                context.packageName, PackageManager.GET_PERMISSIONS
+            )
+            val permissions = packageInfo.requestedPermissions
+            if (permissions == null || permissions.isEmpty()) {
+                return false
+            }
+            for (perm in permissions) {
+                if (perm == Manifest.permission.ACCESS_FINE_LOCATION) return true
+            }
+        } catch (e: PackageManager.NameNotFoundException) {
+            //Exception occurred
+            return false
+        }
+        return false
+    }
+
+    private fun checkForLocationPermission(context: Context): Boolean {
+        return if (ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            true
+        }
+        else {
+            requestedPermission = Manifest.permission.ACCESS_FINE_LOCATION
+            requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            false
+        }
+    }
+
 
     //Setting the statusBar Color from the resources
     private fun setStatusBarColor() {
@@ -240,6 +355,11 @@ class ChatFragment : Fragment() {
         } catch (e: java.lang.Exception) {
             Log.e("StatusBarException", e.toString())
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        fragmentBinding.webView.reload()
     }
 
     //Setting the statusBarColor froom hexadecmal Code
@@ -278,9 +398,9 @@ class ChatFragment : Fragment() {
             val color = ConfigService.getInstance()?.getConfig()?.closeButtonColorFromHex
             if (color != null && color.isNotEmpty()) {
                 DrawableCompat.setTint(
-                    DrawableCompat.wrap(fragmentBinding.imageViewClose.drawable
-                ),
-                Color.parseColor(color)
+                    DrawableCompat.wrap(
+                        fragmentBinding.imageViewClose.drawable
+                    ), Color.parseColor(color)
                 )
             }
         } catch (e: java.lang.Exception) {
@@ -317,10 +437,8 @@ class ChatFragment : Fragment() {
     //Checking if User Has Given the Storage Permission
     private fun checkForStoragePermission(context: Context): Boolean {
         return if (ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            )
-            == PackageManager.PERMISSION_GRANTED
+                context, Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
         ) {
             true
         }
@@ -334,26 +452,35 @@ class ChatFragment : Fragment() {
     //Checking the permission is true and launching the file intent to choose the file from storage
     private fun checkAndLaunchFilePicker() {
         if (context != null) {
-            if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 launchFileIntent()
             }
-            else{
+            else {
                 if (checkForStoragePermission(requireContext())) {
-                launchFileIntent()
-                 }
+                    launchFileIntent()
+                }
             }
         }
     }
 
+    @Throws(IOException::class)
+    private fun createAudioFile(): File? {
+
+        // Create an image file name
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val imageFileName = "Chat360WAV_" + timeStamp + "_"
+        val storageDir = requireContext().externalCacheDir
+        return File.createTempFile(
+            imageFileName, ".wav", storageDir
+        )
+    }
 
     //Will create the image_file
     @Throws(IOException::class)
     private fun createImageFile(): File? {
 
         // Create an image file name
-        val timeStamp =
-            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-                .format(Date())
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val imageFileName = "Chat360JPEG_" + timeStamp + "_"
         val storageDir = requireContext().externalCacheDir
         return File.createTempFile(
@@ -361,6 +488,96 @@ class ChatFragment : Fragment() {
             ".jpg",  /* suffix */
             storageDir /* directory */
         )
+    }
+
+    private fun launchAudioIntent() {
+        val takeAudioIntent = Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION)
+        if (activity != null && takeAudioIntent.resolveActivity(requireActivity().packageManager) != null) {
+            // Create the File where the photo should go
+            var audioFile: File? = null
+            try {
+                audioFile = createAudioFile()
+                takeAudioIntent.putExtra("AudioPaths", mAudioPath)
+            } catch (ex: IOException) {
+                //IO exception occurred
+            }
+            // Continue only if the File was successfully created
+            if (audioFile != null) {
+                mAudioPath = "file:" + audioFile.absolutePath
+                val audioURI: Uri = if (context != null) {
+                    FileProvider.getUriForFile(
+                        requireContext(), getString(R.string.chat360_file_provider), audioFile
+                    )
+                }
+                else {
+                    Uri.fromFile(audioFile)
+                }
+                takeAudioIntent.putExtra(MediaStore.EXTRA_OUTPUT, audioURI)
+                disableShouldKeepApplicationInBackground()
+                startAudioActivity.launch(
+                    takeAudioIntent
+                )
+            }
+        }
+    }
+
+    private val startAudioActivity =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            if (it.resultCode == Activity.RESULT_OK) {
+                // do whatever with the data in the callback
+                val data = it.data
+                var results: Array<Uri?>? = null
+                // Check that the response is a good one
+                if (data != null && data.dataString != null) {
+                    val dataString = data.dataString
+                    results = arrayOf(Uri.parse(dataString))
+                }
+                else if (data != null && data.clipData != null) {
+                    val count = data.clipData!!.itemCount
+                    if (count > 0) {
+                        results = arrayOfNulls(count)
+                        for (i in 0 until count) {
+                            results[i] = data.clipData!!.getItemAt(i).uri
+                        }
+                    }
+                }
+                else {
+                    // If there is no data, then we may have taken a photo
+                    if (mAudioPath != null) {
+                        results = arrayOf(Uri.parse(mAudioPath))
+                    }
+                }
+
+                mFilePathCallback!!.onReceiveValue(results)
+                mFilePathCallback = null
+            }
+        }
+
+    private fun checkForAudioPermission(context: Context): Boolean {
+        return if (ContextCompat.checkSelfPermission(
+                context, Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            true
+        }
+        else {
+            requestedPermission = Manifest.permission.RECORD_AUDIO
+            requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            false
+        }
+    }
+
+    private fun checkAndLaunchAudioRecord() {
+        if (context != null) {
+            if (hasAudioPermissionInManifest(requireContext())) {
+                if (checkForAudioPermission(requireContext())) {
+                    launchAudioIntent()
+                }
+            }
+            else {
+                launchAudioIntent()
+            }
+        }
     }
 
     //Will Start Camera
@@ -381,9 +598,7 @@ class ChatFragment : Fragment() {
                 mCameraPhotoPath = "file:" + photoFile.absolutePath
                 val photoURI: Uri = if (context != null) {
                     FileProvider.getUriForFile(
-                        requireContext(),
-                        getString(R.string.chat360_file_provider),
-                        photoFile
+                        requireContext(), getString(R.string.chat360_file_provider), photoFile
                     )
                 }
                 else {
@@ -393,6 +608,12 @@ class ChatFragment : Fragment() {
                 disableShouldKeepApplicationInBackground()
                 startCameraActivity.launch(
                     takePictureIntent
+                )
+            }
+            else{
+                Chat360SnackBarHelper().showMessageInSnackBar(
+                    requireView(),
+                    "Not able to launch camera please use file option to pick image"
                 )
             }
         }
@@ -433,10 +654,8 @@ class ChatFragment : Fragment() {
     //Will verify if using camera is allowed by user
     private fun checkForCameraPermission(context: Context): Boolean {
         return if (ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.CAMERA
-            )
-            == PackageManager.PERMISSION_GRANTED
+                context, Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
         ) {
             true
         }
@@ -446,6 +665,7 @@ class ChatFragment : Fragment() {
             false
         }
     }
+
     //If permission is given camera will be started
     private fun checkAndLaunchCamera() {
         if (context != null) {
@@ -465,8 +685,7 @@ class ChatFragment : Fragment() {
         val packageInfo: PackageInfo?
         try {
             packageInfo = context.packageManager.getPackageInfo(
-                context.packageName,
-                PackageManager.GET_PERMISSIONS
+                context.packageName, PackageManager.GET_PERMISSIONS
             )
             val permissions = packageInfo.requestedPermissions
             if (permissions == null || permissions.isEmpty()) {
@@ -511,20 +730,56 @@ class ChatFragment : Fragment() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
-            if (requestedPermission == Manifest.permission.READ_EXTERNAL_STORAGE) {
-                if (isGranted) {
-                    launchFileIntent()
-                }
-                else {
-                    resetFilePathCallback()
+        if (requestedPermission == Manifest.permission.READ_EXTERNAL_STORAGE) {
+            if (isGranted) {
+                launchFileIntent()
+            }
+            else {
+                resetFilePathCallback()
+                if (context != null) {
+                    Chat360SnackBarHelper().showSnackBarWithSettingAction(
+                        requireContext(),
+                        requireView(),
+                        "Read storage permission required to complete this operation. Please enable it from app settings."
+                        )
                 }
             }
-          else if (requestedPermission == Manifest.permission.CAMERA) {
+        }
+        else if (requestedPermission == Manifest.permission.CAMERA) {
             if (isGranted) {
                 launchCameraIntent()
             }
             else {
                 resetFilePathCallback()
+                if (context != null) {
+                    Chat360SnackBarHelper().showSnackBarWithSettingAction(
+                        requireContext(),
+                        requireView(),
+                        "Camera permission is required by the app to complete this operation. Please enable it from app settings."
+                    )
+                }
+            }
+
+        }
+        else if (requestedPermission == Manifest.permission.ACCESS_FINE_LOCATION) {
+            if (isGranted && geoCallback != null && geoOrigin != null) {
+                geoCallback!!.invoke(geoOrigin, true, false)
+                geoCallback = null
+                geoOrigin = null
+            }
+            else {
+                if (geoCallback != null && geoOrigin != null) {
+                    geoCallback!!.invoke(geoOrigin, false, false)
+                }
+                geoCallback = null
+                geoOrigin = null
+                if (context != null) {
+                    Chat360SnackBarHelper().showSnackBarWithSettingAction(
+                        requireContext(),
+                        requireView(),
+                        "Location permission is required to complete this operation."
+                    )
+                }
             }
         }
     }

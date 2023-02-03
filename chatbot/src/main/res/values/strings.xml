@@ -5,4 +5,6 @@
 
     <string name="application_id_for_provider">com.chat360.chatbot.fileprovider</string>
     <string name="chat360_file_provider">@string/application_id_for_provider</string>
+
+    <string name="settings">Settings</string>
 </resources>

@@ -19,4 +19,8 @@
         <item name="backgroundTint">@android:color/transparent</item>
         <item name="background">@android:color/transparent</item>
     </style>
+
+    <style name="Chat360SnackBarText" parent="@style/Widget.MaterialComponents.Snackbar.TextView">
+        <item name="android:maxLines">5</item>
+    </style>
 </resources>
