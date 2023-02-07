@@ -31,6 +31,7 @@ import androidx.fragment.app.Fragment
 import androidx.viewbinding.ViewBinding
 import com.chat360.chatbot.R
 import com.chat360.chatbot.common.Chat360SnackBarHelper
+import com.chat360.chatbot.common.Constants
 import com.chat360.chatbot.common.models.ConfigService
 import com.chat360.chatbot.common.utils.viewBinding
 import com.chat360.chatbot.databinding.FragmentChatBinding
@@ -73,7 +74,7 @@ class ChatFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(initBinding(fragmentBinding), savedInstanceState)
-
+        Constants.UNREAD_MESSAGE_COUNT = 0
         showCloseButton()
         setStatusBarColorFromHex()
         setCloseButtonColorFromHex()
@@ -610,10 +611,9 @@ class ChatFragment : Fragment() {
                     takePictureIntent
                 )
             }
-            else{
+            else {
                 Chat360SnackBarHelper().showMessageInSnackBar(
-                    requireView(),
-                    "Not able to launch camera please use file option to pick image"
+                    requireView(), "Not able to launch camera please use file option to pick image"
                 )
             }
         }
@@ -741,7 +741,7 @@ class ChatFragment : Fragment() {
                         requireContext(),
                         requireView(),
                         "Read storage permission required to complete this operation. Please enable it from app settings."
-                        )
+                    )
                 }
             }
         }

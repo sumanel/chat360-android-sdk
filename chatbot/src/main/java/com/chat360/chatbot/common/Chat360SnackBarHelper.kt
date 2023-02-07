@@ -21,29 +21,21 @@ class Chat360SnackBarHelper {
         context.startActivity(i)
     }
 
-   fun showSnackBarWithSettingAction(context: Context, view: View, message: String) {
+    fun showSnackBarWithSettingAction(context: Context, view: View, message: String) {
         Snackbar.make(
-            view,
-            message,
-            Snackbar.LENGTH_LONG
-        )
-            .setAction(
+            view, message, Snackbar.LENGTH_LONG
+        ).setAction(
                 context.getString(R.string.settings)
             ) { v: View? ->
                 startInstalledAppDetailsActivity(
                     context
                 )
-            }
-            .show()
+            }.show()
     }
 
     fun showMessageInSnackBar(view: View, message: String) {
         Snackbar.make(
-            view,
-            message,
-            Snackbar.LENGTH_LONG
-        )
-            .setAction("") { v: View? -> }
-            .show()
+            view, message, Snackbar.LENGTH_LONG
+        ).setAction("") { v: View? -> }.show()
     }
 }

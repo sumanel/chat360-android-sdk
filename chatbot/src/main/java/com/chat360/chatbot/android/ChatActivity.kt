@@ -16,11 +16,12 @@ class ChatActivity : AppCompatActivity() {
             root
         }
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(initBinding(activityBinding))
         loadFragment()
-       // backPressed()
+        // backPressed()
     }
 
     override fun onBackPressed() {

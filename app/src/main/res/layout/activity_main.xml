@@ -8,34 +8,62 @@
 
     <ImageView
         android:id="@+id/cha360logo"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        android:src="@drawable/chat360_logo"
         android:layout_width="300dp"
+        android:layout_height="100dp"
         android:layout_marginTop="20dp"
-        android:layout_height="100dp"/>
+        android:contentDescription="@string/chat360"
+        android:src="@drawable/chat360_logo"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <com.google.android.material.button.MaterialButton
         android:id="@+id/buttonOpenActivity"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        app:layout_constraintTop_toTopOf="parent"
-        android:layout_marginTop="200dp"
         android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="200dp"
+        android:paddingVertical="16dp"
         android:text="@string/open_activity"
-        android:textAllCaps="false"/>
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toTopOf="parent" />
 
+    <TextView
+        android:id="@+id/textViewUnreadMessageCount"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/unread_count_bg"
+        android:gravity="center"
+        android:textColor="#FF337ACC"
+        android:translationZ="10dp"
+        app:layout_constraintEnd_toEndOf="@id/floatingActionButton"
+        app:layout_constraintTop_toTopOf="@id/floatingActionButton"
+        tools:text="1" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/floatingActionButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="30dp"
+        android:backgroundTint="#FF337ACC"
+        android:contentDescription="@string/floating_chat_button"
+        android:src="@drawable/chat360logo"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/buttonOpenActivityFragment"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:backgroundTint="@color/purple_700"
-        app:layout_constraintTop_toBottomOf="@id/buttonOpenActivity"
-        android:layout_marginTop="20dp"
         android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="20dp"
+        android:backgroundTint="@color/purple_700"
+        android:contentDescription="@string/chatbot"
+        android:paddingVertical="16dp"
         android:text="@string/open_activity_fragment"
-        android:textAllCaps="false"/>
-
-
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toBottomOf="@id/buttonOpenActivity" />
 </androidx.constraintlayout.widget.ConstraintLayout>

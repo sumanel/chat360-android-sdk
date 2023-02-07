@@ -23,8 +23,7 @@ inline fun <T : ViewBinding> AppCompatActivity.viewBinding(
 ) = lazy(LazyThreadSafetyMode.NONE) { bindingInflater.invoke(layoutInflater) }
 
 class FragmentScopedInstanceDelegate<T>(
-    val fragment: Fragment,
-    private val instanceProvider: Provider<T>
+    val fragment: Fragment, private val instanceProvider: Provider<T>
 ) : ReadOnlyProperty<Fragment, T> {
 
     private var instance: T? = null
@@ -32,13 +31,14 @@ class FragmentScopedInstanceDelegate<T>(
     init {
         fragment.lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onCreate(owner: LifecycleOwner) {
-                fragment.viewLifecycleOwnerLiveData.observe(fragment, Observer<LifecycleOwner> { viewLifecycleOwner ->
-                    viewLifecycleOwner.lifecycle.addObserver(object : DefaultLifecycleObserver {
-                        override fun onDestroy(owner: LifecycleOwner) {
-                            instance = null
-                        }
+                fragment.viewLifecycleOwnerLiveData.observe(fragment,
+                    Observer<LifecycleOwner> { viewLifecycleOwner ->
+                        viewLifecycleOwner.lifecycle.addObserver(object : DefaultLifecycleObserver {
+                            override fun onDestroy(owner: LifecycleOwner) {
+                                instance = null
+                            }
+                        })
                     })
-                })
             }
         })
     }

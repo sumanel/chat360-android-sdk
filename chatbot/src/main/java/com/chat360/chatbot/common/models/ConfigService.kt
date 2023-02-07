@@ -5,8 +5,7 @@ import com.chat360.chatbot.common.CoreConfigs
 
 class ConfigService {
 
-    private val TAG = ConfigService::class.java.simpleName
-    private var config :CoreConfigs
+    private var config: CoreConfigs
 
     init {
         config = CoreConfigs("", Application())
@@ -28,11 +27,8 @@ class ConfigService {
     }
 
     fun setConfigData(config: CoreConfigs): Boolean {
-        if (config != null) {
-            this.config = config
-            return true
-        }
-        return false
+        this.config = config
+        return true
     }
 
     fun getConfig(): CoreConfigs {

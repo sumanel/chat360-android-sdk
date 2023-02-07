@@ -3,6 +3,11 @@
     <string name="open_activity">Open Activity</string>
     <string name="open_activity_fragment">Open Activity + Fragment</string>
     <!-- TODO: Remove or change this placeholder text -->
+
+    <string name="default_notification_channel_id">com.chat360.chat360demoapp2.urgent</string>
     <string name="hello_blank_fragment">Hello blank fragment</string>
     <string name="take_me_to_a_bot">Take me to a bot</string>
+    <string name="chatbot">ChatBot</string>
+    <string name="chat360">Chat360</string>
+    <string name="floating_chat_button">Floating Chat Button</string>
 </resources>

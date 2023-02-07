@@ -37,4 +37,4 @@
         app:layout_constraintStart_toEndOf="@id/imageViewCamera"
         app:layout_constraintTop_toTopOf="@id/imageViewCamera" />
 
-       </androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>
