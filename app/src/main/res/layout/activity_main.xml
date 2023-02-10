@@ -29,17 +29,6 @@
         android:textColor="@color/white"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <TextView
-        android:id="@+id/textViewUnreadMessageCount"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:background="@drawable/unread_count_bg"
-        android:gravity="center"
-        android:textColor="#FF337ACC"
-        android:translationZ="10dp"
-        app:layout_constraintEnd_toEndOf="@id/floatingActionButton"
-        app:layout_constraintTop_toTopOf="@id/floatingActionButton"
-        tools:text="1" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/floatingActionButton"

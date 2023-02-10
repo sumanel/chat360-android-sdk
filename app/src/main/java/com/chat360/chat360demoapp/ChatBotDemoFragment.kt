@@ -1,11 +1,10 @@
-package com.chat360.chat360demoapp2
+package com.chat360.chat360demoapp
 
 import android.os.Bundle
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import com.chat360.chat360demoapp.R
 import com.google.android.material.button.MaterialButton
 
 class ChatBotDemoFragment : Fragment() {

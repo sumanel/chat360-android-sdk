@@ -9,7 +9,6 @@ import com.chat360.chatbot.R
 import com.google.android.material.snackbar.Snackbar
 
 class Chat360SnackBarHelper {
-
     private fun startInstalledAppDetailsActivity(context: Context) {
         val i = Intent()
         i.action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
@@ -25,12 +24,12 @@ class Chat360SnackBarHelper {
         Snackbar.make(
             view, message, Snackbar.LENGTH_LONG
         ).setAction(
-                context.getString(R.string.settings)
-            ) { v: View? ->
-                startInstalledAppDetailsActivity(
-                    context
-                )
-            }.show()
+            context.getString(R.string.settings)
+        ) { v: View? ->
+            startInstalledAppDetailsActivity(
+                context
+            )
+        }.show()
     }
 
     fun showMessageInSnackBar(view: View, message: String) {

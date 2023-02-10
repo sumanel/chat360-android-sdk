@@ -2,7 +2,10 @@ package com.chat360.chatbot.android
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
+import android.app.ProgressDialog
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -67,9 +70,16 @@ class ChatFragment : Fragment() {
         (activity as AppCompatActivity?)?.supportActionBar?.hide()
         setCloseButtonColor()
         setStatusBarColor()
-        setupViews()
+        if (!Constants.isNetworkAvailable(requireActivity())) {
+            Constants.showNoInternetDialog(requireActivity())
+        } else {
+            setupViews()
+
+        }
         return initBinding(fragmentBinding)
     }
+
+    //Internet Dialog
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(initBinding(fragmentBinding), savedInstanceState)
@@ -84,8 +94,7 @@ class ChatFragment : Fragment() {
         if (showCloseButton!!) {
             fragmentBinding.imageViewClose.visibility = View.VISIBLE
             setCloseButtonColor()
-        }
-        else {
+        } else {
             fragmentBinding.imageViewClose.visibility = View.GONE
         }
     }
@@ -132,8 +141,7 @@ class ChatFragment : Fragment() {
             val file = File(requireActivity().cacheDir, fileName)
             if (file.exists()) {
                 webView.loadUrl("file://" + requireActivity().cacheDir.absolutePath + "/" + fileName)
-            }
-            else {
+            } else {
                 //Starting the WebView by loading the URL with bot ID and store_session is to store Cache
                 val botId = ConfigService.getInstance()?.getConfig()?.botId
                 val chat360BaseUrl = requireContext().resources.getString(R.string.chat360_base_url)
@@ -141,7 +149,7 @@ class ChatFragment : Fragment() {
                 val appId = requireContext().applicationContext.packageName
                 val url = "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId"
                 webView.loadUrl("$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId")
-                Log.d("chatbot_url",url)
+                Log.d("chatbot_url", url)
             }
             imageViewClose.setOnClickListener {
                 requireActivity().onBackPressed()
@@ -157,6 +165,20 @@ class ChatFragment : Fragment() {
             private var mCustomViewCallback: CustomViewCallback? = null
             private var mOriginalOrientation = 0
             private var mOriginalSystemUiVisibility = 0
+            private var mProgress: ProgressDialog? = null
+
+            override fun onProgressChanged(view: WebView?, progress: Int) {
+                if (mProgress == null) {
+                    mProgress = ProgressDialog(activity)
+                    mProgress?.show()
+                }
+                mProgress?.setMessage("Loading $progress%")
+                if (progress == 100) {
+                    mProgress?.dismiss()
+                    mProgress = null
+                }
+            }
+
             override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
                 return true
             }
@@ -183,8 +205,7 @@ class ChatFragment : Fragment() {
             override fun getDefaultVideoPoster(): Bitmap? {
                 return if (mCustomView == null) {
                     null
-                }
-                else BitmapFactory.decodeResource(context?.resources, 2130837573)
+                } else BitmapFactory.decodeResource(context?.resources, 2130837573)
             }
 
             override fun onHideCustomView() {
@@ -252,8 +273,7 @@ class ChatFragment : Fragment() {
                                 ) != PermissionChecker.PERMISSION_GRANTED
                             ) {
                                 requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
-                            }
-                            else {
+                            } else {
                                 request.grant(request.resources)
                                 //checkAndLaunchAudioRecord()
                             }
@@ -274,8 +294,7 @@ class ChatFragment : Fragment() {
                 }
                 if (checkForLocationPermission(requireContext())) {
                     callback.invoke(origin, true, false)
-                }
-                else {
+                } else {
                     geoOrigin = origin
                     geoCallback = callback
                 }
@@ -329,8 +348,7 @@ class ChatFragment : Fragment() {
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             true
-        }
-        else {
+        } else {
             requestedPermission = Manifest.permission.ACCESS_FINE_LOCATION
             requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
             false
@@ -441,8 +459,7 @@ class ChatFragment : Fragment() {
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             true
-        }
-        else {
+        } else {
             requestedPermission = Manifest.permission.READ_EXTERNAL_STORAGE
             requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
             false
@@ -454,8 +471,7 @@ class ChatFragment : Fragment() {
         if (context != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 launchFileIntent()
-            }
-            else {
+            } else {
                 if (checkForStoragePermission(requireContext())) {
                     launchFileIntent()
                 }
@@ -507,8 +523,7 @@ class ChatFragment : Fragment() {
                     FileProvider.getUriForFile(
                         requireContext(), getString(R.string.chat360_file_provider), audioFile
                     )
-                }
-                else {
+                } else {
                     Uri.fromFile(audioFile)
                 }
                 takeAudioIntent.putExtra(MediaStore.EXTRA_OUTPUT, audioURI)
@@ -530,8 +545,7 @@ class ChatFragment : Fragment() {
                 if (data != null && data.dataString != null) {
                     val dataString = data.dataString
                     results = arrayOf(Uri.parse(dataString))
-                }
-                else if (data != null && data.clipData != null) {
+                } else if (data != null && data.clipData != null) {
                     val count = data.clipData!!.itemCount
                     if (count > 0) {
                         results = arrayOfNulls(count)
@@ -539,8 +553,7 @@ class ChatFragment : Fragment() {
                             results[i] = data.clipData!!.getItemAt(i).uri
                         }
                     }
-                }
-                else {
+                } else {
                     // If there is no data, then we may have taken a photo
                     if (mAudioPath != null) {
                         results = arrayOf(Uri.parse(mAudioPath))
@@ -557,8 +570,7 @@ class ChatFragment : Fragment() {
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             true
-        }
-        else {
+        } else {
             requestedPermission = Manifest.permission.RECORD_AUDIO
             requestPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             false
@@ -571,8 +583,7 @@ class ChatFragment : Fragment() {
                 if (checkForAudioPermission(requireContext())) {
                     launchAudioIntent()
                 }
-            }
-            else {
+            } else {
                 launchAudioIntent()
             }
         }
@@ -597,8 +608,7 @@ class ChatFragment : Fragment() {
                     FileProvider.getUriForFile(
                         requireContext(), getString(R.string.chat360_file_provider), photoFile
                     )
-                }
-                else {
+                } else {
                     Uri.fromFile(photoFile)
                 }
                 takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
@@ -606,8 +616,7 @@ class ChatFragment : Fragment() {
                 startCameraActivity.launch(
                     takePictureIntent
                 )
-            }
-            else {
+            } else {
                 Chat360SnackBarHelper().showMessageInSnackBar(
                     requireView(), "Not able to launch camera please use file option to pick image"
                 )
@@ -626,8 +635,7 @@ class ChatFragment : Fragment() {
                 if (data != null && data.dataString != null) {
                     val dataString = data.dataString
                     results = arrayOf(Uri.parse(dataString))
-                }
-                else if (data != null && data.clipData != null) {
+                } else if (data != null && data.clipData != null) {
                     val count = data.clipData!!.itemCount
                     if (count > 0) {
                         results = arrayOfNulls(count)
@@ -635,8 +643,7 @@ class ChatFragment : Fragment() {
                             results[i] = data.clipData!!.getItemAt(i).uri
                         }
                     }
-                }
-                else {
+                } else {
                     // If there is no data, then we may have taken a photo
                     if (mCameraPhotoPath != null) {
                         results = arrayOf(Uri.parse(mCameraPhotoPath))
@@ -655,8 +662,7 @@ class ChatFragment : Fragment() {
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             true
-        }
-        else {
+        } else {
             requestedPermission = Manifest.permission.CAMERA
             requestPermissionLauncher.launch(Manifest.permission.CAMERA)
             false
@@ -670,8 +676,7 @@ class ChatFragment : Fragment() {
                 if (checkForCameraPermission(requireContext())) {
                     launchCameraIntent()
                 }
-            }
-            else {
+            } else {
                 launchCameraIntent()
             }
         }
@@ -730,8 +735,7 @@ class ChatFragment : Fragment() {
         if (requestedPermission == Manifest.permission.READ_EXTERNAL_STORAGE) {
             if (isGranted) {
                 launchFileIntent()
-            }
-            else {
+            } else {
                 resetFilePathCallback()
                 if (context != null) {
                     Chat360SnackBarHelper().showSnackBarWithSettingAction(
@@ -741,12 +745,10 @@ class ChatFragment : Fragment() {
                     )
                 }
             }
-        }
-        else if (requestedPermission == Manifest.permission.CAMERA) {
+        } else if (requestedPermission == Manifest.permission.CAMERA) {
             if (isGranted) {
                 launchCameraIntent()
-            }
-            else {
+            } else {
                 resetFilePathCallback()
                 if (context != null) {
                     Chat360SnackBarHelper().showSnackBarWithSettingAction(
@@ -757,14 +759,12 @@ class ChatFragment : Fragment() {
                 }
             }
 
-        }
-        else if (requestedPermission == Manifest.permission.ACCESS_FINE_LOCATION) {
+        } else if (requestedPermission == Manifest.permission.ACCESS_FINE_LOCATION) {
             if (isGranted && geoCallback != null && geoOrigin != null) {
                 geoCallback!!.invoke(geoOrigin, true, false)
                 geoCallback = null
                 geoOrigin = null
-            }
-            else {
+            } else {
                 if (geoCallback != null && geoOrigin != null) {
                     geoCallback!!.invoke(geoOrigin, false, false)
                 }

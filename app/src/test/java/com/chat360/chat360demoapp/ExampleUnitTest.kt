@@ -1,4 +1,4 @@
-package com.chat360.chat360demoapp2
+package com.chat360.chat360demoapp
 
 import org.junit.Test
 
