@@ -19,7 +19,6 @@ import android.view.*
 import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -135,13 +134,14 @@ class ChatFragment : Fragment() {
                 webView.loadUrl("file://" + requireActivity().cacheDir.absolutePath + "/" + fileName)
             }
             else {
-                //Starting the WebView by loading the URL with bot ID and store_session is to store Chache
+                //Starting the WebView by loading the URL with bot ID and store_session is to store Cache
                 val botId = ConfigService.getInstance()?.getConfig()?.botId
                 val chat360BaseUrl = requireContext().resources.getString(R.string.chat360_base_url)
                 val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
-                val applicationContext = requireContext().applicationContext
-                val appId = applicationContext.packageName
+                val appId = requireContext().applicationContext.packageName
+                val url = "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId"
                 webView.loadUrl("$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId")
+                Log.d("chatbot_url",url)
             }
             imageViewClose.setOnClickListener {
                 requireActivity().onBackPressed()
@@ -150,7 +150,7 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //Adding callbacks and the permission function for webview requirements
+    //Adding callbacks and the permission function for web-view requirements
     private fun webChromeClient() {
         fragmentBinding.webView.webChromeClient = object : WebChromeClient() {
             private var mCustomView: View? = null
@@ -337,7 +337,6 @@ class ChatFragment : Fragment() {
         }
     }
 
-
     //Setting the statusBar Color from the resources
     private fun setStatusBarColor() {
         try {
@@ -409,7 +408,7 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //while uploading the file it'll show the bottomsheet layout
+    //while uploading the file it'll show the bottom-sheet layout
     private fun showBottomSheet() {
         if (context != null) {
             val bottomSheetDialog = BottomSheetDialog(requireContext())
@@ -479,7 +478,6 @@ class ChatFragment : Fragment() {
     //Will create the image_file
     @Throws(IOException::class)
     private fun createImageFile(): File? {
-
         // Create an image file name
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val imageFileName = "Chat360JPEG_" + timeStamp + "_"
@@ -548,7 +546,6 @@ class ChatFragment : Fragment() {
                         results = arrayOf(Uri.parse(mAudioPath))
                     }
                 }
-
                 mFilePathCallback!!.onReceiveValue(results)
                 mFilePathCallback = null
             }
@@ -582,7 +579,6 @@ class ChatFragment : Fragment() {
     }
 
     //Will Start Camera
-
     private fun launchCameraIntent() {
         val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         if (activity != null && takePictureIntent.resolveActivity(requireActivity().packageManager) != null) {
@@ -619,6 +615,7 @@ class ChatFragment : Fragment() {
         }
     }
 
+    //result variable for the external intent of chat-bot
     private val startCameraActivity =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             if (it.resultCode == Activity.RESULT_OK) {

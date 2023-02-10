@@ -21,6 +21,4 @@ class ChatBotDemoFragment : Fragment() {
         }
         return view
     }
-
-
 }

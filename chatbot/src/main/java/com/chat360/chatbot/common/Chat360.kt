@@ -55,6 +55,7 @@ class Chat360 {
         return null
     }
 
+    @Deprecated("Not Available for now")
     fun getUnreadMessageCount(): Int {
         return Constants.UNREAD_MESSAGE_COUNT
     }

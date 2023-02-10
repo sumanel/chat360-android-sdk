@@ -8,8 +8,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 
 public class CoreConfigs constructor(@NonNull botId: String, applicationContext: Context) {
     var botId: String? = botId
-    var ymAuthenticationToken = ""
-    var deviceToken = ""
+   // var ymAuthenticationToken = ""
+    @Deprecated("not currently in use") var deviceToken = ""
     var statusBarColor = -1
     var statusBarColorFromHex = ""
     var showCloseButton = true
