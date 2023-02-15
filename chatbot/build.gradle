@@ -54,9 +54,9 @@ afterEvaluate {
         publications {
             release(MavenPublication) {
                 from components.release
-                groupId = 'com.gitlab.autovista'
+                groupId = 'com.github.shivamchat360'
                 artifactId = 'chat360-android-sdk'
-                version = '1.0.1'
+                version = '1.0.2'
             }
         }
     }
