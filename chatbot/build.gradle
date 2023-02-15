@@ -3,12 +3,18 @@ plugins {
     id 'org.jetbrains.kotlin.android'
     id 'kotlin-kapt'
     id 'dagger.hilt.android.plugin'
+    id 'maven-publish'
 }
 
 android {
     namespace 'com.chat360.chatbot'
     compileSdk 33
-
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+    }
     defaultConfig {
         minSdk 23
         targetSdk 33
@@ -42,6 +48,19 @@ android {
 
 hilt {
     enableAggregatingTask = true
+}
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+
+                groupId = 'com.gitlab.autovista'
+                artifactId = 'chat360-android-sdk'
+                version = '1.0.0'
+            }
+        }
+    }
 }
 dependencies {
 
