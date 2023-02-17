@@ -17,6 +17,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Message
 import android.provider.MediaStore
+import android.provider.Settings
+import android.provider.Settings.SettingNotFoundException
+import android.text.TextUtils
 import android.util.Log
 import android.view.*
 import android.webkit.*
@@ -24,6 +27,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.content.PermissionChecker
@@ -87,6 +91,7 @@ class ChatFragment : Fragment() {
         showCloseButton()
         setStatusBarColorFromHex()
         setCloseButtonColorFromHex()
+        fragmentBinding.webView.clearCache(true)
     }
 
     private fun showCloseButton() {
@@ -129,10 +134,10 @@ class ChatFragment : Fragment() {
                 setSupportMultipleWindows(true)
                 javaScriptCanOpenWindowsAutomatically = true
                 allowFileAccess = true
-                cacheMode = WebSettings.LOAD_DEFAULT
                 mediaPlaybackRequiresUserGesture = false
                 javaScriptEnabled = true
                 databaseEnabled = true
+                setGeolocationEnabled(true)
                 setSupportZoom(true)
                 cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
             }
@@ -273,6 +278,7 @@ class ChatFragment : Fragment() {
                                 ) != PermissionChecker.PERMISSION_GRANTED
                             ) {
                                 requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+                                request.grant(request.resources)
                             } else {
                                 request.grant(request.resources)
                                 //checkAndLaunchAudioRecord()
@@ -288,18 +294,43 @@ class ChatFragment : Fragment() {
                 if (context == null) return
                 if (!hasLocationPermissionInManifest(requireContext())) {
                     Chat360SnackBarHelper().showMessageInSnackBar(
-                        requireView(), "No location permission in manifest"
+                        requireView(), "No location permission"
                     )
                     return
                 }
                 if (checkForLocationPermission(requireContext())) {
+                    if(!isLocationEnabled(requireContext())){
+                        showGPSEnableDialog(requireContext())
+                    }
+
                     callback.invoke(origin, true, false)
+
                 } else {
                     geoOrigin = origin
                     geoCallback = callback
                 }
             }
         }
+    }
+
+    private fun showGPSEnableDialog(context: Context) {
+        AlertDialog.Builder(context)
+            .setMessage("Please allow your location.")
+            .setPositiveButton(
+                "Allow"
+            ) { _, _ ->
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_LOCATION_SOURCE_SETTINGS
+                    )
+                )
+            }
+            .setNegativeButton("Cancel", ){_,_->
+                Chat360SnackBarHelper().showMessageInSnackBar(
+                    requireView(), "No location permission"
+                )
+            }
+            .show()
     }
 
     private fun hasAudioPermissionInManifest(context: Context): Boolean {
@@ -322,7 +353,7 @@ class ChatFragment : Fragment() {
         return false
     }
 
-    private fun hasLocationPermissionInManifest(context: Context): Boolean {
+    private fun hasLocationPermissionInManifest(context: Context): Boolean  {
         var packageInfo: PackageInfo? = null
         try {
             packageInfo = context.packageManager.getPackageInfo(
@@ -341,17 +372,44 @@ class ChatFragment : Fragment() {
         }
         return false
     }
-
+    fun hasPermissions(context: Context, vararg permissions: String): Boolean = permissions.all {
+        ActivityCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    }
     private fun checkForLocationPermission(context: Context): Boolean {
-        return if (ContextCompat.checkSelfPermission(
-                context, Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
+        val PERMISSION_ALL = 1
+        val PERMISSIONS = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        return if (hasPermissions(context,*PERMISSIONS)
         ) {
             true
         } else {
             requestedPermission = Manifest.permission.ACCESS_FINE_LOCATION
             requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+
+            requestedPermission = Manifest.permission.ACCESS_COARSE_LOCATION
+            requestPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
             false
+        }
+    }
+    fun isLocationEnabled(context: Context): Boolean {
+        var locationMode = 0
+        val locationProviders: String
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            locationMode = try {
+                Settings.Secure.getInt(context.contentResolver, Settings.Secure.LOCATION_MODE)
+            } catch (e: SettingNotFoundException) {
+                e.printStackTrace()
+                return false
+            }
+            locationMode != Settings.Secure.LOCATION_MODE_OFF
+        } else {
+            locationProviders = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.LOCATION_PROVIDERS_ALLOWED
+            )
+            !TextUtils.isEmpty(locationProviders)
         }
     }
 
@@ -374,11 +432,11 @@ class ChatFragment : Fragment() {
             Log.e("StatusBarException", e.toString())
         }
     }
-
+/*
     override fun onResume() {
         super.onResume()
         fragmentBinding.webView.reload()
-    }
+    }*/
 
     //Setting the statusBarColor froom hexadecmal Code
     private fun setStatusBarColorFromHex() {
@@ -759,7 +817,7 @@ class ChatFragment : Fragment() {
                 }
             }
 
-        } else if (requestedPermission == Manifest.permission.ACCESS_FINE_LOCATION) {
+        } else if (requestedPermission == Manifest.permission.ACCESS_FINE_LOCATION || requestedPermission == Manifest.permission.ACCESS_COARSE_LOCATION) {
             if (isGranted && geoCallback != null && geoOrigin != null) {
                 geoCallback!!.invoke(geoOrigin, true, false)
                 geoCallback = null
@@ -787,6 +845,7 @@ class ChatFragment : Fragment() {
             mFilePathCallback = null
         }
     }
+/*
 
     //For Caches
     override fun onSaveInstanceState(outState: Bundle) {
@@ -801,6 +860,7 @@ class ChatFragment : Fragment() {
             fragmentBinding.webView.restoreState(savedInstanceState)
         }
     }
+*/
 
     companion object {
         fun newInstance(): ChatFragment {
