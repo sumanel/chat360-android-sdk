@@ -9,7 +9,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 
 class MainActivity : AppCompatActivity() {
-    private val botId = "949aa72d-0317-4de6-acac-2fdef98aa7b0"
+    private val botId = "YOUR-BOT-ID"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

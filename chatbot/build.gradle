@@ -18,13 +18,13 @@ android {
     defaultConfig {
         minSdk 23
         targetSdk 33
-        versionCode 1
-        versionName "1.0.1"
+        versionCode 3
+        versionName "1.0.3"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
 
-        resValue "string", "chat360_base_url", "\"https://app.gaadibaazar.in/page/?h=\""
+        resValue "string", "chat360_base_url", "\"https://app.chat360.io/page/?h=\""
 
     }
 
@@ -56,7 +56,7 @@ afterEvaluate {
                 from components.release
                 groupId = 'com.github.shivamchat360'
                 artifactId = 'chat360-android-sdk'
-                version = '1.0.2'
+                version = '1.0.3'
             }
         }
     }
