@@ -3,7 +3,13 @@ pluginManagement {
         gradlePluginPortal()
         google()
         mavenCentral()
-        maven { url "https://jitpack.io" }
+        maven {
+            url "https://jitpack.io"
+            credentials {
+                username "glpat-TbYcS_oYfxXY6_gpky5-"
+
+            }
+        }
     }
 }
 dependencyResolutionManagement {
@@ -11,8 +17,13 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven {
+            url "https://jitpack.io"
+            credentials {
+                username "glpat-TbYcS_oYfxXY6_gpky5-"
 
-        maven { url "https://jitpack.io" }
+            }
+        }
     }
 }
 rootProject.name = "Chat360DemoApp"

@@ -1,0 +1,17 @@
+Index: app/src/main/java/com/chat360/chat360demoapp/ChatBotDemoActivity.kt
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>package com.chat360.chat360demoapp\r\n\r\nimport android.os.Bundle\r\nimport androidx.appcompat.app.AppCompatActivity\r\nimport androidx.fragment.app.Fragment\r\nimport com.chat360.chatbot.common.Chat360\r\nimport com.chat360.chatbot.common.CoreConfigs\r\n\r\nclass ChatBotDemoActivity : AppCompatActivity() {\r\n    private val botId = \"YOUR-BOT-ID\"\r\n\r\n    override fun onCreate(savedInstanceState: Bundle?) {\r\n        super.onCreate(savedInstanceState)\r\n        setContentView(R.layout.activity_chat_bot_demo)\r\n        loadFragment(ChatBotDemoFragment())\r\n    }\r\n\r\n    private fun initialiseBot(): Chat360 {\r\n        //Get Chat360 instance\r\n        val chat360 = Chat360().getInstance()\r\n        chat360.coreConfig = CoreConfigs(botId, applicationContext)\r\n\r\n        // To Change the color of status bar, by default it will pick app theme\r\n        chat360.coreConfig!!.statusBarColor = R.color.purple_500\r\n\r\n        // To Change the color of close button, default color is white\r\n        chat360.coreConfig!!.closeButtonColor = R.color.white\r\n\r\n        /* Note: if color is set from both setStatusBarColor and statusBarColorFromHex,\r\n         * statusBarColorFromHex will take priority\r\n         * */\r\n        // To set statusBarColor from hexadecimal color code\r\n        chat360.coreConfig!!.statusBarColorFromHex = \"#49c656\"\r\n\r\n        /* Note: if color is set from both closeButtonColor and closeButtonColorHex,\r\n         * closeButtonColorHex will take priority\r\n         * */\r\n        // To set closeButtonColor from hexadecimal color code\r\n        chat360.coreConfig!!.closeButtonColorFromHex = \"#ffffff\"\r\n        return chat360\r\n    }\r\n\r\n    private fun loadFragment(frag: Fragment) {\r\n\r\n        val transaction = supportFragmentManager.beginTransaction()\r\n        transaction.replace(R.id.fragmentContainerViewChatBot, frag)\r\n        transaction.addToBackStack(null)\r\n        transaction.commit()\r\n    }\r\n\r\n    fun showBotView() {\r\n        val chat360 = initialiseBot()\r\n        loadFragment(chat360.getChatBotView(this)!!)\r\n    }\r\n\r\n    override fun onBackPressed() {\r\n        try {\r\n            if (supportFragmentManager.backStackEntryCount == 1) {\r\n                finish()\r\n            } else {\r\n                onBackPressedDispatcher.onBackPressed()\r\n            }\r\n        } catch (e: Exception) {\r\n            //Some problem occurred please relaunch the bot\r\n            finish()\r\n        }\r\n    }\r\n}
+===================================================================
+diff --git a/app/src/main/java/com/chat360/chat360demoapp/ChatBotDemoActivity.kt b/app/src/main/java/com/chat360/chat360demoapp/ChatBotDemoActivity.kt
+--- a/app/src/main/java/com/chat360/chat360demoapp/ChatBotDemoActivity.kt	
++++ b/app/src/main/java/com/chat360/chat360demoapp/ChatBotDemoActivity.kt	
+@@ -7,7 +7,7 @@
+ import com.chat360.chatbot.common.CoreConfigs
+ 
+ class ChatBotDemoActivity : AppCompatActivity() {
+-    private val botId = "YOUR-BOT-ID"
++    private val botId = "e4e9d4f8-4bcd-46f6-a8a3-6c9126d1bb16"
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
