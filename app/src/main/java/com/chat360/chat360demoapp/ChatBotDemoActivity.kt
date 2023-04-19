@@ -43,7 +43,7 @@ class ChatBotDemoActivity : AppCompatActivity() {
     private fun loadFragment(frag: Fragment) {
 
         val transaction = supportFragmentManager.beginTransaction()
-        transaction.replace(com.chat360.chatbot.R.id.fragmentContainerView, frag)
+        transaction.replace(R.id.fragmentContainerViewChatBot, frag)
         transaction.addToBackStack(null)
         transaction.commit()
     }
