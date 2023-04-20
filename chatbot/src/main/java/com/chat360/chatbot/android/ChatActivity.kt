@@ -20,7 +20,7 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(initBinding(activityBinding))
+        setContentView(R.layout.activity_chat)
         if (!Constants.isNetworkAvailable(this)) {
             Constants.showNoInternetDialog(this)
         } else {
