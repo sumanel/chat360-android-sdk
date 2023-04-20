@@ -5,7 +5,7 @@ import androidx.fragment.app.FragmentTransaction
 import androidx.viewbinding.ViewBinding
 import android.os.Bundle
 import android.view.View
-import com.chat360.chatbot.R.*
+import com.chat360.chatbot.R
 import com.chat360.chatbot.common.Constants
 import com.chat360.chatbot.common.utils.viewBinding
 import com.chat360.chatbot.databinding.ActivityChatBinding
@@ -45,7 +45,7 @@ class ChatActivity : AppCompatActivity() {
 
     private fun loadFragment() {
         val transaction: FragmentTransaction = supportFragmentManager.beginTransaction()
-        transaction.replace(id.fragmentContainerView, ChatFragment.newInstance())
+        transaction.replace(R.id.fragmentContainerView, ChatFragment.newInstance())
         transaction.addToBackStack(null)
         transaction.commit()
     }
