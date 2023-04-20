@@ -49,12 +49,12 @@ import java.util.*
 
 
 class ChatFragment : Fragment() {
-    private val fragmentBinding by viewBinding(FragmentChatBinding::inflate)
+/*    private val fragmentBinding by viewBinding(FragmentChatBinding::inflate)
     private fun <T : ViewBinding> initBinding(binding: T): View {
         return with(binding) {
             root
         }
-    }
+    }*/
 
     private var requestedPermission: String? = null
     private var mCameraPhotoPath: String? = null
@@ -66,48 +66,53 @@ class ChatFragment : Fragment() {
     private var geoCallback: GeolocationPermissions.Callback? = null
     private var geoOrigin: String? = null
 
+    private lateinit var webView: WebView
+    private lateinit var imageViewClose: ImageView
+
     private var isMediaUploadOptionSelected = false
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
         (activity as AppCompatActivity?)?.supportActionBar?.hide()
+        val view = inflater.inflate(R.layout.fragment_chat,container,false)
         setCloseButtonColor()
         setStatusBarColor()
         if (!Constants.isNetworkAvailable(requireActivity())) {
             Constants.showNoInternetDialog(requireActivity())
         } else {
+            webView = view.findViewById(R.id.webView)
+            imageViewClose = view.findViewById(R.id.imageViewClose)
             setupViews()
 
         }
-        return initBinding(fragmentBinding)
+        return view
     }
 
     //Internet Dialog
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(initBinding(fragmentBinding), savedInstanceState)
+        super.onViewCreated(view, savedInstanceState)
         Constants.UNREAD_MESSAGE_COUNT = 0
         showCloseButton()
         setStatusBarColorFromHex()
         setCloseButtonColorFromHex()
-        fragmentBinding.webView.clearCache(true)
+        webView.clearCache(true)
     }
 
     private fun showCloseButton() {
         val showCloseButton = ConfigService.getInstance()?.getConfig()?.showCloseButton
         if (showCloseButton!!) {
-            fragmentBinding.imageViewClose.visibility = View.VISIBLE
+            imageViewClose.visibility = View.VISIBLE
             setCloseButtonColor()
         } else {
-            fragmentBinding.imageViewClose.visibility = View.GONE
+            imageViewClose.visibility = View.GONE
         }
     }
 
     private fun setupViews() {
         val fileName = "chat360_cache.mht"
 
-        fragmentBinding.apply {
             //Initializing WebView Client
             webView.webViewClient = object : WebViewClient() {
 
@@ -160,12 +165,12 @@ class ChatFragment : Fragment() {
                 requireActivity().onBackPressed()
             }
 
-        }
+
     }
 
     //Adding callbacks and the permission function for web-view requirements
     private fun webChromeClient() {
-        fragmentBinding.webView.webChromeClient = object : WebChromeClient() {
+        webView.webChromeClient = object : WebChromeClient() {
             private var mCustomView: View? = null
             private var mCustomViewCallback: CustomViewCallback? = null
             private var mOriginalOrientation = 0
@@ -459,7 +464,7 @@ class ChatFragment : Fragment() {
             val color = ConfigService.getInstance()?.getConfig()?.closeButtonColor
             if (color != -1 && context != null) {
                 DrawableCompat.setTint(
-                    DrawableCompat.wrap(fragmentBinding.imageViewClose.drawable),
+                    DrawableCompat.wrap(imageViewClose.drawable),
                     ContextCompat.getColor(requireContext(), color!!)
                 )
             }
@@ -475,7 +480,7 @@ class ChatFragment : Fragment() {
             if (color != null && color.isNotEmpty()) {
                 DrawableCompat.setTint(
                     DrawableCompat.wrap(
-                        fragmentBinding.imageViewClose.drawable
+                        imageViewClose.drawable
                     ), Color.parseColor(color)
                 )
             }
