@@ -4,8 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
+import android.content.ContentValues
 import android.content.Context
-import android.content.DialogInterface
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -34,19 +34,15 @@ import androidx.core.content.PermissionChecker
 import androidx.core.content.PermissionChecker.checkSelfPermission
 import androidx.core.graphics.drawable.DrawableCompat
 import androidx.fragment.app.Fragment
-import androidx.viewbinding.ViewBinding
 import com.chat360.chatbot.R
 import com.chat360.chatbot.common.Chat360SnackBarHelper
 import com.chat360.chatbot.common.Constants
 import com.chat360.chatbot.common.models.ConfigService
-import com.chat360.chatbot.common.utils.viewBinding
-import com.chat360.chatbot.databinding.FragmentChatBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
-
 
 class ChatFragment : Fragment() {
 /*    private val fragmentBinding by viewBinding(FragmentChatBinding::inflate)
@@ -65,9 +61,9 @@ class ChatFragment : Fragment() {
     private var mFilePathCallback: ValueCallback<Array<Uri?>>? = null
     private var geoCallback: GeolocationPermissions.Callback? = null
     private var geoOrigin: String? = null
-
     private lateinit var webView: WebView
     private lateinit var imageViewClose: ImageView
+    var url = ""
 
     private var isMediaUploadOptionSelected = false
 
@@ -76,15 +72,14 @@ class ChatFragment : Fragment() {
     ): View {
         (activity as AppCompatActivity?)?.supportActionBar?.hide()
         val view = inflater.inflate(R.layout.fragment_chat,container,false)
+        webView = view.findViewById(R.id.webView)
+        imageViewClose = view.findViewById(R.id.imageViewClose)
         setCloseButtonColor()
         setStatusBarColor()
         if (!Constants.isNetworkAvailable(requireActivity())) {
             Constants.showNoInternetDialog(requireActivity())
         } else {
-            webView = view.findViewById(R.id.webView)
-            imageViewClose = view.findViewById(R.id.imageViewClose)
             setupViews()
-
         }
         return view
     }
@@ -112,7 +107,13 @@ class ChatFragment : Fragment() {
 
     private fun setupViews() {
         val fileName = "chat360_cache.mht"
-
+        val botId = ConfigService.getInstance()?.getConfig()?.botId
+        val chat360BaseUrl = requireContext().resources.getString(R.string.chat360_base_url)
+        val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
+        val appId = requireContext().applicationContext.packageName
+        val devicemodel = Build.MODEL
+        url =
+            "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&device_name=$devicemodel"
             //Initializing WebView Client
             webView.webViewClient = object : WebViewClient() {
 
@@ -139,6 +140,18 @@ class ChatFragment : Fragment() {
                 setSupportMultipleWindows(true)
                 javaScriptCanOpenWindowsAutomatically = true
                 allowFileAccess = true
+                loadsImagesAutomatically = true
+                val wbfl: WebBackForwardList = webView.copyBackForwardList()
+                val currentSize = wbfl.size
+                println("current size$currentSize")
+                for (i in 0 until currentSize) {
+                    val item = wbfl.getItemAtIndex(i)
+                    url = item.url
+                    Log.d(
+                        ContentValues.TAG,
+                        "The URL at index: " + Integer.toString(i) + "is" + url
+                    )
+                }
                 mediaPlaybackRequiresUserGesture = false
                 javaScriptEnabled = true
                 databaseEnabled = true
@@ -148,18 +161,24 @@ class ChatFragment : Fragment() {
             }
 
             webChromeClient()
+
+        // this.wv1.getSettings().setJavaScriptEnabled(true);
+
+        /* settings.javaScriptEnabled = true;
+        settings.useWideViewPort = true;*/
+        webView.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
             val file = File(requireActivity().cacheDir, fileName)
             if (file.exists()) {
                 webView.loadUrl("file://" + requireActivity().cacheDir.absolutePath + "/" + fileName)
             } else {
                 //Starting the WebView by loading the URL with bot ID and store_session is to store Cache
-                val botId = ConfigService.getInstance()?.getConfig()?.botId
-                val chat360BaseUrl = requireContext().resources.getString(R.string.chat360_base_url)
-                val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
-                val appId = requireContext().applicationContext.packageName
-                val url = "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId"
+
                 webView.loadUrl("$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId")
                 Log.d("chatbot_url", url)
+                webView.clearView()
+                webView.measure(100, 100)
+                webView.settings.useWideViewPort = true
+                webView.settings.loadWithOverviewMode = true
             }
             imageViewClose.setOnClickListener {
                 requireActivity().onBackPressed()
@@ -330,7 +349,7 @@ class ChatFragment : Fragment() {
                     )
                 )
             }
-            .setNegativeButton("Cancel", ){_,_->
+            .setNegativeButton("Cancel"){_,_->
                 Chat360SnackBarHelper().showMessageInSnackBar(
                     requireView(), "No location permission"
                 )

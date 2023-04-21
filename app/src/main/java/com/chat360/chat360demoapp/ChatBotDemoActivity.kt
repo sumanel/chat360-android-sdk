@@ -7,7 +7,7 @@ import com.chat360.chatbot.common.Chat360
 import com.chat360.chatbot.common.CoreConfigs
 
 class ChatBotDemoActivity : AppCompatActivity() {
-    private val botId = "YOUR-BOT-ID"
+    private val botId = "4e7779d6-e3e9-4cd6-9cfd-d9bc7ecdfa28"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
