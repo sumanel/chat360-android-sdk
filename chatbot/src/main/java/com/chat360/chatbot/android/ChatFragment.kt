@@ -45,12 +45,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 class ChatFragment : Fragment() {
-/*    private val fragmentBinding by viewBinding(FragmentChatBinding::inflate)
-    private fun <T : ViewBinding> initBinding(binding: T): View {
-        return with(binding) {
-            root
-        }
-    }*/
+
 
     private var requestedPermission: String? = null
     private var mCameraPhotoPath: String? = null
@@ -66,12 +61,26 @@ class ChatFragment : Fragment() {
     var url = ""
 
     private var isMediaUploadOptionSelected = false
+    var myBooleanState: Boolean? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
+
+        Log.d("chat-bot_oncreateView","=================")
         (activity as AppCompatActivity?)?.supportActionBar?.hide()
-        val view = inflater.inflate(R.layout.fragment_chat,container,false)
+        val view = inflater.inflate(R.layout.fragment_chat, container, false)
+
+        return view
+    }
+
+    //Internet Dialog
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        Log.d("chat-bot_view_created","=================")
+        Constants.UNREAD_MESSAGE_COUNT = 0
         webView = view.findViewById(R.id.webView)
         imageViewClose = view.findViewById(R.id.imageViewClose)
         setCloseButtonColor()
@@ -81,22 +90,26 @@ class ChatFragment : Fragment() {
         } else {
             setupViews()
         }
-        return view
-    }
-
-    //Internet Dialog
-
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        Constants.UNREAD_MESSAGE_COUNT = 0
         showCloseButton()
         setStatusBarColorFromHex()
         setCloseButtonColorFromHex()
         webView.clearCache(true)
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        Log.d("chat-bot_created","=================")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d("chat-bot_destroyed","=================")
+    }
+
     private fun showCloseButton() {
         val showCloseButton = ConfigService.getInstance()?.getConfig()?.showCloseButton
+
+        Log.d("chat-bot configservice3","==============")
         if (showCloseButton!!) {
             imageViewClose.visibility = View.VISIBLE
             setCloseButtonColor()
@@ -104,92 +117,57 @@ class ChatFragment : Fragment() {
             imageViewClose.visibility = View.GONE
         }
     }
-
     private fun setupViews() {
-        val fileName = "chat360_cache.mht"
         val botId = ConfigService.getInstance()?.getConfig()?.botId
+
+        Log.d("chat-bot configservice1","==============")
         val chat360BaseUrl = requireContext().resources.getString(R.string.chat360_base_url)
         val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
+
+        Log.d("chat-bot configservice2","==============")
         val appId = requireContext().applicationContext.packageName
         val devicemodel = Build.MODEL
-        url =
+        val url =
             "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&device_name=$devicemodel"
-            //Initializing WebView Client
-            webView.webViewClient = object : WebViewClient() {
 
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    webView.saveWebArchive(fileName)
-                }
+        webView.settings.apply {
+            domStorageEnabled = true
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = true
+            allowFileAccess = true
+            loadsImagesAutomatically = true
+            mediaPlaybackRequiresUserGesture = false
+            javaScriptEnabled = true
+            databaseEnabled = true
+            setGeolocationEnabled(true)
+            setSupportZoom(true)
+            //cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+        }
 
-                override fun shouldInterceptRequest(
-                    view: WebView?, request: WebResourceRequest?
-                ): WebResourceResponse? {
-                    if (request?.url.toString().contains(fileName)) {
-                        val file = File(requireActivity().cacheDir, fileName)
-                        if (file.exists()) {
-                            return WebResourceResponse("text/html", "UTF-8", file.inputStream())
-                        }
-                    }
-                    return super.shouldInterceptRequest(view, request)
-                }
-            }
+        webChromeClient()
 
-            webView.settings.apply {
-                domStorageEnabled = true
-                setSupportMultipleWindows(true)
-                javaScriptCanOpenWindowsAutomatically = true
-                allowFileAccess = true
-                loadsImagesAutomatically = true
-                val wbfl: WebBackForwardList = webView.copyBackForwardList()
-                val currentSize = wbfl.size
-                println("current size$currentSize")
-                for (i in 0 until currentSize) {
-                    val item = wbfl.getItemAtIndex(i)
-                    url = item.url
-                    Log.d(
-                        ContentValues.TAG,
-                        "The URL at index: " + Integer.toString(i) + "is" + url
-                    )
-                }
-                mediaPlaybackRequiresUserGesture = false
-                javaScriptEnabled = true
-                databaseEnabled = true
-                setGeolocationEnabled(true)
-                setSupportZoom(true)
-                cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
-            }
-
-            webChromeClient()
-
-        // this.wv1.getSettings().setJavaScriptEnabled(true);
-
-        /* settings.javaScriptEnabled = true;
-        settings.useWideViewPort = true;*/
         webView.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
-            val file = File(requireActivity().cacheDir, fileName)
-            if (file.exists()) {
-                webView.loadUrl("file://" + requireActivity().cacheDir.absolutePath + "/" + fileName)
-            } else {
-                //Starting the WebView by loading the URL with bot ID and store_session is to store Cache
 
-                webView.loadUrl("$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId")
-                Log.d("chatbot_url", url)
-                webView.clearView()
-                webView.measure(100, 100)
-                webView.settings.useWideViewPort = true
-                webView.settings.loadWithOverviewMode = true
-            }
-            imageViewClose.setOnClickListener {
-                requireActivity().onBackPressed()
-            }
+        Log.d("chat-bot_url", url)
+        webView.clearView()
+        webView.measure(100, 100)
+        webView.settings.useWideViewPort = true
+        webView.settings.loadWithOverviewMode = true
 
+        webView.loadUrl(url)
+        imageViewClose.setOnClickListener {
 
+            Log.d("chat-bot_imageViewClose", "Close")
+            requireActivity().onBackPressed()
+        }
     }
+
 
     //Adding callbacks and the permission function for web-view requirements
     private fun webChromeClient() {
+        Log.d("chat-bot checking webView chromeclient","==============")
         webView.webChromeClient = object : WebChromeClient() {
+
             private var mCustomView: View? = null
             private var mCustomViewCallback: CustomViewCallback? = null
             private var mOriginalOrientation = 0
@@ -205,6 +183,8 @@ class ChatFragment : Fragment() {
                 if (progress == 100) {
                     mProgress?.dismiss()
                     mProgress = null
+
+                    Log.d("chat-bot_progress", "========================================")
                 }
             }
 
@@ -212,7 +192,6 @@ class ChatFragment : Fragment() {
                 return true
             }
 
-            private var isMultimediaConsole = true
             private var isMediaUploadOptionSelected = false
 
             // For Android 5.0
@@ -238,6 +217,8 @@ class ChatFragment : Fragment() {
             }
 
             override fun onHideCustomView() {
+
+                Log.d("chat-bot checking webView is causing customview hide","==============")
                 if (activity != null) {
                     (activity!!.window.decorView as FrameLayout).removeView(mCustomView)
                     if (activity != null) {
@@ -253,6 +234,8 @@ class ChatFragment : Fragment() {
             override fun onShowCustomView(
                 paramView: View, paramCustomViewCallback: CustomViewCallback
             ) {
+
+                Log.d("chat-bot checking webView is customviewshow","==============")
                 if (mCustomView != null) {
                     onHideCustomView()
                     return
@@ -275,6 +258,7 @@ class ChatFragment : Fragment() {
             override fun onCreateWindow(
                 view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
             ): Boolean {
+                Log.d("chat-bot checking webView is causing it or not1","==============")
                 val newWebView = context?.let { WebView(it) }
                 val transport = resultMsg.obj as WebView.WebViewTransport
                 transport.webView = newWebView
@@ -285,6 +269,7 @@ class ChatFragment : Fragment() {
                             val browserIntent = Intent(Intent.ACTION_VIEW)
                             browserIntent.data = Uri.parse(url)
                             startActivity(browserIntent)
+                            Log.d("chat-bot checking webView is causing it or not","==============")
                             return true
                         }
                     }
@@ -323,7 +308,7 @@ class ChatFragment : Fragment() {
                     return
                 }
                 if (checkForLocationPermission(requireContext())) {
-                    if(!isLocationEnabled(requireContext())){
+                    if (!isLocationEnabled(requireContext())) {
                         showGPSEnableDialog(requireContext())
                     }
 
@@ -349,7 +334,7 @@ class ChatFragment : Fragment() {
                     )
                 )
             }
-            .setNegativeButton("Cancel"){_,_->
+            .setNegativeButton("Cancel") { _, _ ->
                 Chat360SnackBarHelper().showMessageInSnackBar(
                     requireView(), "No location permission"
                 )
@@ -377,7 +362,7 @@ class ChatFragment : Fragment() {
         return false
     }
 
-    private fun hasLocationPermissionInManifest(context: Context): Boolean  {
+    private fun hasLocationPermissionInManifest(context: Context): Boolean {
         var packageInfo: PackageInfo? = null
         try {
             packageInfo = context.packageManager.getPackageInfo(
@@ -396,16 +381,18 @@ class ChatFragment : Fragment() {
         }
         return false
     }
+
     fun hasPermissions(context: Context, vararg permissions: String): Boolean = permissions.all {
         ActivityCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     }
+
     private fun checkForLocationPermission(context: Context): Boolean {
         val PERMISSION_ALL = 1
         val PERMISSIONS = arrayOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
         )
-        return if (hasPermissions(context,*PERMISSIONS)
+        return if (hasPermissions(context, *PERMISSIONS)
         ) {
             true
         } else {
@@ -417,6 +404,7 @@ class ChatFragment : Fragment() {
             false
         }
     }
+
     fun isLocationEnabled(context: Context): Boolean {
         var locationMode = 0
         val locationProviders: String
@@ -441,6 +429,8 @@ class ChatFragment : Fragment() {
     private fun setStatusBarColor() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.statusBarColor
+
+            Log.d("chat-bot configservice3","==============")
             if (color != -1) {
                 val window: Window = requireActivity().window
                 // clear FLAG_TRANSLUCENT_STATUS flag:
@@ -456,16 +446,12 @@ class ChatFragment : Fragment() {
             Log.e("StatusBarException", e.toString())
         }
     }
-/*
-    override fun onResume() {
-        super.onResume()
-        fragmentBinding.webView.reload()
-    }*/
-
     //Setting the statusBarColor froom hexadecmal Code
     private fun setStatusBarColorFromHex() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.statusBarColorFromHex
+
+            Log.d("chat-bot configservice4","==============")
             if (color != null && color.isNotEmpty() && activity != null) {
                 val window: Window = requireActivity().window
                 window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
@@ -481,6 +467,8 @@ class ChatFragment : Fragment() {
     private fun setCloseButtonColor() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.closeButtonColor
+
+            Log.d("chat-bot configservice5","==============")
             if (color != -1 && context != null) {
                 DrawableCompat.setTint(
                     DrawableCompat.wrap(imageViewClose.drawable),
@@ -869,26 +857,6 @@ class ChatFragment : Fragment() {
             mFilePathCallback = null
         }
     }
-/*
 
-    //For Caches
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        fragmentBinding.webView.saveState(outState)
-    }
 
-    //For Caches
-    override fun onViewStateRestored(savedInstanceState: Bundle?) {
-        super.onViewStateRestored(savedInstanceState)
-        if (savedInstanceState != null) {
-            fragmentBinding.webView.restoreState(savedInstanceState)
-        }
-    }
-*/
-
-    companion object {
-        fun newInstance(): ChatFragment {
-            return ChatFragment()
-        }
-    }
 }

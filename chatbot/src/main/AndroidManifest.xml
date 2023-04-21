@@ -20,9 +20,9 @@
         <activity
             android:name=".android.ChatActivity"
             android:exported="true"
-            android:configChanges="orientation|screenSize"
             android:fitsSystemWindows="true"
             android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Chat360AppTheme.NoActionBar">
             <meta-data

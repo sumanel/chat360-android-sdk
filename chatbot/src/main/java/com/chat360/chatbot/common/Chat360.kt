@@ -2,6 +2,7 @@ package com.chat360.chatbot.common
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.fragment.app.Fragment
 import com.chat360.chatbot.android.ChatActivity
 import com.chat360.chatbot.android.ChatFragment
@@ -13,6 +14,7 @@ class Chat360 {
     private lateinit var botPluginInstance: Chat360
 
     fun getInstance(): Chat360 {
+        Log.d("chat-bot_getInstance_chat360","=================")
         synchronized(Chat360::class.java) {
             botPluginInstance = Chat360()
         }
@@ -20,12 +22,16 @@ class Chat360 {
     }
 
     fun startBot(context: Context) {
+
+        Log.d("chat-bot_startBot","=================")
         try {
             if (validate(context)) {
                 ConfigService.getInstance()!!.setConfigData(coreConfig!!)
                 val intent = Intent(context, ChatActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 context.startActivity(intent)
+
+                Log.d("chat-bot_startBot2","=================")
             }
         } catch (e: java.lang.Exception) {
             throw java.lang.Exception(
@@ -39,10 +45,12 @@ class Chat360 {
 
     @Throws(Exception::class)
     fun getChatBotView(context: Context): Fragment? {
+
+        Log.d("chat-bot_getChatbotView","=================")
         try {
             if (validate(context)) {
                 ConfigService.getInstance()?.setConfigData(coreConfig!!)
-                return ChatFragment.newInstance()
+                return ChatFragment()
             }
         } catch (e: Exception) {
             throw Exception(

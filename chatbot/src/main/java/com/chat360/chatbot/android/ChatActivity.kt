@@ -4,6 +4,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.FragmentTransaction
 import androidx.viewbinding.ViewBinding
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import com.chat360.chatbot.R
 import com.chat360.chatbot.common.Constants
@@ -11,21 +12,18 @@ import com.chat360.chatbot.common.utils.viewBinding
 import com.chat360.chatbot.databinding.ActivityChatBinding
 
 class ChatActivity : AppCompatActivity() {
-    private val activityBinding by viewBinding(ActivityChatBinding::inflate)
-    private fun <T : ViewBinding> initBinding(binding: T): View {
-        return with(binding) {
-            root
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_chat)
+
+        Log.d("chat-bot_activity_chat","=================")
         if (!Constants.isNetworkAvailable(this)) {
             Constants.showNoInternetDialog(this)
         } else {
             loadFragment()
         }
+
+        Log.d("chat-bot_activity_chat2","=================")
 
         // backPressed()
     }
@@ -44,8 +42,10 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun loadFragment() {
+
+        Log.d("chat-bot_loadfragment","=================")
         val transaction: FragmentTransaction = supportFragmentManager.beginTransaction()
-        transaction.replace(com.chat360.chatbot.R.id.fragmentContainerView, ChatFragment.newInstance())
+        transaction.replace(R.id.fragmentContainerView, ChatFragment())
         transaction.addToBackStack(null)
         transaction.commit()
     }

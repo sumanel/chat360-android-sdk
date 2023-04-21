@@ -3,6 +3,7 @@ package com.chat360.chat360demoapp
 import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.util.Log
 import com.chat360.chatbot.common.Chat360
 import com.chat360.chatbot.common.CoreConfigs
 import com.google.android.material.button.MaterialButton
@@ -37,9 +38,13 @@ class MainActivity : AppCompatActivity() {
         chat360.coreConfig!!.closeButtonColorFromHex = "#ffffff"
 
         findViewById<MaterialButton>(R.id.buttonOpenActivity).setOnClickListener {
+
+            Log.d("chat-bot_main","=================")
             chat360.startBot(this)
         }
         findViewById<FloatingActionButton>(R.id.floatingActionButton).setOnClickListener {
+
+            Log.d("chat-bot_main","=================")
             chat360.startBot(this)
         }
         findViewById<MaterialButton>(R.id.buttonOpenActivityFragment).setOnClickListener {

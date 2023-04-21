@@ -18,8 +18,8 @@ android {
     defaultConfig {
         minSdk 23
         targetSdk 33
-        versionCode 9
-        versionName "1.0.9"
+        versionCode 10
+        versionName "1.0.10"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
@@ -56,7 +56,7 @@ afterEvaluate {
                 from components.release
                 groupId = 'com.github.chat360Mobile'
                 artifactId = 'chat360_android_sdk'
-                version = '1.0.9'
+                version = '1.0.10'
             }
         }
     }

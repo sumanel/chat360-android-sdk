@@ -1,6 +1,7 @@
 package com.chat360.chatbot.common.models
 
 import android.app.Application
+import android.util.Log
 import com.chat360.chatbot.common.CoreConfigs
 
 class ConfigService {
@@ -14,6 +15,7 @@ class ConfigService {
     companion object {
         private var configInstance: ConfigService? = null
         public fun getInstance(): ConfigService? {
+            Log.d("chat-bot_getInstance","=================")
             if (configInstance == null) {
                 synchronized(ConfigService::class.java) {
                     if (configInstance == null) {
