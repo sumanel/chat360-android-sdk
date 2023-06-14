@@ -18,13 +18,15 @@ android {
     defaultConfig {
         minSdk 23
         targetSdk 33
-        versionCode 10
-        versionName "1.0.10"
+        versionCode 11
+        versionName "1.0.11"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
 
         resValue "string", "chat360_base_url", "\"https://app.chat360.io/page/?h=\""
+
+       // resValue "string", "chat360_base_url", "\"https://app.gaadibaazar.in/page/?h=\""
 
     }
 
@@ -56,7 +58,7 @@ afterEvaluate {
                 from components.release
                 groupId = 'com.github.chat360Mobile'
                 artifactId = 'chat360_android_sdk'
-                version = '1.0.10'
+                version = '1.0.11'
             }
         }
     }
@@ -65,7 +67,7 @@ dependencies {
 
     implementation 'androidx.core:core-ktx:1.9.0'
     implementation 'androidx.appcompat:appcompat:1.5.1'
-    implementation 'com.google.android.material:material:1.6.0'
+    implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

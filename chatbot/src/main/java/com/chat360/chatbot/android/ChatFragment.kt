@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
@@ -484,7 +483,7 @@ class ChatFragment : Fragment() {
     private fun setCloseButtonColorFromHex() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.closeButtonColorFromHex
-            if (color != null && color.isNotEmpty()) {
+            if (!color.isNullOrEmpty()) {
                 DrawableCompat.setTint(
                     DrawableCompat.wrap(
                         imageViewClose.drawable
