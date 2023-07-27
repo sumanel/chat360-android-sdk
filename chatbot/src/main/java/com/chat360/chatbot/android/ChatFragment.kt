@@ -157,7 +157,7 @@ class ChatFragment : Fragment() {
         imageViewClose.setOnClickListener {
 
             Log.d("chat-bot_imageViewClose", "Close")
-            requireActivity().onBackPressed()
+            webView.loadUrl(url)
         }
     }
 
