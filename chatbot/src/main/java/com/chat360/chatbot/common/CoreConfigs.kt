@@ -6,7 +6,7 @@ import androidx.annotation.NonNull
 import com.chat360.chatbot.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 
-public class CoreConfigs constructor(@NonNull botId: String, applicationContext: Context) {
+public class CoreConfigs constructor(@NonNull botId: String, applicationContext: Context, flutter: Boolean) {
     var botId: String? = botId
    // var ymAuthenticationToken = ""
     @Deprecated("not currently in use") var deviceToken = ""
@@ -18,7 +18,7 @@ public class CoreConfigs constructor(@NonNull botId: String, applicationContext:
     var version = 1
     var notificationSmallIcon = -1
     var notificationLargeIcon = -1
-    var flutter = true
+    var flutter: Boolean = flutter
 /*
     init {
         this.botId = botId
