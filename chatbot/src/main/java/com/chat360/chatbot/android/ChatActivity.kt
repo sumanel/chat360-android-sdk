@@ -31,8 +31,12 @@ class ChatActivity : AppCompatActivity() {
     override fun onBackPressed() {
         try {
             if (supportFragmentManager.backStackEntryCount == 1) {
+
+                Log.d("chat-bot_loadfragment finish called","=================")
                 finish()
             } else {
+
+                Log.d("chat-bot_loadfragment on back press called","=================")
                 onBackPressedDispatcher.onBackPressed()
             }
         } catch (e: Exception) {

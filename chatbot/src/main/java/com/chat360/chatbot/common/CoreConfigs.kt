@@ -18,6 +18,7 @@ public class CoreConfigs constructor(@NonNull botId: String, applicationContext:
     var version = 1
     var notificationSmallIcon = -1
     var notificationLargeIcon = -1
+    var flutter = true
 /*
     init {
         this.botId = botId
