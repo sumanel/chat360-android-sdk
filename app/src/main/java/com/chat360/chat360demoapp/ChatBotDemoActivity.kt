@@ -8,6 +8,7 @@ import com.chat360.chatbot.common.CoreConfigs
 
 class ChatBotDemoActivity : AppCompatActivity() {
     private val botId = "Your Bot-Id here"
+    private val flutter = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -18,7 +19,7 @@ class ChatBotDemoActivity : AppCompatActivity() {
     private fun initialiseBot(): Chat360 {
         //Get Chat360 instance
         val chat360 = Chat360().getInstance()
-        chat360.coreConfig = CoreConfigs(botId, applicationContext)
+        chat360.coreConfig = CoreConfigs(botId, applicationContext,flutter)
 
         // To Change the color of status bar, by default it will pick app theme
         chat360.coreConfig!!.statusBarColor = R.color.purple_500

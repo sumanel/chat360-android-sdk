@@ -9,7 +9,7 @@ class ConfigService {
     private var config: CoreConfigs
 
     init {
-        config = CoreConfigs("", Application())
+        config = CoreConfigs("", Application(),false)
     }
 
     companion object {
