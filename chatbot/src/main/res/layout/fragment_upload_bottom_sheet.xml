@@ -23,9 +23,39 @@
         android:layout_marginTop="30dp"
         android:paddingVertical="10dp"
         android:src="@drawable/ic_outline_photo_camera_24"
-        app:layout_constraintEnd_toStartOf="@id/imageViewfile"
+        app:layout_constraintEnd_toStartOf="@id/imageViewVideo"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/textViewCamera"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="Camera"
+        app:layout_constraintEnd_toEndOf="@id/imageViewCamera"
+        app:layout_constraintStart_toStartOf="@id/imageViewCamera"
+        app:layout_constraintTop_toBottomOf="@id/imageViewCamera" />
+
+    <ImageView
+        android:id="@+id/imageViewVideo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:paddingVertical="10dp"
+        android:src="@drawable/ic_baseline_videocam_24"
+        app:layout_constraintEnd_toStartOf="@id/imageViewfile"
+        app:layout_constraintStart_toEndOf="@id/imageViewCamera"
+        app:layout_constraintTop_toTopOf="@+id/imageViewCamera" />
+
+    <TextView
+        android:id="@+id/textViewVideo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="Video"
+        app:layout_constraintEnd_toEndOf="@id/imageViewVideo"
+        app:layout_constraintStart_toStartOf="@id/imageViewVideo"
+        app:layout_constraintTop_toBottomOf="@id/imageViewVideo" />
 
     <ImageView
         android:id="@+id/imageViewfile"
@@ -34,7 +64,17 @@
         android:paddingVertical="10dp"
         android:src="@drawable/ic_outline_insert_file_24"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@id/imageViewCamera"
-        app:layout_constraintTop_toTopOf="@id/imageViewCamera" />
+        app:layout_constraintStart_toEndOf="@id/imageViewVideo"
+        app:layout_constraintTop_toTopOf="@id/imageViewVideo" />
+
+    <TextView
+        android:id="@+id/textViewFile"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="File"
+        app:layout_constraintEnd_toEndOf="@id/imageViewfile"
+        app:layout_constraintStart_toStartOf="@id/imageViewfile"
+        app:layout_constraintTop_toBottomOf="@id/imageViewfile" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

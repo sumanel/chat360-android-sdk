@@ -1,5 +1,6 @@
 package com.chat360.chat360demoapp
 
+
 import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
@@ -9,16 +10,19 @@ import com.chat360.chatbot.common.CoreConfigs
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 
+
 class MainActivity : AppCompatActivity() {
-    private val botId = "Your Bot-Id here"
+    private val botId = "Your BotId Here"
     private val flutter = false
+    private val meta = mapOf(
+        "Key" to "Value",
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
         val chat360 = Chat360().getInstance()
-        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter)
+        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta)
 
         // To Change the color of status bar, by default it will pick app theme
         chat360.coreConfig!!.statusBarColor = R.color.purple_500

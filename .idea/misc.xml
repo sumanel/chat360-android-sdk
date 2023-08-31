@@ -6,6 +6,7 @@
         <entry key="chatbot/src/main/res/drawable/ic_round_close_24.xml" value="0.1945" />
         <entry key="chatbot/src/main/res/layout/activity_chat.xml" value="0.15572916666666667" />
         <entry key="chatbot/src/main/res/layout/fragment_chat.xml" value="0.22766926439502577" />
+        <entry key="chatbot/src/main/res/layout/fragment_upload_bottom_sheet.xml" value="0.335589599609375" />
       </map>
     </option>
   </component>
@@ -18,7 +19,7 @@
   <component name="VisualizationToolProject">
     <option name="state">
       <ProjectState>
-        <option name="scale" value="0.064" />
+        <option name="scale" value="0.1" />
       </ProjectState>
     </option>
   </component>

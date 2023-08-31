@@ -41,6 +41,8 @@ import com.chat360.chatbot.common.models.ConfigService
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import java.io.File
 import java.io.IOException
+import java.net.URLEncoder
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -144,6 +146,33 @@ class ChatFragment : Fragment() {
     private fun setupViews() {
         val botId = ConfigService.getInstance()?.getConfig()?.botId
         val flutterBool = ConfigService.getInstance()?.getConfig()?.flutter
+        val meta = ConfigService.getInstance()?.getConfig()?.meta
+        val inputString= meta.toString()
+        val jsonObject = JSONObject()
+
+        try {
+            // Remove the curly braces at the beginning and end of the string
+            val jsonContent = inputString.substring(1, inputString.length - 1)
+
+            // Split the string into key-value pairs
+            val keyValuePairs = jsonContent.split(", ")
+
+            // Create a new JSONObject
+
+            // Parse and add key-value pairs to the JSONObject
+            for (pair in keyValuePairs) {
+                val (key, value) = pair.split("=")
+                jsonObject.put(key, value)
+            }
+
+            // Now you have your JSONObject
+            println(jsonObject.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+
+        Log.d("chat-bot configservice1", "=============="+meta)
 
         Log.d("chat-bot configservice1", "==============")
         val chat360BaseUrl = requireContext().resources.getString(R.string.chat360_base_url)
@@ -155,10 +184,12 @@ class ChatFragment : Fragment() {
         val devicemodel = Build.MODEL
         val url = if (flutterBool == true) {
             Log.d("flutterTest","working======")
-            "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&device_name=$devicemodel&flutter_sdk_type=android&mobile=1"
+            """$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&flutter_sdk_type=android&mobile=1&device_name=$devicemodel"""
         } else {
-            "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&device_name=$devicemodel&&mobile=1"
+            """$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"""
         }
+        Log.d("chat-bot configservice1", "=============="+url)
+
         webView.settings.apply {
             domStorageEnabled = true
             setSupportMultipleWindows(true)
@@ -755,6 +786,7 @@ class ChatFragment : Fragment() {
             val bottomSheetDialog = BottomSheetDialog(requireContext())
             bottomSheetDialog.setContentView(R.layout.fragment_upload_bottom_sheet)
             val cameraLayout = bottomSheetDialog.findViewById<ImageView>(R.id.imageViewCamera)
+            val videoLayout = bottomSheetDialog.findViewById<ImageView>(R.id.imageViewVideo)
             val fileLayout = bottomSheetDialog.findViewById<ImageView>(R.id.imageViewfile)
             cameraLayout?.setOnClickListener {
 
@@ -762,6 +794,12 @@ class ChatFragment : Fragment() {
                 checkAndLaunchCamera()
                 bottomSheetDialog.dismiss()
 
+            }
+            videoLayout?.setOnClickListener{
+
+                isMediaUploadOptionSelected = true
+                checkAndLaunchVideoCamera()
+                bottomSheetDialog.dismiss()
             }
             fileLayout?.setOnClickListener {
                 isMediaUploadOptionSelected = true
