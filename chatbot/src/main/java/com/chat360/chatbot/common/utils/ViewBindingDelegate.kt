@@ -8,9 +8,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
 import androidx.viewbinding.ViewBinding
-import javax.inject.Provider
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty
+import javax.inject.Provider
 
 fun <T : ViewBinding> Fragment.viewBinding(viewBindingFactory: (LayoutInflater) -> T) =
     FragmentScopedInstanceDelegate(this, Provider { viewBindingFactory(layoutInflater) })

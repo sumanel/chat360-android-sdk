@@ -2,14 +2,10 @@ package com.chat360.chatbot.android
 
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.FragmentTransaction
-import androidx.viewbinding.ViewBinding
 import android.os.Bundle
 import android.util.Log
-import android.view.View
 import com.chat360.chatbot.R
 import com.chat360.chatbot.common.Constants
-import com.chat360.chatbot.common.utils.viewBinding
-import com.chat360.chatbot.databinding.ActivityChatBinding
 
 class ChatActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,6 +25,7 @@ class ChatActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
+        super.onBackPressed()
         try {
             if (supportFragmentManager.backStackEntryCount == 1) {
 

@@ -57,6 +57,7 @@ class ChatBotDemoActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
+        super.onBackPressed()
         try {
             if (supportFragmentManager.backStackEntryCount == 1) {
                 finish()
