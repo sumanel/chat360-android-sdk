@@ -67,6 +67,8 @@ class ChatFragment : Fragment() {
 
     private var isMediaUploadOptionSelected = false
     var myBooleanState: Boolean? = null
+    var url = ""
+
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -179,7 +181,6 @@ class ChatFragment : Fragment() {
         }
         val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
 
-        val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
         Log.d("chat-bot configservice2", "==============")
         val appId = requireContext().applicationContext.packageName
         val devicemodel = Build.MODEL

@@ -21,6 +21,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AndroidDemoApp"
+rootProject.name = "Chat360ExampleApp"
 include(":app")
 include(":chatbot")

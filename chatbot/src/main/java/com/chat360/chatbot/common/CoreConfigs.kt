@@ -11,7 +11,6 @@ public class CoreConfigs(botId: String, applicationContext: Context, flutter: Bo
     var statusBarColor = -1
     var isDebug = isDebug
     var statusBarColorFromHex = ""
-    var isDebug = isDebug
     var showCloseButton = true
     var closeButtonColor = -1
     var closeButtonColorFromHex = ""
