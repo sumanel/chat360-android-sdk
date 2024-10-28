@@ -22,7 +22,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         val chat360 = Chat360().getInstance()
-        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta)
+        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false)
 
         // To Change the color of status bar, by default it will pick app theme
         chat360.coreConfig!!.statusBarColor = R.color.purple_500

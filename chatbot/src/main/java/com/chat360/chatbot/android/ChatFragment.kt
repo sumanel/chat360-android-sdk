@@ -41,7 +41,6 @@ import com.chat360.chatbot.common.models.ConfigService
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import java.io.File
 import java.io.IOException
-import java.net.URLEncoder
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
@@ -65,8 +64,6 @@ class ChatFragment : Fragment() {
     private lateinit var topLayout: FrameLayout
 
     private var isPreviewShown: Boolean = false
-    var url = ""
-
 
     private var isMediaUploadOptionSelected = false
     var myBooleanState: Boolean? = null
@@ -175,8 +172,11 @@ class ChatFragment : Fragment() {
         Log.d("chat-bot configservice1", "=============="+meta)
 
         Log.d("chat-bot configservice1", "==============")
-        val chat360BaseUrl = requireContext().resources.getString(R.string.chat360_base_url)
-//        val chat360BaseUrl = "https://app.gaadibaazar.in/page/?h="
+        val chat360BaseUrl = if(ConfigService.getInstance()?.getConfig()?.isDebug == true) {
+            requireContext().resources.getString(R.string.chat360_staging_url)
+        } else {
+            requireContext().resources.getString(R.string.chat360_base_url)
+        }
         val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
 
         Log.d("chat-bot configservice2", "==============")
@@ -205,13 +205,6 @@ class ChatFragment : Fragment() {
         }
 
         webChromeClient()
-//        webView.webViewClient = object : WebViewClient() {
-//            override fun onPageFinished(view: WebView?, url: String?) {
-//                // Inject JavaScript code to handle button click
-//                injectJavaScriptToHandleButtonClick(view)
-//            }
-//        }
-
 
         webView.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
 
