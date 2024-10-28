@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.chat360.chatbot"
-    compileSdk = 35
+    compileSdk = 34
     publishing {
         singleVariant("release") {
             withSourcesJar()
@@ -51,7 +51,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "com.github.chat360Mobile"
                 artifactId = "chat360_android_sdk"
-                version = "1.1.0"
+                version = "1.1.1"
             }
         }
     }
