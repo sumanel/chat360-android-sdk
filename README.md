@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         val chat360 = Chat360().getInstance()
-        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta)
+        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false)
 
         // Custom configurations
         chat360.coreConfig!!.statusBarColor = R.color.purple_500
@@ -66,6 +66,8 @@ findViewById<FloatingActionButton>(R.id.floatingActionButton).setOnClickListener
 - **applicationContext**: The context of your application.
 - **flutter**: Boolean indicating if Flutter integration is required.
 - **meta**: A map of additional metadata for the chatbot.
+- **isDebug**: A map of additional metadata Chat36O internals.
+
 
 ### UI Customization
 You can customize the appearance of the chatbot interface using the following options:
