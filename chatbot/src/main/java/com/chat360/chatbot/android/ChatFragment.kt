@@ -175,10 +175,13 @@ class ChatFragment : Fragment() {
         Log.d("chat-bot configservice1", "=============="+meta)
 
         Log.d("chat-bot configservice1", "==============")
-        val chat360BaseUrl = if(ConfigService.getInstance()?.getConfig()?.isDebug  == true){
-            requireContext().resources.getString(R.string.chat360_base_url_debug)
+        val chat360BaseUrl = if (ConfigService.getInstance()?.getConfig()?.isDebug == true) {
+                    "https://staging.chat360.io/page?h="
         } else {
             requireContext().resources.getString(R.string.chat360_base_url)
+        }
+//        val chat360BaseUrl = "https://app.gaadibaazar.in/page/?h="
+        val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
 
         }
         val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
