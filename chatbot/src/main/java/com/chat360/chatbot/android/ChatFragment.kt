@@ -181,14 +181,12 @@ class ChatFragment : Fragment() {
             requireContext().resources.getString(R.string.chat360_base_url)
         }
 //        val chat360BaseUrl = "https://app.gaadibaazar.in/page/?h="
-        val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
 
-        }
         val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
         Log.d("chat-bot configservice2", "==============")
         val appId = requireContext().applicationContext.packageName
         val devicemodel = Build.MODEL
-        val url = if (flutterBool == true) {
+        url = if (flutterBool == true) {
             Log.d("flutterTest","working======")
             """$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&flutter_sdk_type=android&mobile=1&device_name=$devicemodel"""
         } else {
