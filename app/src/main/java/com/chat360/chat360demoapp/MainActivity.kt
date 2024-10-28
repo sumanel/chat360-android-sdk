@@ -12,7 +12,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 
 
 class MainActivity : AppCompatActivity() {
-    private val botId = "Your BotId Here"
+    private val botId = "df4fb96f-96fc-406e-915c-d9151e0f50aa"
     private val flutter = false
     private val meta = mapOf(
         "Key" to "Value",
@@ -22,7 +22,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         val chat360 = Chat360().getInstance()
-        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta)
+        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta,false)
 
         // To Change the color of status bar, by default it will pick app theme
         chat360.coreConfig!!.statusBarColor = R.color.purple_500
