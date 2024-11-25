@@ -51,7 +51,6 @@ class ChatFragment : Fragment() {
 
     private var requestedPermission: String? = null
     private var mCameraPhotoPath: String? = null
-
     private var mAudioPath: String? = null
     private var isMultiFileUpload = false
     private var shouldKeepApplicationInBackground = true
@@ -60,7 +59,7 @@ class ChatFragment : Fragment() {
     private var geoOrigin: String? = null
     private lateinit var webView: WebView
     private lateinit var imageViewClos: ImageView
-    private lateinit var imageViewRefresh: ImageView
+//    private lateinit var imageViewRefresh: ImageView
     private lateinit var topLayout: FrameLayout
 
     private var isPreviewShown: Boolean = false
@@ -90,7 +89,7 @@ class ChatFragment : Fragment() {
         Constants.UNREAD_MESSAGE_COUNT = 0
         webView = view.findViewById(R.id.webView)
         imageViewClos = view.findViewById(R.id.imageViewClose)
-        imageViewRefresh = view.findViewById(R.id.imageViewRefresh)
+//        imageViewRefresh = view.findViewById(R.id.imageViewRefresh)
         topLayout = view.findViewById(R.id.topLayout)
 
         setCloseButtonColor()
@@ -190,6 +189,9 @@ class ChatFragment : Fragment() {
         } else {
             """$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"""
         }
+//        if(ConfigService.getInstance()?.getConfig()?.baseUrl != null) {
+//            url =   """${ConfigService.getInstance()?.getConfig()?.baseUrl}$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"""
+//        }
         Log.d("chat-bot configservice1", "=============="+url)
 
         webView.settings.apply {
@@ -237,9 +239,9 @@ class ChatFragment : Fragment() {
             requireActivity().onBackPressed()
         }
 
-        imageViewRefresh.setOnClickListener {
-            setupViews()
-        }
+//        imageViewRefresh.setOnClickListener {
+//            setupViews()
+//        }
 
 
     }
@@ -688,10 +690,10 @@ class ChatFragment : Fragment() {
                     DrawableCompat.wrap(imageViewClos.drawable),
                     ContextCompat.getColor(requireContext(), color!!)
                 )
-                DrawableCompat.setTint(
-                    DrawableCompat.wrap(imageViewRefresh.drawable),
-                    ContextCompat.getColor(requireContext(), color!!)
-                )
+//                DrawableCompat.setTint(
+//                    DrawableCompat.wrap(imageViewRefresh.drawable),
+//                    ContextCompat.getColor(requireContext(), color!!)
+//                )
             }
         } catch (e: java.lang.Exception) {
             Log.e("CloseButtonException", e.toString())
@@ -708,11 +710,11 @@ class ChatFragment : Fragment() {
                         imageViewClos.drawable
                     ), Color.parseColor(color)
                 )
-                DrawableCompat.setTint(
-                    DrawableCompat.wrap(
-                        imageViewRefresh.drawable
-                    ), Color.parseColor(color)
-                )
+//                DrawableCompat.setTint(
+//                    DrawableCompat.wrap(
+//                        imageViewRefresh.drawable
+//                    ), Color.parseColor(color)
+//                )
             }
         } catch (e: java.lang.Exception) {
             Log.e("CloseButtonException", e.toString())
