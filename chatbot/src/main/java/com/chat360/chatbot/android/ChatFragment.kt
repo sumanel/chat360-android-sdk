@@ -51,7 +51,6 @@ class ChatFragment : Fragment() {
 
     private var requestedPermission: String? = null
     private var mCameraPhotoPath: String? = null
-
     private var mAudioPath: String? = null
     private var isMultiFileUpload = false
     private var shouldKeepApplicationInBackground = true
@@ -190,10 +189,9 @@ class ChatFragment : Fragment() {
         } else {
             """$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"""
         }
-        if(ConfigService.getInstance()?.getConfig()?.baseUrl != null) {
-            url =   """${ConfigService.getInstance()?.getConfig()?.baseUrl}$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"""
-
-        }
+//        if(ConfigService.getInstance()?.getConfig()?.baseUrl != null) {
+//            url =   """${ConfigService.getInstance()?.getConfig()?.baseUrl}$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"""
+//        }
         Log.d("chat-bot configservice1", "=============="+url)
 
         webView.settings.apply {
