@@ -12,7 +12,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 
 
 class MainActivity : AppCompatActivity() {
-    private val botId = "Your BotId Here"
+    private val botId = "7cd2ad16-57de-4d28-8a55-224183dfc33b"
     private val flutter = false
     private val meta = mapOf(
         "Key" to "Value",
