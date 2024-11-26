@@ -61,7 +61,6 @@ class ChatFragment : Fragment() {
     private var geoOrigin: String? = null
     private lateinit var webView: WebView
     private lateinit var imageViewClos: ImageView
-    private lateinit var imageViewRefresh: ImageView
     private lateinit var topLayout: FrameLayout
 
     private var isPreviewShown: Boolean = false
@@ -91,7 +90,6 @@ class ChatFragment : Fragment() {
         Constants.UNREAD_MESSAGE_COUNT = 0
         webView = view.findViewById(R.id.webView)
         imageViewClos = view.findViewById(R.id.imageViewClose)
-        imageViewRefresh = view.findViewById(R.id.imageViewRefresh)
         topLayout = view.findViewById(R.id.topLayout)
 
         setCloseButtonColor()
@@ -240,10 +238,6 @@ class ChatFragment : Fragment() {
 
             Log.d("chat-bot_imageViewClose", "Close")
             requireActivity().onBackPressed()
-        }
-
-        imageViewRefresh.setOnClickListener {
-            setupViews()
         }
 
 
@@ -693,10 +687,6 @@ class ChatFragment : Fragment() {
                     DrawableCompat.wrap(imageViewClos.drawable),
                     ContextCompat.getColor(requireContext(), color!!)
                 )
-                DrawableCompat.setTint(
-                    DrawableCompat.wrap(imageViewRefresh.drawable),
-                    ContextCompat.getColor(requireContext(), color!!)
-                )
             }
         } catch (e: java.lang.Exception) {
             Log.e("CloseButtonException", e.toString())
@@ -711,11 +701,6 @@ class ChatFragment : Fragment() {
                 DrawableCompat.setTint(
                     DrawableCompat.wrap(
                         imageViewClos.drawable
-                    ), Color.parseColor(color)
-                )
-                DrawableCompat.setTint(
-                    DrawableCompat.wrap(
-                        imageViewRefresh.drawable
                     ), Color.parseColor(color)
                 )
             }
