@@ -152,6 +152,13 @@ class ChatFragment : Fragment() {
         } else {
             "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"
         }
+<<<<<<< HEAD
+=======
+//        if(ConfigService.getInstance()?.getConfig()?.baseUrl != null) {
+//            url =   """${ConfigService.getInstance()?.getConfig()?.baseUrl}$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"""
+//        }
+        Log.d("chat-bot configservice1", "=============="+url)
+>>>>>>> 0bd36fdd2520bd2b872770a559ee3297aa401f25
 
         webView.settings.apply {
             domStorageEnabled = true
@@ -188,6 +195,15 @@ class ChatFragment : Fragment() {
         imageViewClos.setOnClickListener {
             requireActivity().onBackPressed()
         }
+<<<<<<< HEAD
+=======
+
+//        imageViewRefresh.setOnClickListener {
+//            setupViews()
+//        }
+
+
+>>>>>>> 0bd36fdd2520bd2b872770a559ee3297aa401f25
     }
 
 
@@ -544,6 +560,13 @@ class ChatFragment : Fragment() {
                     DrawableCompat.wrap(imageViewClos.drawable),
                     ContextCompat.getColor(requireContext(), color!!)
                 )
+<<<<<<< HEAD
+=======
+//                DrawableCompat.setTint(
+//                    DrawableCompat.wrap(imageViewRefresh.drawable),
+//                    ContextCompat.getColor(requireContext(), color!!)
+//                )
+>>>>>>> 0bd36fdd2520bd2b872770a559ee3297aa401f25
             }
         } catch (e: java.lang.Exception) {
             Log.e("CloseButtonException", e.toString())
@@ -560,6 +583,14 @@ class ChatFragment : Fragment() {
                         imageViewClos.drawable
                     ), Color.parseColor(color)
                 )
+<<<<<<< HEAD
+=======
+//                DrawableCompat.setTint(
+//                    DrawableCompat.wrap(
+//                        imageViewRefresh.drawable
+//                    ), Color.parseColor(color)
+//                )
+>>>>>>> 0bd36fdd2520bd2b872770a559ee3297aa401f25
             }
         } catch (e: java.lang.Exception) {
             Log.e("CloseButtonException", e.toString())
