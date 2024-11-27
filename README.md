@@ -21,7 +21,7 @@ Add the necessary dependencies in your `build.gradle` file:
 
 ```groovy
 dependencies {
-       implementation 'com.github.sumanel:chat360-android-sdk:1.0.+'
+       implementation 'com.github.sumanel:chat360-android-sdk:1.2.+'
 }
 ```
 
