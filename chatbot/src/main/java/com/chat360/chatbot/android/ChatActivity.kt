@@ -11,29 +11,20 @@ class ChatActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_chat)
-
-        Log.d("chat-bot_activity_chat","=================")
         if (!Constants.isNetworkAvailable(this)) {
             Constants.showNoInternetDialog(this)
         } else {
             loadFragment()
         }
-
-        Log.d("chat-bot_activity_chat2","=================")
-
-        // backPressed()
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         super.onBackPressed()
         try {
             if (supportFragmentManager.backStackEntryCount == 1) {
-
-                Log.d("chat-bot_loadfragment finish called","=================")
                 finish()
             } else {
-
-                Log.d("chat-bot_loadfragment on back press called","=================")
                 onBackPressedDispatcher.onBackPressed()
             }
         } catch (e: Exception) {
@@ -43,8 +34,6 @@ class ChatActivity : AppCompatActivity() {
     }
 
     private fun loadFragment() {
-
-        Log.d("chat-bot_loadfragment","=================")
         val transaction: FragmentTransaction = supportFragmentManager.beginTransaction()
         transaction.replace(R.id.fragmentContainerView, ChatFragment())
         transaction.addToBackStack(null)

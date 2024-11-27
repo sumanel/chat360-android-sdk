@@ -43,13 +43,9 @@ class MainActivity : AppCompatActivity() {
         chat360.coreConfig!!.closeButtonColorFromHex = "#ffffff"
 
         findViewById<MaterialButton>(R.id.buttonOpenActivity).setOnClickListener {
-
-            Log.d("chat-bot_main","=================")
             chat360.startBot(this)
         }
         findViewById<FloatingActionButton>(R.id.floatingActionButton).setOnClickListener {
-
-            Log.d("chat-bot_main","=================")
             chat360.startBot(this)
         }
         findViewById<MaterialButton>(R.id.buttonOpenActivityFragment).setOnClickListener {

@@ -3,7 +3,6 @@ package com.chat360.chatbot.android
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
@@ -48,9 +47,9 @@ import java.util.*
 
 class ChatFragment : Fragment() {
 
-
     private var requestedPermission: String? = null
     private var mCameraPhotoPath: String? = null
+    private var mCameraVideoPath: String? = null
     private var mAudioPath: String? = null
     private var isMultiFileUpload = false
     private var shouldKeepApplicationInBackground = true
@@ -59,37 +58,25 @@ class ChatFragment : Fragment() {
     private var geoOrigin: String? = null
     private lateinit var webView: WebView
     private lateinit var imageViewClos: ImageView
-//    private lateinit var imageViewRefresh: ImageView
     private lateinit var topLayout: FrameLayout
-
-    private var isPreviewShown: Boolean = false
-
     private var isMediaUploadOptionSelected = false
-    var myBooleanState: Boolean? = null
     var url = ""
 
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
-
-        Log.d("chat-bot_oncreateView", "=================")
         (activity as AppCompatActivity?)?.supportActionBar?.hide()
         val view = inflater.inflate(R.layout.fragment_chat, container, false)
 
         return view
     }
 
-    //Internet Dialog
-
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        Log.d("chat-bot_view_created", "=================")
         Constants.UNREAD_MESSAGE_COUNT = 0
         webView = view.findViewById(R.id.webView)
         imageViewClos = view.findViewById(R.id.imageViewClose)
-//        imageViewRefresh = view.findViewById(R.id.imageViewRefresh)
         topLayout = view.findViewById(R.id.topLayout)
 
         setCloseButtonColor()
@@ -109,21 +96,17 @@ class ChatFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        // Destroy the WebView and clean up resources
         webView.destroy()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("chat-bot_created", "=================")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d("chat-bot_destroyed", "=================")
         webView.loadDataWithBaseURL(null, "", "text/html", "utf-8", null)
         webView.clearHistory()
-
         webView.onPause()
         webView.removeAllViews()
         webView.destroy()
@@ -131,8 +114,6 @@ class ChatFragment : Fragment() {
 
     private fun showCloseButton() {
         val showCloseButton = ConfigService.getInstance()?.getConfig()?.showCloseButton
-
-        Log.d("chat-bot configservice3", "==============")
         if (showCloseButton!!) {
             imageViewClos.visibility = View.VISIBLE
             setCloseButtonColor()
@@ -149,50 +130,28 @@ class ChatFragment : Fragment() {
         val jsonObject = JSONObject()
 
         try {
-            // Remove the curly braces at the beginning and end of the string
             val jsonContent = inputString.substring(1, inputString.length - 1)
-
-            // Split the string into key-value pairs
             val keyValuePairs = jsonContent.split(", ")
-
-            // Create a new JSONObject
-
-            // Parse and add key-value pairs to the JSONObject
             for (pair in keyValuePairs) {
                 val (key, value) = pair.split("=")
                 jsonObject.put(key, value)
             }
-
-            // Now you have your JSONObject
-            println(jsonObject.toString())
         } catch (e: Exception) {
             e.printStackTrace()
         }
-
-
-        Log.d("chat-bot configservice1", "=============="+meta)
-
-        Log.d("chat-bot configservice1", "==============")
         val chat360BaseUrl = if(ConfigService.getInstance()?.getConfig()?.isDebug == true) {
             requireContext().resources.getString(R.string.chat360_staging_url)
         } else {
             requireContext().resources.getString(R.string.chat360_base_url)
         }
         val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
-
-        Log.d("chat-bot configservice2", "==============")
         val appId = requireContext().applicationContext.packageName
         val devicemodel = Build.MODEL
         url = if (flutterBool == true) {
-            Log.d("flutterTest","working======")
-            """$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&flutter_sdk_type=android&mobile=1&device_name=$devicemodel"""
+            "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&flutter_sdk_type=android&mobile=1&device_name=$devicemodel"
         } else {
-            """$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"""
+            "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"
         }
-//        if(ConfigService.getInstance()?.getConfig()?.baseUrl != null) {
-//            url =   """${ConfigService.getInstance()?.getConfig()?.baseUrl}$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&mobile=1&device_name=$devicemodel"""
-//        }
-        Log.d("chat-bot configservice1", "=============="+url)
 
         webView.settings.apply {
             domStorageEnabled = true
@@ -209,18 +168,12 @@ class ChatFragment : Fragment() {
         }
 
         webChromeClient()
-
         webView.scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
-
-        Log.d("chat-bot_url", url)
         webView.clearView()
         webView.measure(100, 100)
         webView.settings.useWideViewPort = true
         webView.settings.loadWithOverviewMode = true
-
         webView.loadUrl(url)
-
-//        injectJavaScriptToHandleButtonClick()
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
@@ -232,18 +185,9 @@ class ChatFragment : Fragment() {
 
         webView.addJavascriptInterface(JSBridge(requireActivity()), "Bridge")
 
-
         imageViewClos.setOnClickListener {
-
-            Log.d("chat-bot_imageViewClose", "Close")
             requireActivity().onBackPressed()
         }
-
-//        imageViewRefresh.setOnClickListener {
-//            setupViews()
-//        }
-
-
     }
 
 
@@ -269,59 +213,19 @@ class ChatFragment : Fragment() {
     class JSBridge(private val activity: Activity) {
         @JavascriptInterface
         fun calledFromJS() {
-            Log.d("closeWebView", "closeWebView: ")
             activity.onBackPressed()
 
         }
     }
 
 
-//    private fun injectJavaScriptToHandleButtonClick(webView: WebView?) {
-//        webView?.evaluateJavascript(
-//            """
-//            function handleButtonClick() {
-//                var button = document.getElementById('chatbot-header-close-button');
-//                if (button) {
-//                    button.addEventListener('click', function() {
-//                        // Do something when the button is clicked
-//                        // For example:
-//                        alert('Button clicked!');
-//                    });
-//                }
-//            }
-//            handleButtonClick();
-//            """.trimIndent()
-//        )
-//        { result ->
-//            // The resultCallback will not be used here, so you can ignore it
-//        }
-//    }
-
-
     //Adding callbacks and the permission function for web-view requirements
     private fun webChromeClient() {
-        Log.d("chat-bot checking webView chromeclient", "==============")
         webView.webChromeClient = object : WebChromeClient() {
-
             private var mCustomView: View? = null
             private var mCustomViewCallback: CustomViewCallback? = null
             private var mOriginalOrientation = 0
             private var mOriginalSystemUiVisibility = 0
-            private var mProgress: ProgressDialog? = null
-
-//            override fun onProgressChanged(view: WebView?, progress: Int) {
-//                if (mProgress == null) {
-//                    mProgress = ProgressDialog(activity)
-//                    mProgress?.show()
-//                }
-//                mProgress?.setMessage("Loading $progress%")
-//                if (progress == 100) {
-//                    mProgress?.dismiss()
-//                    mProgress = null
-//
-//                    Log.d("chat-bot_progress", "========================================")
-//                }
-//            }
 
             override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
                 Log.d(
@@ -331,22 +235,18 @@ class ChatFragment : Fragment() {
                 return true
             }
 
-//           private var isMediaUploadOptionSelected = false
-
             // For Android 5.0
             override fun onShowFileChooser(
                 view: WebView,
                 filePath: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-                Log.d("chat-bot opening media", isMediaUploadOptionSelected.toString())
-                // Double check that we don't have any existing callbacks
                 if (mFilePathCallback != null) {
                     mFilePathCallback!!.onReceiveValue(null)
                 }
                 mFilePathCallback = filePath as ValueCallback<Array<Uri?>>?
                 isMediaUploadOptionSelected = false
-                showBottomSheet()  //Opening the bottomsheet to select if you wan't to use camera or files
+                showBottomSheet()
                 return true
             }
 
@@ -357,8 +257,6 @@ class ChatFragment : Fragment() {
             }
 
             override fun onHideCustomView() {
-
-                Log.d("chat-bot checking webView is causing customview hide", "==============")
                 if (activity != null) {
                     (activity!!.window.decorView as FrameLayout).removeView(mCustomView)
                     if (activity != null) {
@@ -375,7 +273,6 @@ class ChatFragment : Fragment() {
                 paramView: View, paramCustomViewCallback: CustomViewCallback
             ) {
 
-                Log.d("chat-bot checking webView is customviewshow", "==============")
                 if (mCustomView != null) {
                     onHideCustomView()
                     return
@@ -398,7 +295,6 @@ class ChatFragment : Fragment() {
             override fun onCreateWindow(
                 view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
             ): Boolean {
-                Log.d("chat-bot checking webView is causing it or not1", "==============")
                 val newWebView = context?.let { WebView(it) }
                 val transport = resultMsg.obj as WebView.WebViewTransport
                 transport.webView = newWebView
@@ -409,10 +305,6 @@ class ChatFragment : Fragment() {
                             val browserIntent = Intent(Intent.ACTION_VIEW)
                             browserIntent.data = Uri.parse(url)
                             startActivity(browserIntent)
-                            Log.d(
-                                "chat-bot checking webView is causing it or not",
-                                "=============="
-                            )
                             return true
                         }
                     }
@@ -463,28 +355,7 @@ class ChatFragment : Fragment() {
                 }
             }
         }
-
-//        webView.addJavascriptInterface(object : Any() {
-//            @JavascriptInterface
-//            fun handleButtonClick(buttonId: String) {
-//                // This method will be called from JavaScript when a button is clicked
-//                // You can handle the button click event here
-//                if (buttonId == "closeWebViewButton") {
-//                    closeWebView()
-//                }
-//            }
-//        }, "AndroidInterface")
     }
-//    private fun injectJavaScriptToHandleButtonClick() {
-//        val javascript = """
-//        // Inject JavaScript code here to handle button clicks
-//        document.getElementById('chatbot-header-close-button').addEventListener('click', function() {
-//            console.log('Button clicked from JavaScript');
-//            AndroidInterface.handleButtonClick('closeWebViewButton');
-//        });
-//    """
-//        webView.evaluateJavascript(javascript, null)
-//    }
 
 
     private fun showGPSEnableDialog(context: Context) {
@@ -552,7 +423,6 @@ class ChatFragment : Fragment() {
     }
 
     private fun checkForLocationPermission(context: Context): Boolean {
-        val PERMISSION_ALL = 1
         val PERMISSIONS = arrayOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
@@ -593,8 +463,6 @@ class ChatFragment : Fragment() {
     private fun setAppBarColor() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.statusBarColor
-
-            Log.d("chat-bot configservice3", "==============")
             if (color != -1) {
                 val window: Window = requireActivity().window
                 // clear FLAG_TRANSLUCENT_STATUS flag:
@@ -620,8 +488,6 @@ class ChatFragment : Fragment() {
     private fun setStatusBarColor() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.statusBarColor
-
-            Log.d("chat-bot configservice3", "==============")
             if (color != -1) {
                 val window: Window = requireActivity().window
                 // clear FLAG_TRANSLUCENT_STATUS flag:
@@ -638,13 +504,10 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //Setting the statusBarColor froom hexadecmal Code
     private fun setStatusBarColorFromHex() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.statusBarColorFromHex
-
-            Log.d("chat-bot configservice4", "==============")
-            if (color != null && color.isNotEmpty() && activity != null) {
+            if (!color.isNullOrEmpty() && activity != null) {
                 val window: Window = requireActivity().window
                 window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
                 window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
@@ -659,19 +522,12 @@ class ChatFragment : Fragment() {
     private fun setAppBarColorFromHex() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.statusBarColorFromHex
-
-            Log.d("chat-bot configservice4", "==============")
-            if (color != null && color.isNotEmpty() && activity != null) {
+            if (!color.isNullOrEmpty() && activity != null) {
                 val window: Window = requireActivity().window
                 window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
                 window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-
-
-                val frameLayout: FrameLayout? = activity?.findViewById(R.id.topLayout)
-
-                if (frameLayout != null) {
-                    frameLayout.setBackgroundColor(Color.parseColor(color))
-                }
+                activity?.findViewById<FrameLayout?>(R.id.topLayout)
+                    ?.setBackgroundColor(Color.parseColor(color))
 
             }
         } catch (e: java.lang.Exception) {
@@ -683,17 +539,11 @@ class ChatFragment : Fragment() {
     private fun setCloseButtonColor() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.closeButtonColor
-
-            Log.d("chat-bot configservice5", "==============")
             if (color != -1 && context != null) {
                 DrawableCompat.setTint(
                     DrawableCompat.wrap(imageViewClos.drawable),
                     ContextCompat.getColor(requireContext(), color!!)
                 )
-//                DrawableCompat.setTint(
-//                    DrawableCompat.wrap(imageViewRefresh.drawable),
-//                    ContextCompat.getColor(requireContext(), color!!)
-//                )
             }
         } catch (e: java.lang.Exception) {
             Log.e("CloseButtonException", e.toString())
@@ -710,11 +560,6 @@ class ChatFragment : Fragment() {
                         imageViewClos.drawable
                     ), Color.parseColor(color)
                 )
-//                DrawableCompat.setTint(
-//                    DrawableCompat.wrap(
-//                        imageViewRefresh.drawable
-//                    ), Color.parseColor(color)
-//                )
             }
         } catch (e: java.lang.Exception) {
             Log.e("CloseButtonException", e.toString())
@@ -738,44 +583,12 @@ class ChatFragment : Fragment() {
         }
         builder.setOnDismissListener {
             if (!isMediaUploadOptionSelected) {
-            Log.d("chat-bot opening media-", isMediaUploadOptionSelected.toString())
-            resetFilePathCallback()
-
-
-        } }
+                resetFilePathCallback()
+            }
+        }
 
         builder.show()
     }
-
-//    private fun showCameraOptionsDialog() {
-//        if (context != null) {
-//            val bottomSheetDialog = BottomSheetDialog(requireContext())
-//            bottomSheetDialog.setContentView(R.layout.fragment_upload_bottom_sheet)
-//            val cameraLayout = bottomSheetDialog.findViewById<ImageView>(R.id.imageViewCamera)
-//            val fileLayout = bottomSheetDialog.findViewById<ImageView>(R.id.imageViewfile)
-//            cameraLayout?.setOnClickListener {
-//                isMediaUploadOptionSelected = true
-//                checkAndLaunchCamera()
-//                bottomSheetDialog.dismiss()
-//            }
-//            fileLayout?.setOnClickListener {
-//                isMediaUploadOptionSelected = true
-//                checkAndLaunchVideoCamera()
-//                bottomSheetDialog.dismiss()
-//            }
-//            bottomSheetDialog.setOnDismissListener {
-//                Log.d("chat-bot opening media--", isMediaUploadOptionSelected.toString())
-//
-//                if (!isMediaUploadOptionSelected) {
-//                    Log.d("chat-bot opening media-", isMediaUploadOptionSelected.toString())
-//                    resetFilePathCallback()
-//
-//
-//                }
-//            }
-//            bottomSheetDialog.show()
-//        }
-//    }
 
     //while uploading the file it'll show the bottom-sheet layout
     private fun showBottomSheet() {
@@ -804,13 +617,8 @@ class ChatFragment : Fragment() {
                 bottomSheetDialog.dismiss()
             }
             bottomSheetDialog.setOnDismissListener {
-                Log.d("chat-bot opening media--", isMediaUploadOptionSelected.toString())
-
                 if (!isMediaUploadOptionSelected) {
-                    Log.d("chat-bot opening media-", isMediaUploadOptionSelected.toString())
                     resetFilePathCallback()
-
-
                 }
             }
             bottomSheetDialog.show()
@@ -935,6 +743,7 @@ class ChatFragment : Fragment() {
                     // If there is no data, then we may have taken a photo
                     if (mAudioPath != null) {
                         results = arrayOf(Uri.parse(mAudioPath))
+                        mAudioPath= null;
                     }
                 }
                 mFilePathCallback!!.onReceiveValue(results)
@@ -955,22 +764,8 @@ class ChatFragment : Fragment() {
         }
     }
 
-    private fun checkAndLaunchAudioRecord() {
-        if (context != null) {
-            if (hasAudioPermissionInManifest(requireContext())) {
-                if (checkForAudioPermission(requireContext())) {
-                    launchAudioIntent()
-                }
-            } else {
-                launchAudioIntent()
-            }
-        }
-    }
-
     //Will Start Camera
     private fun launchCameraIntent() {
-        Log.d("chat-bot opening launch", isMediaUploadOptionSelected.toString())
-
         val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         if (activity != null && takePictureIntent.resolveActivity(requireActivity().packageManager) != null) {
             // Create the File where the photo should go
@@ -1012,6 +807,7 @@ class ChatFragment : Fragment() {
             // Create the File where the video should go
             var videoFile: File? = null
             try {
+
                 videoFile = createVideoFile()
             } catch (ex: IOException) {
                 // Handle IOException if necessary
@@ -1019,6 +815,7 @@ class ChatFragment : Fragment() {
 
             // Continue only if the File was successfully created
             if (videoFile != null) {
+                mCameraVideoPath = "file:" + videoFile.absolutePath
                 val videoURI: Uri = if (context != null) {
                     FileProvider.getUriForFile(
                         requireContext(), getString(R.string.chat360_file_provider), videoFile
@@ -1052,18 +849,16 @@ class ChatFragment : Fragment() {
                     results = arrayOf(Uri.parse(dataString))
                 } else {
                     // If there is no data, then we may have captured a video
-                    if (mCameraPhotoPath != null) {
-                        results = arrayOf(Uri.parse(mCameraPhotoPath))
+                    if (mCameraVideoPath != null) {
+                        results = arrayOf(Uri.parse(mCameraVideoPath))
+                        mCameraVideoPath = null;
                     }
                 }
-
                 mFilePathCallback!!.onReceiveValue(results)
                 mFilePathCallback = null
             } else if (result.resultCode == Activity.RESULT_CANCELED) {
-                var results: Array<Uri?>? = null
-
                 isMediaUploadOptionSelected = false
-                mFilePathCallback!!.onReceiveValue(results)
+                mFilePathCallback!!.onReceiveValue(null)
                 mFilePathCallback = null
             }
         }
@@ -1072,9 +867,7 @@ class ChatFragment : Fragment() {
     //result variable for the external intent of chat-bot
     private val startCameraActivity =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            Log.d("chat-bot opening start", isMediaUploadOptionSelected.toString())
             if (it.resultCode == Activity.RESULT_OK) {
-                Log.d("chat-bot opening startif", isMediaUploadOptionSelected.toString())
 
                 // do whatever with the data in the callback
                 val data = it.data
@@ -1095,16 +888,15 @@ class ChatFragment : Fragment() {
                     // If there is no data, then we may have taken a photo
                     if (mCameraPhotoPath != null) {
                         results = arrayOf(Uri.parse(mCameraPhotoPath))
+                        mCameraPhotoPath = null;
                     }
                 }
 
                 mFilePathCallback!!.onReceiveValue(results)
                 mFilePathCallback = null
             } else if (it.resultCode == Activity.RESULT_CANCELED) {
-                var results: Array<Uri?>? = null
-
                 isMediaUploadOptionSelected = false
-                mFilePathCallback!!.onReceiveValue(results)
+                mFilePathCallback!!.onReceiveValue(null)
                 mFilePathCallback = null
             }
         }
@@ -1143,11 +935,9 @@ class ChatFragment : Fragment() {
             if (hasCameraPermissionInManifest(requireContext())) {
                 if (checkForCameraPermission(requireContext())) {
                     launchCameraVideoIntent()
-//                    launchCameraIntent()
                 }
             } else {
                 launchCameraVideoIntent()
-//                launchCameraIntent()
             }
         }
     }
@@ -1257,6 +1047,4 @@ class ChatFragment : Fragment() {
             mFilePathCallback = null
         }
     }
-
-
 }

@@ -15,7 +15,6 @@ class ConfigService {
     companion object {
         private var configInstance: ConfigService? = null
         public fun getInstance(): ConfigService? {
-            Log.d("chat-bot_getInstance","=================")
             if (configInstance == null) {
                 synchronized(ConfigService::class.java) {
                     if (configInstance == null) {

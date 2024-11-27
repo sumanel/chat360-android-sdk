@@ -19,8 +19,4 @@ public class CoreConfigs(botId: String, applicationContext: Context, flutter: Bo
     var notificationLargeIcon = -1
     var flutter: Boolean = flutter
     var meta: Map<String, String>? = meta
-/*
-    init {
-        this.botId = botId
-    }*/
 }
