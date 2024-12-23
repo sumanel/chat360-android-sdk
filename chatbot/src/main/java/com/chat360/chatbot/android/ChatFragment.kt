@@ -144,7 +144,7 @@ class ChatFragment : Fragment() {
             requireContext().resources.getString(R.string.chat360_base_url)
         }
         val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
-        val appId = requireContext().applicationContext.packageName
+        val appId = "" //requireContext().applicationContext.packageName
         val devicemodel = Build.MODEL
         url = if (flutterBool == true) {
             "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&flutter_sdk_type=android&mobile=1&device_name=$devicemodel"
