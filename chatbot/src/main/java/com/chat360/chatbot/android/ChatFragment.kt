@@ -68,7 +68,6 @@ class ChatFragment : Fragment() {
     ): View {
         (activity as AppCompatActivity?)?.supportActionBar?.hide()
         val view = inflater.inflate(R.layout.fragment_chat, container, false)
-
         return view
     }
 
