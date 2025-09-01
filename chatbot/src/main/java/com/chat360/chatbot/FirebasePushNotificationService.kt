@@ -41,7 +41,7 @@ fun showChat360Notification(
     if(isInBackground){
         val notification: Notification =
             NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-                .setSmallIcon(getNotificationIcon()!!).setAutoCancel(true).setContentText(alert)
+                .setSmallIcon(getNotificationIcon(applicationContext)!!).setAutoCancel(true).setContentText(alert)
                 .setContentIntent(pi)
                 .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
                 .setContentTitle(data["title"]).build()
@@ -56,8 +56,8 @@ fun showChat360Notification(
 
 }
 
-private fun getNotificationIcon(): Int? {
+private fun getNotificationIcon(context: Context?): Int? {
     val useWhiteIcon = true
-    return if (useWhiteIcon) ConfigService.getInstance()?.getConfig()?.notificationSmallIcon
-    else ConfigService.getInstance()?.getConfig()?.notificationLargeIcon
+    return if (useWhiteIcon) context?.let { ConfigService.getInstance(it)?.getConfig()?.notificationSmallIcon }
+    else context?.let { ConfigService.getInstance(it)?.getConfig()?.notificationLargeIcon }
 }

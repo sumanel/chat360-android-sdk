@@ -10,6 +10,17 @@ import com.chat360.chatbot.common.models.ConfigService
 
 class Chat360 {
     var coreConfig: CoreConfigs? = null
+    var customBaseURL: String? = null
+
+    fun setBaseURL(baseURL: String) : Unit {
+        this.customBaseURL = baseURL
+    }
+
+    fun setMetadata(context: Context?,map: Map<String,String>): Unit {
+        if (context != null) {
+            ConfigService.getInstance(context)?.setMetadata(map)
+        }
+    }
 
     private lateinit var botPluginInstance: Chat360
 
@@ -23,7 +34,10 @@ class Chat360 {
     fun startBot(context: Context) {
         try {
             if (validate(context)) {
-                ConfigService.getInstance()!!.setConfigData(coreConfig!!)
+                ConfigService.getInstance(context)!!.setConfigData(coreConfig!!)
+                if (customBaseURL != null){
+                    ConfigService.getInstance(context)!!.setBaseURL(customBaseURL!!)
+                }
                 val intent = Intent(context, ChatActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 context.startActivity(intent)
@@ -42,7 +56,7 @@ class Chat360 {
     fun getChatBotView(context: Context): Fragment? {
         try {
             if (validate(context)) {
-                ConfigService.getInstance()?.setConfigData(coreConfig!!)
+                ConfigService.getInstance(context)?.setConfigData(coreConfig!!)
                 return ChatFragment()
             }
         } catch (e: Exception) {

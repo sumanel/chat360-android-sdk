@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.chat360.chat360demoapp"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.chat360.chat360demoapp"

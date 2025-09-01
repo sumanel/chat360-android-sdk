@@ -14,6 +14,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.provider.MediaStore
 import android.provider.Settings
@@ -112,7 +113,7 @@ class ChatFragment : Fragment() {
     }
 
     private fun showCloseButton() {
-        val showCloseButton = ConfigService.getInstance()?.getConfig()?.showCloseButton
+        val showCloseButton = activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.showCloseButton }
         if (showCloseButton!!) {
             imageViewClos.visibility = View.VISIBLE
             setCloseButtonColor()
@@ -122,9 +123,9 @@ class ChatFragment : Fragment() {
     }
 
     private fun setupViews() {
-        val botId = ConfigService.getInstance()?.getConfig()?.botId
-        val flutterBool = ConfigService.getInstance()?.getConfig()?.flutter
-        val meta = ConfigService.getInstance()?.getConfig()?.meta
+        val botId =activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.botId }
+        val flutterBool = activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.flutter }
+        val meta = activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.meta }
         val inputString= meta.toString()
         val jsonObject = JSONObject()
 
@@ -138,12 +139,19 @@ class ChatFragment : Fragment() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        val chat360BaseUrl = if(ConfigService.getInstance()?.getConfig()?.isDebug == true) {
+        var chat360BaseUrl = if(activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.isDebug } == true) {
             requireContext().resources.getString(R.string.chat360_staging_url)
         } else {
             requireContext().resources.getString(R.string.chat360_base_url)
         }
-        val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
+
+        if(activity?.let { ConfigService.getInstance(it.applicationContext)?.getBaseURL() } != null) {
+            chat360BaseUrl =
+                activity?.applicationContext?.let { ConfigService.getInstance(it)?.getBaseURL().toString() }
+                    .toString()
+        }
+
+        val fcmToken = activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.deviceToken }
         val appId = "" //requireContext().applicationContext.packageName
         val devicemodel = Build.MODEL
         url = if (flutterBool == true) {
@@ -176,16 +184,78 @@ class ChatFragment : Fragment() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                Handler().postDelayed({
+                Handler(Looper.getMainLooper()).postDelayed({
                     injectJavascript(view)
+                    injectJavascriptForCommunication(view)
                 }, 100) // Adjust the delay as needed
             }
         }
 
         webView.addJavascriptInterface(JSBridge(requireActivity()), "Bridge")
+        webView.addJavascriptInterface(WebCommunicationBridge(this), "WebCommunicationBridge")
 
         imageViewClos.setOnClickListener {
             requireActivity().onBackPressed()
+        }
+    }
+
+    class WebCommunicationBridge(private val activity: ChatFragment) {
+        @JavascriptInterface
+        fun postMessage(message: String) {
+            Log.d("WebCommunicationBridge", "Message received from web: $message")
+
+            val metadata =
+                activity.activity?.let { ConfigService.getInstance(it.applicationContext)?.getMetadata() }
+
+            activity.sendResponseToWeb(
+                "CHAT360_WINDOW_EVENT_APP_RESPONSE",
+                metadata
+            )
+        }
+    }
+
+    private fun injectJavascriptForCommunication(view: WebView?){
+        val jsBridgeCode = """
+            (function() {
+                window.sendToApp = function(event) {
+                    if (!event || !event.type) {
+                        console.log('sendToApp requires event.type');
+                        return;
+                    }
+                    if (window.WebCommunicationBridge && window.WebCommunicationBridge.postMessage) {
+                        window.WebCommunicationBridge.postMessage(JSON.stringify(event));
+                    } else {
+                        console.log("WebCommunicationBridge not available:", event);
+                    }
+                };
+        
+                window.receiveFromApp = function(event) {
+                    console.log("Received from app:", event);
+                    if (window.onAppEvent) {
+                        window.onAppEvent(event);
+                    }
+                };
+            })();
+        """.trimIndent()
+
+        view?.evaluateJavascript(jsBridgeCode, null)
+    }
+
+    fun sendResponseToWeb(type: String, data: Map<String, String>?) {
+        val payloadObject = JSONObject(data)
+        val jsonPayload = JSONObject().apply {
+            put("type", type)
+            put("data", payloadObject)
+        }.toString()
+
+        val jsCode = "window.receiveFromApp(JSON.parse('$jsonPayload'));"
+
+        webView.evaluateJavascript(jsCode) { result ->
+            if (result == null || result == "null") {
+                Log.d("NativeToWeb", "Sent event $type successfully.")
+            } else {
+                Log.e("NativeToWeb", "Error sending message: $result")
+            }
         }
     }
 
@@ -461,7 +531,7 @@ class ChatFragment : Fragment() {
 
     private fun setAppBarColor() {
         try {
-            val color = ConfigService.getInstance()?.getConfig()?.statusBarColor
+            val color = activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.statusBarColor }
             if (color != -1) {
                 val window: Window = requireActivity().window
                 // clear FLAG_TRANSLUCENT_STATUS flag:
@@ -486,7 +556,7 @@ class ChatFragment : Fragment() {
     //Setting the statusBar Color from the resources
     private fun setStatusBarColor() {
         try {
-            val color = ConfigService.getInstance()?.getConfig()?.statusBarColor
+            val color = context?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.statusBarColor }
             if (color != -1) {
                 val window: Window = requireActivity().window
                 // clear FLAG_TRANSLUCENT_STATUS flag:
@@ -505,7 +575,7 @@ class ChatFragment : Fragment() {
 
     private fun setStatusBarColorFromHex() {
         try {
-            val color = ConfigService.getInstance()?.getConfig()?.statusBarColorFromHex
+            val color = activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.statusBarColorFromHex }
             if (!color.isNullOrEmpty() && activity != null) {
                 val window: Window = requireActivity().window
                 window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
@@ -520,7 +590,7 @@ class ChatFragment : Fragment() {
 
     private fun setAppBarColorFromHex() {
         try {
-            val color = ConfigService.getInstance()?.getConfig()?.statusBarColorFromHex
+            val color = activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.statusBarColorFromHex }
             if (!color.isNullOrEmpty() && activity != null) {
                 val window: Window = requireActivity().window
                 window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
@@ -537,7 +607,7 @@ class ChatFragment : Fragment() {
     //Setting the Close Button Color from the resources
     private fun setCloseButtonColor() {
         try {
-            val color = ConfigService.getInstance()?.getConfig()?.closeButtonColor
+            val color = activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.closeButtonColor }
             if (color != -1 && context != null) {
                 DrawableCompat.setTint(
                     DrawableCompat.wrap(imageViewClos.drawable),
@@ -552,7 +622,7 @@ class ChatFragment : Fragment() {
     //Setting the Close Button Color Code From Hex Color Code
     private fun setCloseButtonColorFromHex() {
         try {
-            val color = ConfigService.getInstance()?.getConfig()?.closeButtonColorFromHex
+            val color = activity?.let { ConfigService.getInstance(it.applicationContext)?.getConfig()?.closeButtonColorFromHex }
             if (!color.isNullOrEmpty()) {
                 DrawableCompat.setTint(
                     DrawableCompat.wrap(

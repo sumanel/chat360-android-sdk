@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.chat360.chatbot"
-    compileSdk = 34
+    compileSdk = 35
     publishing {
         singleVariant("release") {
             withSourcesJar()

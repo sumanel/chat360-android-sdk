@@ -22,6 +22,11 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         val chat360 = Chat360().getInstance()
+        chat360.setBaseURL("https://staging.chat360.io")
+        chat360.setMetadata(applicationContext, mapOf(
+            "auth_code" to "1234",
+            "user_id" to "12345"
+        ))
         chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false)
 
         // To Change the color of status bar, by default it will pick app theme
