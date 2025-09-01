@@ -208,7 +208,7 @@ class ChatFragment : Fragment() {
                 activity.activity?.let { ConfigService.getInstance(it.applicationContext)?.getMetadata() }
 
             activity.sendResponseToWeb(
-                "CHAT360_WINDOW_EVENT_APP_RESPONSE",
+                "CHAT360_WINDOW_EVENT",
                 metadata
             )
         }
