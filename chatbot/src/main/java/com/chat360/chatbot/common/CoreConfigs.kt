@@ -5,7 +5,7 @@ import android.graphics.drawable.Drawable
 import androidx.annotation.NonNull
 import com.chat360.chatbot.R
 
-public class CoreConfigs(botId: String, applicationContext: Context, flutter: Boolean, meta: Map<String, String>?, isDebug: Boolean?) {
+public class CoreConfigs(botId: String, applicationContext: Context, flutter: Boolean, meta: Map<String, String>?, isDebug: Boolean?, useNewUI: Boolean) {
     var botId: String? = botId
     @Deprecated("not currently in use") var deviceToken = ""
     var statusBarColor = -1
@@ -19,4 +19,5 @@ public class CoreConfigs(botId: String, applicationContext: Context, flutter: Bo
     var notificationLargeIcon = -1
     var flutter: Boolean = flutter
     var meta: Map<String, String>? = meta
+    val useNewUI: Boolean = useNewUI ?: false
 }

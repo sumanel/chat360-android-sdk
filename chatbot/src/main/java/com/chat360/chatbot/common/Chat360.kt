@@ -20,6 +20,14 @@ class Chat360 {
         return botPluginInstance
     }
 
+    fun setBaseUrl(url: String) {
+        ConfigService.getInstance()?.setBaseUrl(url)
+    }
+
+    fun setHandleWindowEvent(handleWindowEvent: (Map<String, String>) -> Map<String, String>) {
+        ConfigService.WebEventHandler.handleWindowEvent = handleWindowEvent
+    }
+
     fun startBot(context: Context) {
         try {
             if (validate(context)) {

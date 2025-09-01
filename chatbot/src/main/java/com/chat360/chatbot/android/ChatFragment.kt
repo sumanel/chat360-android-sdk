@@ -14,6 +14,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.provider.MediaStore
 import android.provider.Settings
@@ -138,13 +139,24 @@ class ChatFragment : Fragment() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        val chat360BaseUrl = if(ConfigService.getInstance()?.getConfig()?.isDebug == true) {
+        var chat360BaseUrl = if(ConfigService.getInstance()?.getConfig()?.isDebug == true) {
             requireContext().resources.getString(R.string.chat360_staging_url)
         } else {
             requireContext().resources.getString(R.string.chat360_base_url)
         }
+
+        ConfigService.getInstance()?.getBaseUrl()?.let { baseUrl ->
+            chat360BaseUrl = baseUrl
+        }
+
+        chat360BaseUrl += if (ConfigService.getInstance()?.getConfig()?.useNewUI == true) {
+            "/web_bot?h="
+        } else {
+            "/page?h="
+        }
+
         val fcmToken = ConfigService.getInstance()?.getConfig()?.deviceToken
-        val appId = "" //requireContext().applicationContext.packageName
+        val appId = ""
         val devicemodel = Build.MODEL
         url = if (flutterBool == true) {
             "$chat360BaseUrl$botId&store_session=1&fcm_token=$fcmToken&app_id=$appId&is_mobile=true&meta=$jsonObject&flutter_sdk_type=android&mobile=1&device_name=$devicemodel"
@@ -172,22 +184,24 @@ class ChatFragment : Fragment() {
         webView.measure(100, 100)
         webView.settings.useWideViewPort = true
         webView.settings.loadWithOverviewMode = true
-        webView.loadUrl(url)
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 Handler().postDelayed({
                     injectJavascript(view)
+                    injectJavascriptForCommunication(view)
                 }, 100) // Adjust the delay as needed
             }
         }
-
+        webView.loadUrl(url)
         webView.addJavascriptInterface(JSBridge(requireActivity()), "Bridge")
+        webView.addJavascriptInterface(WebCommunicationBridge(this), "WebCommunicationBridge")
 
         imageViewClos.setOnClickListener {
             requireActivity().onBackPressed()
         }
     }
+
 
 
     private fun injectJavascript(view: WebView?) {
@@ -215,6 +229,85 @@ class ChatFragment : Fragment() {
             activity.onBackPressed()
 
         }
+    }
+
+    class WebCommunicationBridge(private val activity: ChatFragment) {
+        @JavascriptInterface
+        fun postMessage(message: String) {
+            Log.d("WebCommunicationBridge", "Message received from web: $message")
+            try {
+                val event = mutableMapOf<String, String>()
+                val json = JSONObject(message)
+                json.keys().forEach { key ->
+                    event[key] = json.optString(key)
+                }
+
+                val metadata = ConfigService.WebEventHandler.handleWindowEvent?.invoke(event)
+
+                metadata?.let {
+                    activity.sendResponseToWeb(
+                        "CHAT360_WINDOW_EVENT",
+                        it
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("WebCommunicationBridge", "Error handling message", e)
+            }
+        }
+    }
+
+
+    private fun injectJavascriptForCommunication(view: WebView?){
+        val jsBridgeCode = """
+            (function() {
+                window.sendToApp = function(event) {
+                    if (!event || !event.type) {
+                        console.log('sendToApp requires event.type');
+                        return;
+                    }
+                    if (window.WebCommunicationBridge && window.WebCommunicationBridge.postMessage) {
+                        window.WebCommunicationBridge.postMessage(JSON.stringify(event));
+                    } else {
+                        console.log("WebCommunicationBridge not available:", event);
+                    }
+                };
+        
+                window.receiveFromApp = function(event) {
+                    console.log("Received from app:", event);
+                    if (window.onAppEvent) {
+                        window.onAppEvent(event);
+                    }
+                };
+            })();
+        """.trimIndent()
+
+        view?.evaluateJavascript(jsBridgeCode) {
+            print(it)
+        }
+    }
+
+    fun sendResponseToWeb(type: String, data: Map<String, String>?) {
+        var inner : String? = null
+        if (data.isNullOrEmpty()) {
+            inner = "{}"
+        }
+
+        inner = data?.entries?.joinToString(", ") { (key, value) ->
+            """$key: '$value'"""
+        }
+        Log.d("JavaScriptConsole", "{type: '$type', data:{ $inner} ")
+        val jsCode = "window.receiveFromApp({type: '$type', data: {$inner}});"
+
+        activity?.runOnUiThread {
+            webView.evaluateJavascript(jsCode) { result ->
+                if (result == null || result == "null") {
+                    Log.d("NativeToWeb", "Sent event $type successfully.")
+                } else {
+                    Log.e("NativeToWeb", "Error sending message: $result")
+                }
+            }
+        }
+
     }
 
 
