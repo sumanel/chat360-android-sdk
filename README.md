@@ -85,7 +85,9 @@ findViewById<FloatingActionButton>(R.id.floatingActionButton).setOnClickListener
 - **applicationContext**: The context of your application.
 - **flutter**: Boolean indicating if Flutter integration is required.
 - **meta**: A map of additional metadata for the chatbot.
+- **useNewUI**: boolean to use new UI.
 - **isDebug**: A additional debug tag for  Chat36O internals.
+
 
 
 ### UI Customization
