@@ -28,6 +28,10 @@ class Chat360 {
         ConfigService.WebEventHandler.handleWindowEvent = handleWindowEvent
     }
 
+    fun sendEventToBot(event: Map<String, String>) {
+        ConfigService.WebEventHandler.sendEventToBot?.let { it(event) }
+    }
+
     fun startBot(context: Context) {
         try {
             if (validate(context)) {
