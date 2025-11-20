@@ -140,6 +140,11 @@ The event handler receives event data as a parameter and can return updated meta
 - Updating session information
 - Responding to specific chat events
 
+#### Added Support to send Event
+
+```
+chat360.sendEventToBot(Map<String,String>) 
+```
 
 ## Example
 
