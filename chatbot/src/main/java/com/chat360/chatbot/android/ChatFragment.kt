@@ -14,7 +14,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
-import android.os.Looper
 import android.os.Message
 import android.provider.MediaStore
 import android.provider.Settings
@@ -37,6 +36,7 @@ import androidx.fragment.app.Fragment
 import com.chat360.chatbot.R
 import com.chat360.chatbot.common.Chat360SnackBarHelper
 import com.chat360.chatbot.common.Constants
+import com.chat360.chatbot.common.models.Chat360JSBridge
 import com.chat360.chatbot.common.models.ConfigService
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import java.io.File
@@ -92,6 +92,7 @@ class ChatFragment : Fragment() {
         setStatusBarColorFromHex()
         setCloseButtonColorFromHex()
         webView.clearCache(true)
+        Chat360JSBridge.registerWebView(webView)
     }
 
     override fun onDestroyView() {
@@ -245,10 +246,7 @@ class ChatFragment : Fragment() {
                 val metadata = ConfigService.WebEventHandler.handleWindowEvent?.invoke(event)
 
                 metadata?.let {
-                    activity.sendResponseToWeb(
-                        "CHAT360_WINDOW_EVENT",
-                        it
-                    )
+                    Chat360JSBridge.send("CHAT360_WINDOW_EVENT_RESPONSE", it)
                 }
             } catch (e: Exception) {
                 Log.e("WebCommunicationBridge", "Error handling message", e)

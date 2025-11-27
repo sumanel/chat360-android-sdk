@@ -10,6 +10,9 @@ class ConfigService {
 
     object WebEventHandler {
         var handleWindowEvent: ((Map<String, String>) -> Map<String, String>)? = null
+        var sendEventToBot: ((Map<String, String>) -> Unit)? = { event ->
+            Chat360JSBridge.send("CHAT360_WINDOW_EVENT", event)
+        }
     }
 
     init {

@@ -5,7 +5,6 @@ import android.content.Intent
 import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.util.Log
 import androidx.annotation.RequiresApi
 import com.chat360.chatbot.common.Chat360
 import com.chat360.chatbot.common.CoreConfigs
@@ -14,7 +13,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 
 
 class MainActivity : AppCompatActivity() {
-    private val botId = "Your bot Id"
+    private val botId = "23e91c25-80fa-4b40-bef6-e8bd206cd0e9"
     private val flutter = false
     private val meta = mapOf(
         "Key" to "Value",
@@ -25,14 +24,29 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         val chat360 = Chat360().getInstance()
-        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,false)
+        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,true)
 
         chat360.setBaseUrl("https://staging.chat360.io");
         chat360.setHandleWindowEvent { eventData ->
             print(eventData)
-            val metaMap = mapOf(
-                "dynamic_time" to java.time.ZonedDateTime.now().toString()
-            )
+            var metaMap : Map<String, String> = mapOf()
+            if(eventData["type"] == "get_auth") {
+                 metaMap = mapOf(
+                    "token" to "New Token from app",
+                )
+            } else if(eventData["type"] == "get_date") {
+                metaMap = mapOf(
+                    "dynamic_date" to  java.time.ZonedDateTime.now().toString()
+                )
+            } else if (eventData["type"] == "get_user") {
+                metaMap = mapOf(
+                    "user_id" to "123456789",
+                    "user_name" to "John Doe"
+                )
+            }
+
+            chat360.sendEventToBot(mapOf("status" to "pending"))
+
             metaMap
         }
 
