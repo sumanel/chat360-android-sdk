@@ -31,7 +31,7 @@ xmlns:tools="http://schemas.android.com/tools">
                 android:value="" />
         </activity>
         <provider
-            android:name="com.chat360.android.Chat360FileProvider"
+            android:name="com.chat360.chatbot.Chat360FileProvider"
             android:authorities="${applicationId}.chat360.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true"
