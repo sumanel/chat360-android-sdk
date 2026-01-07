@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -30,14 +31,17 @@
                 android:value="" />
         </activity>
         <provider
-            android:name=".Chat360FileProvider"
-            android:authorities="@string/chat360_file_provider"
+            android:name="com.chat360.android.Chat360FileProvider"
+            android:authorities="${applicationId}.chat360.fileprovider"
             android:exported="false"
-            android:grantUriPermissions="true">
+            android:grantUriPermissions="true"
+            tools:replace="android:authorities">
+
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/chat360_path_provider" />
         </provider>
+
     </application>
 
 </manifest>

@@ -5,6 +5,8 @@ import android.content.Intent
 import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.RequiresApi
 import com.chat360.chatbot.common.Chat360
 import com.chat360.chatbot.common.CoreConfigs
@@ -13,7 +15,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 
 
 class MainActivity : AppCompatActivity() {
-    private val botId = "23e91c25-80fa-4b40-bef6-e8bd206cd0e9"
+    private val botId = "a3be6d00-016b-491e-99e1-f223f8627520"
     private val flutter = false
     private val meta = mapOf(
         "Key" to "Value",
@@ -26,7 +28,7 @@ class MainActivity : AppCompatActivity() {
         val chat360 = Chat360().getInstance()
         chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,true)
 
-        chat360.setBaseUrl("https://staging.chat360.io");
+        chat360.setBaseUrl("https://chat360.lalpathlabs.com");
         chat360.setHandleWindowEvent { eventData ->
             print(eventData)
             var metaMap : Map<String, String> = mapOf()
@@ -38,13 +40,17 @@ class MainActivity : AppCompatActivity() {
                 metaMap = mapOf(
                     "dynamic_date" to  java.time.ZonedDateTime.now().toString()
                 )
-            } else if (eventData["type"] == "get_user") {
-                metaMap = mapOf(
-                    "user_id" to "123456789",
-                    "user_name" to "John Doe"
-                )
+            } else if (eventData["type"] == "initiate_payment") {
+                metaMap = mapOf()
             }
 
+            Handler(Looper.getMainLooper()).postDelayed({
+                chat360.sendEventToBot(mapOf(
+                    "type" to "initiate_payment",
+                    "payment_status" to "0",
+                    "message" to "not able to payment"))
+
+            }, 10_000)
             chat360.sendEventToBot(mapOf("status" to "pending"))
 
             metaMap
