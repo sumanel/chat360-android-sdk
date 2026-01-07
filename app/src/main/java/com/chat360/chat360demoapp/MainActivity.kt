@@ -15,7 +15,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 
 
 class MainActivity : AppCompatActivity() {
-    private val botId = "a3be6d00-016b-491e-99e1-f223f8627520"
+    private val botId = ""
     private val flutter = false
     private val meta = mapOf(
         "Key" to "Value",
@@ -28,11 +28,11 @@ class MainActivity : AppCompatActivity() {
         val chat360 = Chat360().getInstance()
         chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,true)
 
-        chat360.setBaseUrl("https://chat360.lalpathlabs.com");
+        chat360.setBaseUrl("https://chat360.io");
         chat360.setHandleWindowEvent { eventData ->
             print(eventData)
             var metaMap : Map<String, String> = mapOf()
-            if(eventData["type"] == "get_auth") {
+            if(eventData["type"] == "get_auth_chat360") {
                  metaMap = mapOf(
                     "token" to "New Token from app",
                 )
@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
 
             Handler(Looper.getMainLooper()).postDelayed({
                 chat360.sendEventToBot(mapOf(
-                    "type" to "initiate_payment",
+                    "type" to "initiate_payment_chat360",
                     "payment_status" to "0",
                     "message" to "not able to payment"))
 
