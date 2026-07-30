@@ -4,20 +4,21 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.fragment.app.Fragment
-import com.chat360.chatbot.android.ChatActivity
-import com.chat360.chatbot.android.ChatFragment
+import com.chat360.chatbot.android.ChatComposeActivity
+import com.chat360.chatbot.android.ChatComposeFragment
 import com.chat360.chatbot.common.models.ConfigService
 
 class Chat360 {
     var coreConfig: CoreConfigs? = null
 
-    private lateinit var botPluginInstance: Chat360
-
     fun getInstance(): Chat360 {
-        synchronized(Chat360::class.java) {
-            botPluginInstance = Chat360()
+        return synchronized(Companion) {
+            instance ?: Chat360().also { instance = it }
         }
-        return botPluginInstance
+    }
+
+    companion object {
+        @Volatile private var instance: Chat360? = null
     }
 
     fun setBaseUrl(url: String) {
@@ -36,7 +37,7 @@ class Chat360 {
         try {
             if (validate(context)) {
                 ConfigService.getInstance()!!.setConfigData(coreConfig!!)
-                val intent = Intent(context, ChatActivity::class.java)
+                val intent = Intent(context, ChatComposeActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 context.startActivity(intent)
             }
@@ -55,7 +56,7 @@ class Chat360 {
         try {
             if (validate(context)) {
                 ConfigService.getInstance()?.setConfigData(coreConfig!!)
-                return ChatFragment()
+                return ChatComposeFragment()
             }
         } catch (e: Exception) {
             throw Exception(

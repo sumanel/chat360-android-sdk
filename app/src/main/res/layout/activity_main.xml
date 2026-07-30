@@ -55,4 +55,30 @@
         android:textAllCaps="false"
         android:textColor="@color/white"
         app:layout_constraintTop_toBottomOf="@id/buttonOpenActivity" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonOpenNativePoc"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="20dp"
+        android:backgroundTint="@color/teal_700"
+        android:paddingVertical="16dp"
+        android:text="@string/open_native_poc"
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toBottomOf="@id/buttonOpenActivityFragment" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonOpenNativePocHyundai"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="20dp"
+        android:backgroundTint="@color/purple_500"
+        android:paddingVertical="16dp"
+        android:text="@string/open_native_poc_hyundai"
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toBottomOf="@id/buttonOpenNativePoc" />
 </androidx.constraintlayout.widget.ConstraintLayout>

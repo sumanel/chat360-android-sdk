@@ -8,14 +8,18 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.RequiresApi
+import com.chat360.chatbot.android.ChatComposeActivity
 import com.chat360.chatbot.common.Chat360
+import com.chat360.chatbot.ui.theme.Chat360ThemePreset
 import com.chat360.chatbot.common.CoreConfigs
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 
 
 class MainActivity : AppCompatActivity() {
-    private val botId = ""
+    // Real production bot used to validate the native rewrite POCs end-to-end (see plan).
+    private val nativePocBotId = "2e97deac-2877-495f-a568-8e0e5438fec1"
+    private val botId = nativePocBotId
     private val flutter = false
     private val meta = mapOf(
         "Key" to "Value",
@@ -28,7 +32,7 @@ class MainActivity : AppCompatActivity() {
         val chat360 = Chat360().getInstance()
         chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,true)
 
-        chat360.setBaseUrl("https://chat360.io");
+        chat360.setBaseUrl("https://app.chat360.io");
         chat360.setHandleWindowEvent { eventData ->
             print(eventData)
             var metaMap : Map<String, String> = mapOf()
@@ -83,6 +87,21 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<MaterialButton>(R.id.buttonOpenActivityFragment).setOnClickListener {
             startActivity(Intent(this, ChatBotDemoActivity::class.java))
+        }
+        findViewById<MaterialButton>(R.id.buttonOpenNativePoc).setOnClickListener {
+            ChatComposeActivity.launch(this, botId = nativePocBotId, themePreset = Chat360ThemePreset.DEFAULT)
+        }
+        findViewById<MaterialButton>(R.id.buttonOpenNativePocHyundai).setOnClickListener {
+            // Hyundai isn't a library-shipped preset - it's assigned here as CUSTOM details,
+            // exactly like any other client would configure their own brand.
+            chat360.coreConfig = CoreConfigs(nativePocBotId, applicationContext, flutter, meta, false, true).apply {
+                themePreset = Chat360ThemePreset.CUSTOM
+                customLightColors = HyundaiLightColors
+                customDarkColors = HyundaiDarkColors
+                customTypography = HyundaiTypography
+                customBranding = HyundaiBranding
+            }
+            chat360.startBot(this)
         }
     }
 

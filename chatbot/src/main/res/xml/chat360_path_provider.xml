@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
 
     <external-path name="chat360_images" path="." />
+    <cache-path name="chat360_camera" path="." />
 </paths>
