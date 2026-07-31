@@ -3,7 +3,9 @@ package com.chat360.chatbot.ui.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +24,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.chat360.chatbot.model.wire.AssignedAgent
@@ -29,6 +33,7 @@ import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.ui.ChatMessage
 import com.chat360.chatbot.ui.ChatViewModel
 import com.chat360.chatbot.ui.components.chrome.HeaderBar
+import com.chat360.chatbot.ui.components.chrome.ChatHistorySidebar
 import com.chat360.chatbot.ui.components.chrome.StatusBanner
 import com.chat360.chatbot.ui.components.chrome.TypingIndicatorRow
 import com.chat360.chatbot.ui.components.chrome.WelcomeSplash
@@ -43,6 +48,7 @@ import com.chat360.chatbot.ui.components.messages.content.BotContentActions
 import com.chat360.chatbot.ui.theme.LocalChat360Branding
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.applyOverrides
+import com.chat360.chatbot.ui.theme.LocalChat360ThemeController
 import com.chat360.chatbot.ui.util.rememberAttachmentPicker
 import com.chat360.chatbot.ui.util.rememberCameraCapture
 import com.chat360.chatbot.ui.util.rememberSpeechToTextController
@@ -84,6 +90,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
         val voicePreviewPlayback = rememberVoicePlaybackController()
         val speechToText = rememberSpeechToTextController()
         var showEmojiPicker by remember { mutableStateOf(false) }
+        var showHistorySidebar by remember { mutableStateOf(false) }
+        var isTrainingMode by remember { mutableStateOf(false) }
+        val themeController = LocalChat360ThemeController.current
 
         LaunchedEffect(speechToText.transcript) {
             if (speechToText.isListening) viewModel.onInputChange(speechToText.transcript)
@@ -109,8 +118,14 @@ fun ChatScreen(viewModel: ChatViewModel) {
         val pinnedWelcomeMessage = state.messages.lastOrNull()?.takeIf { !it.fromUser && it.content is BotContent.WelcomeScreen }
         val listMessages = if (pinnedWelcomeMessage != null) state.messages.dropLast(1) else state.messages
 
-        Column(modifier = Modifier.fillMaxSize().background(effectiveColors.background)) {
-            HeaderBar(connected = state.isConnected, assignedAgent = state.assignedAgent)
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize().background(effectiveColors.background)) {
+                HeaderBar(
+                    connected = state.isConnected,
+                    assignedAgent = state.assignedAgent,
+                    onMenuClick = { showHistorySidebar = true },
+                    onNewChatClick = viewModel::startNewChat,
+                )
 
             state.error?.let { StatusBanner(text = "Error: $it", emphasized = true) }
             if (state.isSlowConnection) StatusBanner(text = "Slow connection…", emphasized = false)
@@ -192,6 +207,33 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     onDictateClick = { speechToText.requestStart() },
                     onEmojiClick = { showEmojiPicker = !showEmojiPicker },
                 )
+            }
+            }
+            if (showHistorySidebar) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .clickable { showHistorySidebar = false },
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .clickable { },
+                    ) {
+                        ChatHistorySidebar(
+                            onDismiss = { showHistorySidebar = false },
+                            onNewChat = {
+                                viewModel.startNewChat()
+                                showHistorySidebar = false
+                            },
+                            isTrainingMode = isTrainingMode,
+                            onAssistantModeChanged = { isTrainingMode = it },
+                            isDarkTheme = themeController?.isDarkTheme == true,
+                            onThemeChanged = { themeController?.selectDarkTheme(it) },
+                        )
+                    }
+                }
             }
         }
 

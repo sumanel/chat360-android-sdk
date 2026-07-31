@@ -19,6 +19,8 @@ import kotlinx.coroutines.launch
 
 class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
 
+    private var hasStartedConversation = false
+
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
@@ -52,6 +54,7 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
     private fun handleEvent(event: IncomingSocketEvent) {
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
+                if (!hasStartedConversation) return
                 val node = event.node
                 // An Unsupported node with no text at all renders nothing (yet) rather than an
                 // empty bubble; one with fallback text (most node types include questionText)
@@ -532,11 +535,31 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
         _uiState.update { it.copy(inputText = text) }
     }
 
+    /** Starts a fresh on-screen conversation. Persistence/session management is intentionally deferred. */
+    fun startNewChat() {
+        streamRawText.clear()
+        hasStartedConversation = false
+        _uiState.update {
+            it.copy(
+                messages = emptyList(),
+                inputText = "",
+                isAgentTyping = false,
+                isLiveChat = false,
+                assignedAgent = null,
+                isArchived = false,
+                voiceDraft = null,
+                showFeedbackPrompt = false,
+                pendingUrlToOpen = null,
+            )
+        }
+    }
+
     fun sendMessage() {
         val text = _uiState.value.inputText.trim()
         // Ports UserInput/index.tsx's validate(): the empty-message guard only applies outside
         // live chat (`!value.trim() && !isLiveChat`) - live chat allows an empty submit through.
         if (text.isEmpty() && !_uiState.value.isLiveChat) return
+        hasStartedConversation = true
         val chatMsgId = repository.sendFreeText(text)
         _uiState.update { it.copy(inputText = "") }
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))

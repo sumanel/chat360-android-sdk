@@ -14,9 +14,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chat360.chatbot.R
 import com.chat360.chatbot.model.wire.AssignedAgent
 import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.ui.ChatMessage
@@ -55,18 +57,49 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(colors.bubbleAiBackground, RoundedCornerShape(2.dp))
-                .border(1.dp, colors.cardBorder, RoundedCornerShape(2.dp))
-                .padding(14.dp),
+                .background(colors.bubbleAiBackground, RoundedCornerShape(0.dp))
+                .border(1.dp, colors.cardBorder, RoundedCornerShape(0.dp))
+                .padding(horizontal = 18.dp, vertical = 14.dp),
         ) {
             BotContentBody(message, actions, isLiveChat)
         }
         Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = message.timeText,
-            fontFamily = typography.textFamily,
-            fontSize = 11.sp,
-            color = colors.textDisabled,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = message.timeText,
+                fontFamily = typography.textFamily,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textDisabled,
+            )
+            Spacer(modifier = Modifier.size(18.dp))
+            androidx.compose.material3.Icon(
+                painter = painterResource(R.drawable.ic_outline_content_copy_24),
+                contentDescription = "Copy response",
+                tint = colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.size(18.dp))
+            androidx.compose.material3.Icon(
+                painter = painterResource(R.drawable.ic_baseline_refresh_24),
+                contentDescription = "Regenerate response",
+                tint = colors.textSecondary,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.size(18.dp))
+            androidx.compose.material3.Icon(
+                painter = painterResource(R.drawable.ic_outline_thumb_up_24),
+                contentDescription = "Helpful response",
+                tint = colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.size(18.dp))
+            androidx.compose.material3.Icon(
+                painter = painterResource(R.drawable.ic_outline_thumb_down_24),
+                contentDescription = "Unhelpful response",
+                tint = colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
 }

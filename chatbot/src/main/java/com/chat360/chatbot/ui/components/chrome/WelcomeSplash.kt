@@ -17,6 +17,7 @@ import com.chat360.chatbot.ui.components.common.LogoBadge
 import com.chat360.chatbot.ui.theme.LocalChat360Branding
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
+import androidx.compose.ui.text.style.TextAlign
 
 @Composable
 fun WelcomeSplash(modifier: Modifier = Modifier) {
@@ -34,7 +35,7 @@ fun WelcomeSplash(modifier: Modifier = Modifier) {
             text = branding.welcomeHeading,
             fontFamily = typography.headFamily,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 24.sp,
+            fontSize = 20.sp,
             color = colors.textPrimary,
         )
         Spacer(modifier = Modifier.height(12.dp))
@@ -44,6 +45,7 @@ fun WelcomeSplash(modifier: Modifier = Modifier) {
             fontSize = 13.sp,
             color = colors.textSecondary,
             modifier = Modifier.padding(horizontal = 8.dp),
-        )
+            textAlign = TextAlign.Center,
+            )
     }
 }
