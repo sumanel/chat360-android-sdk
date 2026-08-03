@@ -49,11 +49,14 @@ import com.chat360.chatbot.ui.theme.LocalChat360Branding
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.applyOverrides
 import com.chat360.chatbot.ui.theme.LocalChat360ThemeController
+import com.chat360.chatbot.config.LocalChat360Config
 import com.chat360.chatbot.ui.util.rememberAttachmentPicker
 import com.chat360.chatbot.ui.util.rememberCameraCapture
 import com.chat360.chatbot.ui.util.rememberSpeechToTextController
 import com.chat360.chatbot.ui.util.rememberVoicePlaybackController
 import com.chat360.chatbot.ui.util.rememberVoiceRecorderController
+import android.util.Log
+
 
 /**
  * Top-level chat screen: owns layout only. Every visual piece (header, splash, message rows,
@@ -69,14 +72,26 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val state by viewModel.uiState.collectAsState()
     val baseColors = LocalChat360Colors.current
     val baseBranding = LocalChat360Branding.current
-    val effectiveColors = baseColors.applyOverrides(state.colorOverrides)
+//    val effectiveColors = baseColors.applyOverrides(state.colorOverrides)
     val effectiveBranding = baseBranding.copy(
         botTitle = state.botTitleOverride ?: baseBranding.botTitle,
         logo = state.logoOverride ?: baseBranding.logo,
     )
 
+//    val state by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(state.colorOverrides) {
+        Log.d("Chat360Theme", "Color overrides = ${state.colorOverrides}")
+    }
+
+    LaunchedEffect(state.colorOverrides) {
+        Log.d("Chat360Theme", "Base Colors      = $baseColors")
+        Log.d("Chat360Theme", "Overrides       = ${state.colorOverrides}")
+//        Log.d("Chat360Theme", "Effective Colors= $effectiveColors")
+    }
+
     CompositionLocalProvider(
-        LocalChat360Colors provides effectiveColors,
+        LocalChat360Colors provides baseColors,
         LocalChat360Branding provides effectiveBranding,
     ) {
         val listState = rememberLazyListState()
@@ -93,6 +108,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
         var showHistorySidebar by remember { mutableStateOf(false) }
         var isTrainingMode by remember { mutableStateOf(false) }
         val themeController = LocalChat360ThemeController.current
+        val sdkConfig = LocalChat360Config.current
+        val features = sdkConfig.features
 
         LaunchedEffect(speechToText.transcript) {
             if (speechToText.isListening) viewModel.onInputChange(speechToText.transcript)
@@ -119,13 +136,25 @@ fun ChatScreen(viewModel: ChatViewModel) {
         val listMessages = if (pinnedWelcomeMessage != null) state.messages.dropLast(1) else state.messages
 
         Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize().background(effectiveColors.background)) {
-                HeaderBar(
-                    connected = state.isConnected,
-                    assignedAgent = state.assignedAgent,
-                    onMenuClick = { showHistorySidebar = true },
-                    onNewChatClick = viewModel::startNewChat,
-                )
+            Column(modifier = Modifier.fillMaxSize().background(baseColors.background)) {
+                sdkConfig.ui.header?.invoke() ?: run {
+                    if (features.showMenu || features.showNewChat) {
+                        HeaderBar(
+                            connected = state.isConnected,
+                            assignedAgent = state.assignedAgent,
+                            showMenu = features.showMenu && features.showHistorySidebar,
+                            showNewChat = features.showNewChat,
+                            onMenuClick = {
+                                sdkConfig.callbacks.onMenuClicked()
+                                showHistorySidebar = true
+                            },
+                            onNewChatClick = {
+                                sdkConfig.callbacks.onNewChatClicked()
+                                viewModel.startNewChat()
+                            },
+                        )
+                    }
+                }
 
             state.error?.let { StatusBanner(text = "Error: $it", emphasized = true) }
             if (state.isSlowConnection) StatusBanner(text = "Slow connection…", emphasized = false)
@@ -152,7 +181,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             BotMessageItem(message, viewModel, pickAttachment, captureFromCamera, state.isLiveChat, state.assignedAgent)
                         }
                     }
-                    if (state.isAgentTyping) {
+                    if (state.isAgentTyping && features.showTypingIndicator) {
                         item { TypingIndicatorRow() }
                     }
                 }
@@ -197,7 +226,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 if (showEmojiPicker) {
                     EmojiPickerPanel(onEmojiSelected = { emoji -> viewModel.onInputChange(state.inputText + emoji) })
                 }
-                ChatInputBar(
+                sdkConfig.ui.footer?.invoke() ?: ChatInputBar(
                     value = state.inputText,
                     onValueChange = viewModel::onInputChange,
                     onSend = viewModel::sendMessage,
@@ -206,10 +235,14 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     showDictationIcon = speechToText.isSupported(),
                     onDictateClick = { speechToText.requestStart() },
                     onEmojiClick = { showEmojiPicker = !showEmojiPicker },
+                    showAttachment = features.showAttachment,
+                    showEmoji = features.showEmoji,
+                    showVoiceInput = features.showVoiceInput,
+                    showSend = features.showSend,
                 )
             }
             }
-            if (showHistorySidebar) {
+            if (showHistorySidebar && features.showHistorySidebar) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -231,6 +264,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             onAssistantModeChanged = { isTrainingMode = it },
                             isDarkTheme = themeController?.isDarkTheme == true,
                             onThemeChanged = { themeController?.selectDarkTheme(it) },
+                            showAssistantMode = features.showAssistantMode,
+                            showAppearanceSwitcher = features.showAppearanceSwitcher && sdkConfig.theme.allowThemeSwitch,
                         )
                     }
                 }

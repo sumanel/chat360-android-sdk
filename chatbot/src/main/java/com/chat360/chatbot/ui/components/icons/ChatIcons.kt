@@ -70,6 +70,30 @@ val ChevronLeftIcon: ImageVector by lazy {
     }
 }
 
+val MenuIcon: ImageVector by lazy {
+    materialIcon("Menu") {
+        filledPath {
+            moveTo(4f, 6f); lineTo(20f, 6f); lineTo(20f, 8f); lineTo(4f, 8f); close()
+        }
+        filledPath {
+            moveTo(4f, 11f); lineTo(20f, 11f); lineTo(20f, 13f); lineTo(4f, 13f); close()
+        }
+        filledPath {
+            moveTo(4f, 16f); lineTo(20f, 16f); lineTo(20f, 18f); lineTo(4f, 18f); close()
+        }
+    }
+}
+
+val AddIcon: ImageVector by lazy {
+    materialIcon("Add") {
+        filledPath {
+            moveTo(11f, 4f); lineTo(13f, 4f); lineTo(13f, 11f); lineTo(20f, 11f); lineTo(20f, 13f);
+            lineTo(13f, 13f); lineTo(13f, 20f); lineTo(11f, 20f); lineTo(11f, 13f); lineTo(4f, 13f);
+            lineTo(4f, 11f); lineTo(11f, 11f); close()
+        }
+    }
+}
+
 val StarIcon: ImageVector by lazy {
     materialIcon("Star") {
         filledPath {

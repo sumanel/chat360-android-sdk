@@ -17,7 +17,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
+class ChatViewModel(
+    private val repository: ChatRepository,
+    private val suppressInitialBotMessages: Boolean = false,
+) : ViewModel() {
 
     private var hasStartedConversation = false
 
@@ -54,7 +57,7 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
     private fun handleEvent(event: IncomingSocketEvent) {
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
-                if (!hasStartedConversation) return
+                if (suppressInitialBotMessages && !hasStartedConversation) return
                 val node = event.node
                 // An Unsupported node with no text at all renders nothing (yet) rather than an
                 // empty bubble; one with fallback text (most node types include questionText)
@@ -574,10 +577,14 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
         private val baseUrl: String,
         private val botId: String,
         private val historyEnabled: Boolean = true,
+        private val suppressInitialBotMessages: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return ChatViewModel(ChatRepository(baseUrl, botId, historyEnabled = historyEnabled)) as T
+            return ChatViewModel(
+                repository = ChatRepository(baseUrl, botId, historyEnabled = historyEnabled),
+                suppressInitialBotMessages = suppressInitialBotMessages,
+            ) as T
         }
     }
 }

@@ -2,6 +2,7 @@ package com.chat360.chatbot.ui.components.input
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +39,10 @@ fun ChatInputBar(
     showDictationIcon: Boolean = false,
     onDictateClick: () -> Unit = {},
     onEmojiClick: () -> Unit = {},
+    showAttachment: Boolean = true,
+    showEmoji: Boolean = true,
+    showVoiceInput: Boolean = true,
+    showSend: Boolean = true,
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -49,26 +54,26 @@ fun ChatInputBar(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Icon(
-        //     painter = painterResource(R.drawable.ic_outline_insert_file_24),
-        //     contentDescription = "Attach file",
-        //     tint = colors.textSecondary,
-        //     modifier = Modifier
-        //         .clickable(onClick = onAttachmentClick)
-        //         .padding(8.dp)
-        //         .size(24.dp),
-        // )
-        // if (showDictationIcon) {
-        //     Icon(
-        //         imageVector = DictateIcon,
-        //         contentDescription = "Dictate message",
-        //         tint = colors.textSecondary,
-        //         modifier = Modifier
-        //             .clickable(onClick = onDictateClick)
-        //             .padding(8.dp)
-        //             .size(22.dp),
-        //     )
-        // }
+        if (showAttachment) Icon(
+            painter = painterResource(R.drawable.ic_outline_insert_file_24),
+            contentDescription = "Attach file",
+            tint = colors.textSecondary,
+            modifier = Modifier
+                .clickable(onClick = onAttachmentClick)
+                .padding(8.dp)
+                .size(24.dp),
+        )
+        if (showDictationIcon && showVoiceInput) {
+            Icon(
+                imageVector = com.chat360.chatbot.ui.components.icons.DictateIcon,
+                contentDescription = "Dictate message",
+                tint = colors.textSecondary,
+                modifier = Modifier
+                    .clickable(onClick = onDictateClick)
+                    .padding(8.dp)
+                    .size(22.dp),
+            )
+        }
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -101,25 +106,25 @@ fun ChatInputBar(
                     }
                 },
             )
-            // Text(
-            //     text = "🙂",
-            //     fontSize = 18.sp,
-            //     modifier = Modifier
-            //         .clickable(onClick = onEmojiClick)
-            //         .padding(6.dp),
-            // )
-            Icon(
+            if (showEmoji) Text(
+                text = "🙂",
+                fontSize = 18.sp,
+                modifier = Modifier
+                    .clickable(onClick = onEmojiClick)
+                    .padding(6.dp),
+            )
+            if (showVoiceInput) Icon(
                 painter = painterResource(R.drawable.chat360_ic_mic),
                 contentDescription = "Record voice message",
                 tint = colors.textSecondary,
                 modifier = Modifier
-                                    // .clickable(onClick = onMicClick)
+                                    .clickable(onClick = onMicClick)
                                     .padding(8.dp)
                                     .size(20.dp),
             )
         }
-        Spacer(modifier = Modifier.size(12.dp))
-        IconButton(
+        if (showSend) Spacer(modifier = Modifier.size(12.dp))
+        if (showSend) IconButton(
             onClick = onSend,
             modifier = Modifier
                 .size(55.dp)

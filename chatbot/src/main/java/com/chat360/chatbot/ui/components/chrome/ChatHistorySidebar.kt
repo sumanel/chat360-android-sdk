@@ -33,6 +33,8 @@ fun ChatHistorySidebar(
     onAssistantModeChanged: (Boolean) -> Unit,
     isDarkTheme: Boolean,
     onThemeChanged: (Boolean) -> Unit,
+    showAssistantMode: Boolean,
+    showAppearanceSwitcher: Boolean,
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -69,18 +71,22 @@ fun ChatHistorySidebar(
             HistoryGroup("OLDER", listOf("Petrol vs EV running cost" to "3 wks ago"))
         }
         Column(modifier = Modifier.fillMaxWidth().border(1.dp, colors.line).padding(horizontal = 18.dp, vertical = 14.dp)) {
+            if (showAssistantMode) {
             Text("ASSISTANT MODE", fontFamily = typography.textFamily, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.textSecondary)
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth()) {
                 ModeOption("Training", Modifier.weight(1f), isTrainingMode) { onAssistantModeChanged(true) }
                 ModeOption("Customer", Modifier.weight(1f), !isTrainingMode) { onAssistantModeChanged(false) }
             }
+            }
             Spacer(Modifier.height(18.dp))
+            if (showAppearanceSwitcher) {
             Text("APPEARANCE", fontFamily = typography.textFamily, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.textSecondary)
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth()) {
                 ModeOption("Light", Modifier.weight(1f), !isDarkTheme) { onThemeChanged(false) }
                 ModeOption("Dark", Modifier.weight(1f), isDarkTheme) { onThemeChanged(true) }
+            }
             }
         }
     }

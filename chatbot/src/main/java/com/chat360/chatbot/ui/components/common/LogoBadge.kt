@@ -43,7 +43,7 @@ fun LogoBadge(size: Dp, cornerRadius: Dp = 6.dp, overrideName: String? = null, o
     Box(
         modifier = Modifier
             .size(size)
-            .background(colors.backgroundElevated, RoundedCornerShape(cornerRadius))
+            .background(colors.background, RoundedCornerShape(cornerRadius))
             .border(1.dp, colors.line, RoundedCornerShape(cornerRadius)),
         contentAlignment = Alignment.Center,
     ) {

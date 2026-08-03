@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.setValue
+import com.chat360.chatbot.config.Chat360Config
+import com.chat360.chatbot.config.LocalChat360Config
 
 /**
  * Named starting points a host app (or our own demo) can pick from. `CUSTOM` means "use the
@@ -45,10 +47,16 @@ fun Chat360Theme(
     customTypography: Chat360Typography? = null,
     customBranding: Chat360Branding? = null,
     colorOverrides: Chat360ColorOverrides? = null,
+    config: Chat360Config = Chat360Config(),
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val themeController = remember { Chat360ThemeController(darkTheme) }
+    val initialDarkTheme = when (config.theme.defaultTheme) {
+        com.chat360.chatbot.config.DefaultTheme.LIGHT -> false
+        com.chat360.chatbot.config.DefaultTheme.DARK -> true
+        com.chat360.chatbot.config.DefaultTheme.SYSTEM -> darkTheme
+    }
+    val themeController = remember(config.theme) { Chat360ThemeController(initialDarkTheme) }
     val (lightColors, darkColors, typography, branding) = when (preset) {
         Chat360ThemePreset.CUSTOM ->
             Chat360ThemeBundle(
@@ -61,13 +69,29 @@ fun Chat360Theme(
             Chat360ThemeBundle(DefaultLightColors, DefaultDarkColors, DefaultChat360Typography, DefaultBranding)
     }
 
-    val resolvedColors = (if (themeController.isDarkTheme) darkColors else lightColors).applyOverrides(colorOverrides)
+    val selectedColors = if (themeController.isDarkTheme) darkColors else lightColors
+
+    val base = selectedColors.applyOverrides(colorOverrides)
+
+    val resolvedColors = base.copy(
+        accent = config.branding.primaryColor ?: base.accent,
+        textSecondary = config.branding.secondaryColor ?: base.textSecondary,
+    )
+    val resolvedBranding = branding.copy(
+        botTitle = config.branding.botName ?: branding.botTitle,
+        logo = config.branding.logo ?: config.branding.avatar ?: branding.logo,
+        welcomeHeading = config.branding.welcomeTitle ?: branding.welcomeHeading,
+        disclaimerText = config.branding.welcomeSubtitle ?: branding.disclaimerText,
+        inputPlaceholder = config.branding.inputPlaceholder ?: branding.inputPlaceholder,
+    )
+    val resolvedTypography = config.branding.fontFamily?.let { Chat360Typography(it, it) } ?: typography
 
     CompositionLocalProvider(
         LocalChat360Colors provides resolvedColors,
-        LocalChat360Typography provides typography,
-        LocalChat360Branding provides branding,
+        LocalChat360Typography provides resolvedTypography,
+        LocalChat360Branding provides resolvedBranding,
         LocalChat360ThemeController provides themeController,
+        LocalChat360Config provides config,
         content = content,
     )
 }

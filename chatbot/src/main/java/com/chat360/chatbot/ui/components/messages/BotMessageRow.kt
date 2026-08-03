@@ -22,6 +22,7 @@ import com.chat360.chatbot.R
 import com.chat360.chatbot.model.wire.AssignedAgent
 import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.ui.ChatMessage
+import com.chat360.chatbot.config.LocalChat360Config
 import com.chat360.chatbot.ui.components.common.LogoBadge
 import com.chat360.chatbot.ui.components.messages.content.BotContentActions
 import com.chat360.chatbot.ui.components.messages.content.BotContentBody
@@ -39,6 +40,7 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: Boolean = false, assignedAgent: AssignedAgent? = null) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
+    val config = LocalChat360Config.current
     val agent = assignedAgent.takeIf { message.author == BotNode.MessageAuthor.AGENT }
     val displayName = agent?.name?.takeIf { it.isNotBlank() } ?: LocalChat360Branding.current.botTitle
     Column {
@@ -72,6 +74,7 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
                 fontWeight = FontWeight.SemiBold,
                 color = colors.textDisabled,
             )
+            if (config.features.showCopyMessage) {
             Spacer(modifier = Modifier.size(18.dp))
             androidx.compose.material3.Icon(
                 painter = painterResource(R.drawable.ic_outline_content_copy_24),
@@ -79,6 +82,8 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
                 tint = colors.textSecondary,
                 modifier = Modifier.size(18.dp),
             )
+            }
+            if (config.features.showRegenerate) {
             Spacer(modifier = Modifier.size(18.dp))
             androidx.compose.material3.Icon(
                 painter = painterResource(R.drawable.ic_baseline_refresh_24),
@@ -86,6 +91,8 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
                 tint = colors.textSecondary,
                 modifier = Modifier.size(20.dp),
             )
+            }
+            if (config.features.showLike) {
             Spacer(modifier = Modifier.size(18.dp))
             androidx.compose.material3.Icon(
                 painter = painterResource(R.drawable.ic_outline_thumb_up_24),
@@ -93,6 +100,8 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
                 tint = colors.textSecondary,
                 modifier = Modifier.size(18.dp),
             )
+            }
+            if (config.features.showDislike) {
             Spacer(modifier = Modifier.size(18.dp))
             androidx.compose.material3.Icon(
                 painter = painterResource(R.drawable.ic_outline_thumb_down_24),
@@ -100,6 +109,7 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
                 tint = colors.textSecondary,
                 modifier = Modifier.size(18.dp),
             )
+            }
         }
     }
 }

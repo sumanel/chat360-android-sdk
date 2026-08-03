@@ -25,7 +25,7 @@ class ChatComposeActivity : ComponentActivity() {
     private val config: ResolvedChatConfig by lazy { resolveChatConfig(intent) }
 
     private val viewModel: ChatViewModel by viewModels {
-        ChatViewModel.Factory(baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled)
+        ChatViewModel.Factory(baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, suppressInitialBotMessages = config.chat360Config.behavior.suppressInitialBotMessages)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,6 +37,7 @@ class ChatComposeActivity : ComponentActivity() {
                 customDarkColors = config.customDarkColors,
                 customTypography = config.customTypography,
                 customBranding = config.customBranding,
+                config = config.chat360Config,
             ) {
                 val statusBar = LocalChat360Colors.current.statusBar
                 SideEffect {
