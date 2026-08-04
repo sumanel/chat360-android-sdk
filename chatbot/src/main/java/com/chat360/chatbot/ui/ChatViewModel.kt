@@ -1,24 +1,37 @@
 package com.chat360.chatbot.ui
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.chat360.chatbot.cache.CachedConversationEntity
+import com.chat360.chatbot.cache.ChatCacheDatabase
+import com.chat360.chatbot.cache.ChatCacheRepository
 import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.validation.FormFieldValidator
 import com.chat360.chatbot.domain.validation.InputValidators
 import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.model.wire.IncomingSocketEvent
+import com.chat360.chatbot.model.wire.RawSocketEnvelope
+import com.chat360.chatbot.model.wire.toIncomingEvent
 import com.chat360.chatbot.ui.theme.toColorOverrides
 import com.chat360.chatbot.ui.theme.toLogoOverride
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
 class ChatViewModel(
     private val repository: ChatRepository,
+    private val botId: String,
+    private val cache: ChatCacheRepository,
     private val suppressInitialBotMessages: Boolean = false,
 ) : ViewModel() {
 
@@ -26,8 +39,15 @@ class ChatViewModel(
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+    private val _conversations = MutableStateFlow<List<CachedConversationEntity>>(emptyList())
+    val conversations: StateFlow<List<CachedConversationEntity>> = _conversations.asStateFlow()
+    private var activeConversationId: String? = null
+    /** True only while Room entries are being replayed; cached messages are never “initial” UI. */
+    private var restoringFromCache = false
+    private val cacheJson = Json { ignoreUnknownKeys = true }
 
     init {
+        viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
         viewModelScope.launch {
             repository.connect(
                 onEvent = ::handleEvent,
@@ -45,6 +65,8 @@ class ChatViewModel(
                         )
                     }
                 },
+                onConversationStarted = { roomId -> activateConversation(roomId) },
+                onRawIncoming = ::cacheIncomingEnvelope,
                 onOpenUrl = { url -> _uiState.update { it.copy(pendingUrlToOpen = url) } },
                 onSessionResumed = { takeover, agent ->
                     _uiState.update { it.copy(isLiveChat = takeover, assignedAgent = agent ?: it.assignedAgent) }
@@ -57,7 +79,7 @@ class ChatViewModel(
     private fun handleEvent(event: IncomingSocketEvent) {
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
-                if (suppressInitialBotMessages && !hasStartedConversation) return
+                if (suppressInitialBotMessages && !hasStartedConversation && !restoringFromCache) return
                 val node = event.node
                 // An Unsupported node with no text at all renders nothing (yet) rather than an
                 // empty bubble; one with fallback text (most node types include questionText)
@@ -107,7 +129,7 @@ class ChatViewModel(
                         } else {
                             null
                         },
-                    ),
+                    ), cacheUserMessage = false,
                 )
             }
             is IncomingSocketEvent.TypingStatus -> _uiState.update { it.copy(isAgentTyping = event.isTyping) }
@@ -115,7 +137,7 @@ class ChatViewModel(
             is IncomingSocketEvent.AgentAssigned -> _uiState.update { it.copy(assignedAgent = event.agent) }
             is IncomingSocketEvent.LiveChatEnded -> _uiState.update { it.copy(isLiveChat = false) }
             is IncomingSocketEvent.InactivityNotice -> {
-                if (event.message != null) appendMessage(ChatMessage(text = event.message, fromUser = false))
+                if (event.message != null) appendMessage(ChatMessage(text = event.message, fromUser = false), cacheUserMessage = false)
                 if (event.autoArchive) _uiState.update { it.copy(isArchived = true) }
             }
             // Ack/echoed-user/pong only drive ChatRepository's internal bookkeeping (ack-timeout
@@ -155,11 +177,14 @@ class ChatViewModel(
     }
 
     /** Appending any message locks the quick replies of everything before it (widget behavior). */
-    private fun appendMessage(message: ChatMessage) {
+    private fun appendMessage(message: ChatMessage, cacheUserMessage: Boolean = message.fromUser) {
         _uiState.update { state ->
             state.copy(
                 messages = state.messages.map { it.copy(repliesEnabled = false) } + message,
             )
+        }
+        if (cacheUserMessage) activeConversationId?.let { conversationId ->
+            viewModelScope.launch { cache.cacheUserMessage(conversationId, message.text, message.chatMsgId) }
         }
     }
 
@@ -538,8 +563,11 @@ class ChatViewModel(
         _uiState.update { it.copy(inputText = text) }
     }
 
-    /** Starts a fresh on-screen conversation. Persistence/session management is intentionally deferred. */
+    /** Starts a distinct locally persisted conversation. */
     fun startNewChat() {
+        val conversationId = java.util.UUID.randomUUID().toString()
+        activeConversationId = conversationId
+        viewModelScope.launch { cache.createConversation(botId, conversationId) }
         streamRawText.clear()
         hasStartedConversation = false
         _uiState.update {
@@ -554,6 +582,70 @@ class ChatViewModel(
                 showFeedbackPrompt = false,
                 pendingUrlToOpen = null,
             )
+        }
+    }
+
+    /** Binds the server room to its Room record and restores cached rich websocket messages. */
+    private suspend fun activateConversation(roomId: String): Boolean {
+        val (conversationId, hasCachedMessages) = cache.activateForRoom(botId, roomId, activeConversationId)
+        activeConversationId = conversationId
+        if (hasCachedMessages) {
+            streamRawText.clear()
+            _uiState.update { it.copy(messages = emptyList()) }
+            restoringFromCache = true
+            try {
+                cache.messages(conversationId).forEach { cached ->
+                    when (cached.kind) {
+                        "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true), cacheUserMessage = false)
+                        "RAW" -> runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }
+                            .getOrNull()?.let(::handleEvent)
+                    }
+                }
+            } finally {
+                restoringFromCache = false
+            }
+        }
+        return hasCachedMessages
+    }
+
+    private fun cacheIncomingEnvelope(raw: String) {
+        val conversationId = activeConversationId ?: return
+        // Cache only envelopes that create visible bot-side state.  This is deliberately
+        // committed before the websocket callback returns instead of launching another UI
+        // coroutine: otherwise a fast Activity/ViewModel teardown can cancel the write and
+        // leave a conversation containing only the locally authored user messages.
+        val isRenderableBotEvent = runCatching {
+            when (cacheJson.decodeFromString<RawSocketEnvelope>(raw).toIncomingEvent()) {
+                is IncomingSocketEvent.BotMessage,
+                is IncomingSocketEvent.InactivityNotice -> true
+                else -> false
+            }
+        }.getOrDefault(false)
+        if (isRenderableBotEvent) {
+            runCatching {
+                runBlocking(Dispatchers.IO) { cache.cacheRaw(conversationId, raw) }
+            }
+        }
+    }
+
+    fun openConversation(conversationId: String) {
+        if (conversationId == activeConversationId) return
+        viewModelScope.launch {
+            activeConversationId = conversationId
+            streamRawText.clear()
+            _uiState.update { it.copy(messages = emptyList(), isArchived = false, isLiveChat = false, assignedAgent = null) }
+            restoringFromCache = true
+            try {
+                cache.messages(conversationId).forEach { cached ->
+                    when (cached.kind) {
+                        "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true), cacheUserMessage = false)
+                        "RAW" -> runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }
+                            .getOrNull()?.let(::handleEvent)
+                    }
+                }
+            } finally {
+                restoringFromCache = false
+            }
         }
     }
 
@@ -574,6 +666,7 @@ class ChatViewModel(
     }
 
     class Factory(
+        private val context: Context,
         private val baseUrl: String,
         private val botId: String,
         private val historyEnabled: Boolean = true,
@@ -583,6 +676,8 @@ class ChatViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ChatViewModel(
                 repository = ChatRepository(baseUrl, botId, historyEnabled = historyEnabled),
+                botId = botId,
+                cache = ChatCacheRepository(ChatCacheDatabase.get(context).dao()),
                 suppressInitialBotMessages = suppressInitialBotMessages,
             ) as T
         }

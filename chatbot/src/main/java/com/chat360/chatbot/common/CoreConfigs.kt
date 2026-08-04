@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.drawable.Drawable
 import androidx.annotation.NonNull
 import com.chat360.chatbot.R
-import com.chat360.chatbot.config.Chat360Config
+import com.chat360.chatbot.config.Chat360UIConfig
 import com.chat360.chatbot.ui.theme.Chat360Branding
 import com.chat360.chatbot.ui.theme.Chat360Colors
 import com.chat360.chatbot.ui.theme.Chat360ThemePreset
@@ -34,5 +34,5 @@ public class CoreConfigs(botId: String, applicationContext: Context, flutter: Bo
     var customBranding: Chat360Branding? = null
     var historyEnabled: Boolean = true
     /** Optional modern, immutable Compose UI configuration. Legacy fields remain supported. */
-    var chat360Config: Chat360Config? = null
+    var Chat360UIConfig: Chat360UIConfig? = null
 }

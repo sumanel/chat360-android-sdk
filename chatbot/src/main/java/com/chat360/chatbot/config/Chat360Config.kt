@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.FontFamily
 import com.chat360.chatbot.ui.theme.Chat360Logo
 
 /** Immutable, client-owned presentation and behavior configuration for the Compose chat SDK. */
-data class Chat360Config(
+data class Chat360UIConfig(
     val branding: BrandingConfig = BrandingConfig(),
     val theme: ThemeConfig = ThemeConfig(),
     val features: FeatureConfig = FeatureConfig(),

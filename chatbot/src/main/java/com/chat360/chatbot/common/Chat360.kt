@@ -7,7 +7,7 @@ import androidx.fragment.app.Fragment
 import com.chat360.chatbot.android.ChatComposeActivity
 import com.chat360.chatbot.android.ChatComposeFragment
 import com.chat360.chatbot.common.models.ConfigService
-import com.chat360.chatbot.config.Chat360Config
+import com.chat360.chatbot.config.Chat360UIConfig
 
 class Chat360 {
     var coreConfig: CoreConfigs? = null
@@ -27,9 +27,9 @@ class Chat360 {
     }
 
     /** Applies reusable Compose UI configuration without changing any SDK source. */
-    fun initialize(config: Chat360Config) {
+    fun initialize(config: Chat360UIConfig) {
         val current = coreConfig ?: throw IllegalStateException("Set CoreConfigs before calling initialize.")
-        current.chat360Config = config
+        current.Chat360UIConfig = config
     }
 
     fun setHandleWindowEvent(handleWindowEvent: (Map<String, String>) -> Map<String, String>) {

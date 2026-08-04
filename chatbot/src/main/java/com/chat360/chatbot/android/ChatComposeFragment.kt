@@ -25,7 +25,7 @@ class ChatComposeFragment : Fragment() {
     private val config: ResolvedChatConfig by lazy { resolveChatConfig(arguments) }
 
     private val viewModel: ChatViewModel by viewModels {
-        ChatViewModel.Factory(baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, suppressInitialBotMessages = config.chat360Config.behavior.suppressInitialBotMessages)
+        ChatViewModel.Factory(context = requireContext().applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages)
     }
 
     override fun onCreateView(
@@ -40,7 +40,7 @@ class ChatComposeFragment : Fragment() {
                 customDarkColors = config.customDarkColors,
                 customTypography = config.customTypography,
                 customBranding = config.customBranding,
-                config = config.chat360Config,
+                config = config.Chat360UIConfig,
             ) {
                 ChatScreen(viewModel)
             }

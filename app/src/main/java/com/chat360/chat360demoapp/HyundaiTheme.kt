@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import com.chat360.chatbot.config.BehaviorConfig
 import com.chat360.chatbot.config.BrandingConfig
-import com.chat360.chatbot.config.Chat360Config
+import com.chat360.chatbot.config.Chat360UIConfig
 import com.chat360.chatbot.config.DefaultTheme
 import com.chat360.chatbot.config.FeatureConfig
 import com.chat360.chatbot.config.ThemeConfig
@@ -108,7 +108,7 @@ val HyundaiBranding = Chat360Branding(
     inputPlaceholder = "Ask about vehicles, pricing, offers…",
 )
 
-val HyundaiConfig = Chat360Config(
+val HyundaiConfig = Chat360UIConfig(
     branding = BrandingConfig(
         botName = "H-Smart AI",
         welcomeTitle = "Hyundai Sales AI Assistant",

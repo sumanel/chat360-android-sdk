@@ -23,8 +23,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
+import com.chat360.chatbot.cache.CachedConversationEntity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-/** Temporary history drawer. Entries stay presentational until persistence is implemented. */
 @Composable
 fun ChatHistorySidebar(
     onDismiss: () -> Unit,
@@ -35,6 +38,8 @@ fun ChatHistorySidebar(
     onThemeChanged: (Boolean) -> Unit,
     showAssistantMode: Boolean,
     showAppearanceSwitcher: Boolean,
+    conversations: List<CachedConversationEntity>,
+    onConversationSelected: (String) -> Unit,
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -65,10 +70,11 @@ fun ChatHistorySidebar(
                 Text("New chat", fontFamily = typography.textFamily, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = colors.accentContrast)
             }
             Spacer(Modifier.height(28.dp))
-            HistoryGroup("TODAY", listOf("CRETA vs VENUE comparison" to "10:42 AM", "EMI calculation for SX(O)" to "9:15 AM"))
-            HistoryGroup("YESTERDAY", listOf("Nearest dealership in Pune" to "6:02 PM"))
-            HistoryGroup("LAST 7 DAYS", listOf("Best family SUV recommend..." to "Mon"))
-            HistoryGroup("OLDER", listOf("Petrol vs EV running cost" to "3 wks ago"))
+            if (conversations.isEmpty()) {
+                Text("No saved conversations yet", fontFamily = typography.textFamily, fontSize = 14.sp, color = colors.textSecondary)
+            } else {
+                HistoryGroup("CONVERSATIONS", conversations, onConversationSelected)
+            }
         }
         Column(modifier = Modifier.fillMaxWidth().border(1.dp, colors.line).padding(horizontal = 18.dp, vertical = 14.dp)) {
             if (showAssistantMode) {
@@ -93,18 +99,18 @@ fun ChatHistorySidebar(
 }
 
 @Composable
-private fun HistoryGroup(title: String, items: List<Pair<String, String>>) {
+private fun HistoryGroup(title: String, items: List<CachedConversationEntity>, onConversationSelected: (String) -> Unit) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
     Text(title, fontFamily = typography.textFamily, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.textSecondary)
     Spacer(Modifier.height(12.dp))
-    items.forEach { (name, time) ->
-        Row(Modifier.fillMaxWidth().padding(bottom = 22.dp), verticalAlignment = Alignment.Top) {
+    items.forEach { conversation ->
+        Row(Modifier.fillMaxWidth().clickable { onConversationSelected(conversation.id) }.padding(bottom = 22.dp), verticalAlignment = Alignment.Top) {
             Text("o", fontSize = 19.sp, color = colors.textSecondary)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(name, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(time, fontFamily = typography.textFamily, fontSize = 13.sp, color = colors.textSecondary)
+                Text(conversation.title, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(conversation.updatedAt)), fontFamily = typography.textFamily, fontSize = 13.sp, color = colors.textSecondary)
             }
             Text("...", fontSize = 16.sp, color = colors.textSecondary)
         }

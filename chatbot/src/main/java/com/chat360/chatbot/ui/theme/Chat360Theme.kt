@@ -8,8 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.setValue
-import com.chat360.chatbot.config.Chat360Config
-import com.chat360.chatbot.config.LocalChat360Config
+import com.chat360.chatbot.config.Chat360UIConfig
+import com.chat360.chatbot.config.LocalChat360UIConfig
 
 /**
  * Named starting points a host app (or our own demo) can pick from. `CUSTOM` means "use the
@@ -47,7 +47,7 @@ fun Chat360Theme(
     customTypography: Chat360Typography? = null,
     customBranding: Chat360Branding? = null,
     colorOverrides: Chat360ColorOverrides? = null,
-    config: Chat360Config = Chat360Config(),
+    config: Chat360UIConfig = Chat360UIConfig(),
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
@@ -91,7 +91,7 @@ fun Chat360Theme(
         LocalChat360Typography provides resolvedTypography,
         LocalChat360Branding provides resolvedBranding,
         LocalChat360ThemeController provides themeController,
-        LocalChat360Config provides config,
+        LocalChat360UIConfig provides config,
         content = content,
     )
 }

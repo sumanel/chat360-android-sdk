@@ -72,6 +72,7 @@ class ChatRepository(
     private var onMessageTimedOut: (String) -> Unit = {}
     private var onOpenUrl: (String) -> Unit = {}
     private var onFeedbackRequested: () -> Unit = {}
+    private var onRawIncoming: (String) -> Unit = {}
     /** From session init's `configs.should_ask_feedback` - gates whether LiveChatEnded also closes the socket. */
     private var shouldAskFeedback: Boolean = false
 
@@ -96,6 +97,11 @@ class ChatRepository(
         onSlowConnectionChanged: (Boolean) -> Unit = {},
         onMessageTimedOut: (String) -> Unit = {},
         onAppearanceLoaded: (BotAppearanceDetails?, chatboxName: String?) -> Unit = { _, _ -> },
+        /** Called after session init so the local cache can select the matching conversation.
+         * Return true when its cached messages were replayed; remote history is then skipped. */
+        onConversationStarted: suspend (roomId: String) -> Boolean = { false },
+        /** Every server envelope, including history/starter frames, for durable local replay. */
+        onRawIncoming: (String) -> Unit = {},
         onOpenUrl: (String) -> Unit = {},
         /** Seeds live-chat state from the session itself (takeover/assigned_user) before any history replays - lets a killed-and-reopened app resume mid-live-chat correctly instead of assuming a fresh bot-flow session. */
         onSessionResumed: (takeover: Boolean, agent: AssignedAgent?) -> Unit = { _, _ -> },
@@ -111,6 +117,7 @@ class ChatRepository(
         this.onMessageTimedOut = onMessageTimedOut
         this.onOpenUrl = onOpenUrl
         this.onFeedbackRequested = onFeedbackRequested
+        this.onRawIncoming = onRawIncoming
 
         try {
             // The widget derives website_url/current_url from the browser's own window.location,
@@ -142,14 +149,15 @@ class ChatRepository(
             onSessionResumed(session.takeover, resumedAgent)
 
             fetchAppearance(host, onAppearanceLoaded)
-            val hadHistory = if (historyEnabled) loadHistory() else false
+            val hadCachedHistory = onConversationStarted(session.room_id)
+            val hadHistory = hadCachedHistory || if (historyEnabled) loadHistory(onRawIncoming) else false
             // ConversationStarter/index.tsx shows its teaser bubbles independently of the real
             // session, floating outside the (not-yet-opened) chat launcher on the host page. This
             // SDK has no such closed-launcher state - a host app only shows the chat screen once
             // it's ready to be a real session - so the closest equivalent moment is "this room
             // has no history yet": show the starter content as the opening bubbles instead of an
             // empty WelcomeSplash, using the exact same wire parsing as any other frame.
-            if (!hadHistory) loadConversationStarter()
+            if (!hadHistory) loadConversationStarter(onRawIncoming)
             openSocket()
         } catch (e: Exception) {
             onError(e)
@@ -157,11 +165,14 @@ class ChatRepository(
     }
 
     /** Returns true if any history was found (and dispatched), so callers can fall back to conversation-starter content on a genuinely fresh room. */
-    private suspend fun loadHistory(): Boolean {
+    private suspend fun loadHistory(onRawIncoming: (String) -> Unit): Boolean {
         val room = roomId ?: return false
         return try {
             val response = apiService.getHistory(room)
-            response.history.forEach { item -> onEvent(item.toIncomingEvent()) }
+            response.history.forEach { item ->
+                onRawIncoming(json.encodeToString(item))
+                onEvent(item.toIncomingEvent())
+            }
             response.history.isNotEmpty()
         } catch (e: Exception) {
             // Non-fatal: a fresh room has no history yet, and a failed fetch shouldn't block
@@ -171,10 +182,11 @@ class ChatRepository(
     }
 
     /** Best-effort like loadHistory()/fetchAppearance() - a failed/empty fetch just means no starter bubbles, never blocks connecting. */
-    private suspend fun loadConversationStarter() {
+    private suspend fun loadConversationStarter(onRawIncoming: (String) -> Unit) {
         try {
             val items = apiService.getFirstMessages(botId)
             items.forEach { item ->
+                onRawIncoming(json.encodeToString(item))
                 val event = item.toIncomingEvent()
                 if (event is IncomingSocketEvent.BotMessage) {
                     lastBotNode = event.node
@@ -225,7 +237,7 @@ class ChatRepository(
                     sendSystemJump(targetId)
                 }
             },
-            onMessage = { raw -> handleIncoming(raw) },
+            onMessage = { raw -> handleIncoming(raw, onRawIncoming) },
             onClosed = { _, _ -> handleClosed() },
             onFailure = { t ->
                 handleClosed()
@@ -241,11 +253,12 @@ class ChatRepository(
         }
     }
 
-    private fun handleIncoming(raw: String) {
+    private fun handleIncoming(raw: String, onRawIncoming: (String) -> Unit) {
         val envelope = json.decodeFromString(RawSocketEnvelope.serializer(), raw)
         heartbeat.onMessageReceived(isPong = envelope.type == "pong")
 
         val event = envelope.toIncomingEvent()
+        onRawIncoming(raw)
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
                 lastBotNode = event.node

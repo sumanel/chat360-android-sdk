@@ -22,7 +22,7 @@ import com.chat360.chatbot.R
 import com.chat360.chatbot.model.wire.AssignedAgent
 import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.ui.ChatMessage
-import com.chat360.chatbot.config.LocalChat360Config
+import com.chat360.chatbot.config.LocalChat360UIConfig
 import com.chat360.chatbot.ui.components.common.LogoBadge
 import com.chat360.chatbot.ui.components.messages.content.BotContentActions
 import com.chat360.chatbot.ui.components.messages.content.BotContentBody
@@ -40,7 +40,7 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: Boolean = false, assignedAgent: AssignedAgent? = null) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
-    val config = LocalChat360Config.current
+    val config = LocalChat360UIConfig.current
     val agent = assignedAgent.takeIf { message.author == BotNode.MessageAuthor.AGENT }
     val displayName = agent?.name?.takeIf { it.isNotBlank() } ?: LocalChat360Branding.current.botTitle
     Column {

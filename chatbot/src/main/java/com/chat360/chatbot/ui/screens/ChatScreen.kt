@@ -49,7 +49,7 @@ import com.chat360.chatbot.ui.theme.LocalChat360Branding
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.applyOverrides
 import com.chat360.chatbot.ui.theme.LocalChat360ThemeController
-import com.chat360.chatbot.config.LocalChat360Config
+import com.chat360.chatbot.config.LocalChat360UIConfig
 import com.chat360.chatbot.ui.util.rememberAttachmentPicker
 import com.chat360.chatbot.ui.util.rememberCameraCapture
 import com.chat360.chatbot.ui.util.rememberSpeechToTextController
@@ -70,6 +70,7 @@ import android.util.Log
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
     val state by viewModel.uiState.collectAsState()
+    val conversations by viewModel.conversations.collectAsState()
     val baseColors = LocalChat360Colors.current
     val baseBranding = LocalChat360Branding.current
 //    val effectiveColors = baseColors.applyOverrides(state.colorOverrides)
@@ -108,7 +109,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
         var showHistorySidebar by remember { mutableStateOf(false) }
         var isTrainingMode by remember { mutableStateOf(false) }
         val themeController = LocalChat360ThemeController.current
-        val sdkConfig = LocalChat360Config.current
+        val sdkConfig = LocalChat360UIConfig.current
         val features = sdkConfig.features
 
         LaunchedEffect(speechToText.transcript) {
@@ -266,6 +267,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             onThemeChanged = { themeController?.selectDarkTheme(it) },
                             showAssistantMode = features.showAssistantMode,
                             showAppearanceSwitcher = features.showAppearanceSwitcher && sdkConfig.theme.allowThemeSwitch,
+                            conversations = conversations,
+                            onConversationSelected = {
+                                viewModel.openConversation(it)
+                                showHistorySidebar = false
+                            },
                         )
                     }
                 }

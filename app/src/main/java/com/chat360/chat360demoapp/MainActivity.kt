@@ -14,7 +14,7 @@ import com.chat360.chatbot.ui.theme.Chat360ThemePreset
 import com.chat360.chatbot.common.CoreConfigs
 import com.chat360.chatbot.config.BehaviorConfig
 import com.chat360.chatbot.config.BrandingConfig
-import com.chat360.chatbot.config.Chat360Config
+import com.chat360.chatbot.config.Chat360UIConfig
 import com.chat360.chatbot.config.DefaultTheme
 import com.chat360.chatbot.config.FeatureConfig
 import com.chat360.chatbot.config.ThemeConfig
@@ -106,7 +106,7 @@ class MainActivity : AppCompatActivity() {
                 customDarkColors = HyundaiDarkColors
                 customTypography = HyundaiTypography
                 customBranding = HyundaiBranding
-                chat360Config = HyundaiConfig
+                Chat360UIConfig = HyundaiConfig
             }
             chat360.startBot(this)
         }
@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
                 customDarkColors = MarutiSuzukiDarkColors
                 customTypography = MarutiSuzukiTypography
                 customBranding = MarutiSuzukiBranding
-                chat360Config = MarutiSuzukiConfig
+                Chat360UIConfig = MarutiSuzukiConfig
             }
             chat360.startBot(this)
         }

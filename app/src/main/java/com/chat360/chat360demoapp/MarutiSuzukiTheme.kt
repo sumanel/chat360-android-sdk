@@ -4,7 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import com.chat360.chatbot.config.BrandingConfig
 import com.chat360.chatbot.config.BehaviorConfig
-import com.chat360.chatbot.config.Chat360Config
+import com.chat360.chatbot.config.Chat360UIConfig
 import com.chat360.chatbot.config.DefaultTheme
 import com.chat360.chatbot.config.FeatureConfig
 import com.chat360.chatbot.config.ThemeConfig
@@ -37,7 +37,7 @@ val MarutiSuzukiBranding = Chat360Branding(
 
 val MarutiSuzukiTypography = Chat360Typography(FontFamily.SansSerif, FontFamily.SansSerif)
 
-val MarutiSuzukiConfig = Chat360Config(
+val MarutiSuzukiConfig = Chat360UIConfig(
     branding = BrandingConfig(
         botName = "Maruti Suzuki Assist",
         welcomeTitle = "Maruti Suzuki Assist",

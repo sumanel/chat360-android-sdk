@@ -3,7 +3,7 @@ package com.chat360.chatbot.android
 import android.content.Intent
 import android.os.Bundle
 import com.chat360.chatbot.common.models.ConfigService
-import com.chat360.chatbot.config.Chat360Config
+import com.chat360.chatbot.config.Chat360UIConfig
 import com.chat360.chatbot.ui.theme.Chat360Branding
 import com.chat360.chatbot.ui.theme.Chat360Colors
 import com.chat360.chatbot.ui.theme.Chat360ThemePreset
@@ -25,7 +25,7 @@ data class ResolvedChatConfig(
     val customTypography: Chat360Typography?,
     val customBranding: Chat360Branding?,
     val historyEnabled: Boolean,
-    val chat360Config: Chat360Config,
+    val Chat360UIConfig: Chat360UIConfig,
 )
 
 /**
@@ -47,7 +47,7 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
             customTypography = config.customTypography,
             customBranding = config.customBranding,
             historyEnabled = config.historyEnabled,
-            chat360Config = config.chat360Config ?: Chat360Config(),
+            Chat360UIConfig = config.Chat360UIConfig ?: Chat360UIConfig(),
         )
     }
     return ResolvedChatConfig(
@@ -60,7 +60,7 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
         customTypography = null,
         customBranding = null,
         historyEnabled = extras?.getBoolean(EXTRA_HISTORY_ENABLED, true) ?: true,
-        chat360Config = Chat360Config(),
+        Chat360UIConfig = Chat360UIConfig(),
     )
 }
 
