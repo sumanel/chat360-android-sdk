@@ -121,6 +121,7 @@ class MainActivity : AppCompatActivity() {
                     customTypography = HyundaiTypography
                     customBranding = HyundaiBranding
                     Chat360UIConfig = HyundaiConfig
+                    dealerCode = HYUNDAI_DEALER_CODE
                 }
                 chat360.startBot(this)
             }

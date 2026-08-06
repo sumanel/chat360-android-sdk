@@ -272,6 +272,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 viewModel.openConversation(it)
                                 showHistorySidebar = false
                             },
+                            onConversationRenamed = viewModel::renameConversation,
+                            onConversationDeleted = viewModel::deleteConversation,
                         )
                     }
                 }

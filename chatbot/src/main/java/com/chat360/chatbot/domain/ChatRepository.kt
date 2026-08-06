@@ -155,20 +155,26 @@ class ChatRepository(
             onSessionResumed(session.takeover, resumedAgent)
 
             fetchAppearance(host, onAppearanceLoaded)
-            val hadCachedHistory = onConversationStarted(session.room_id)
-            val hadHistory = hadCachedHistory || if (historyEnabled) loadHistory(onRawIncoming) else false
+            val hadHistory = onConversationStarted(session.room_id)
             // ConversationStarter/index.tsx shows its teaser bubbles independently of the real
             // session, floating outside the (not-yet-opened) chat launcher on the host page. This
             // SDK has no such closed-launcher state - a host app only shows the chat screen once
             // it's ready to be a real session - so the closest equivalent moment is "this room
             // has no history yet": show the starter content as the opening bubbles instead of an
             // empty WelcomeSplash, using the exact same wire parsing as any other frame.
-            if (!hadHistory) loadConversationStarter(onRawIncoming)
+
+
+
+//            if (!hadHistory) loadConversationStarter(onRawIncoming)   // load initial messages commmented by Sanket
             openSocket()
         } catch (e: Exception) {
             onError(e)
         }
     }
+
+    /** Fetches the latest server snapshot for cache-first conversation refreshes. */
+    suspend fun fetchHistory(roomId: String): List<RawSocketEnvelope> =
+        if (historyEnabled) apiService.getHistory(roomId).history else emptyList()
 
     /** Returns true if any history was found (and dispatched), so callers can fall back to conversation-starter content on a genuinely fresh room. */
     private suspend fun loadHistory(onRawIncoming: (String) -> Unit): Boolean {

@@ -33,6 +33,8 @@ public class CoreConfigs(botId: String, applicationContext: Context, flutter: Bo
     var customTypography: Chat360Typography? = null
     var customBranding: Chat360Branding? = null
     var historyEnabled: Boolean = true
+    /** Dealer identifier used to load dealer-scoped rooms on the chat history page. */
+    var dealerCode: String? = null
     /** Optional modern, immutable Compose UI configuration. Legacy fields remain supported. */
     var Chat360UIConfig: Chat360UIConfig? = null
 }

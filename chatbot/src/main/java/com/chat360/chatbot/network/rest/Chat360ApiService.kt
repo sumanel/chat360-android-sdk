@@ -2,6 +2,7 @@ package com.chat360.chatbot.network.rest
 
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import com.chat360.chatbot.network.rest.dto.BotAppearanceResponse
+import com.chat360.chatbot.network.rest.dto.DealerRoomsResponse
 import com.chat360.chatbot.network.rest.dto.HistoryResponse
 import com.chat360.chatbot.network.rest.dto.SessionInitResponse
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -29,6 +30,15 @@ class Chat360ApiService(
     private val client: OkHttpClient = OkHttpClient(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    suspend fun getDealerRooms(dealerCode: String): DealerRoomsResponse {
+        val url = "https://staging.chat360.io/agentic-ai/api/client-hyundailms/rooms/".toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("dealer_code", dealerCode)
+            .build()
+        val body = execute(Request.Builder().url(url).get().build())
+        return json.decodeFromString(DealerRoomsResponse.serializer(), body)
+    }
 
     suspend fun getSession(
         botId: String,

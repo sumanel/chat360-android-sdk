@@ -15,6 +15,7 @@ import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.model.wire.IncomingSocketEvent
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import com.chat360.chatbot.model.wire.toIncomingEvent
+import com.chat360.chatbot.network.rest.Chat360ApiService
 import com.chat360.chatbot.ui.theme.toColorOverrides
 import com.chat360.chatbot.ui.theme.toLogoOverride
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,8 @@ class ChatViewModel(
     private val repository: ChatRepository,
     private val botId: String,
     private val cache: ChatCacheRepository,
+    private val dealerRoomsApi: Chat360ApiService,
+    private val dealerCode: String? = null,
     private val suppressInitialBotMessages: Boolean = false,
 ) : ViewModel() {
 
@@ -48,6 +51,18 @@ class ChatViewModel(
 
     init {
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
+        dealerCode?.let { code ->
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching { dealerRoomsApi.getDealerRooms(code) }
+                    .onSuccess { response ->
+                        // Room emits first. The network snapshot then becomes visible immediately,
+                        // followed by durable reconciliation back into Room.
+                        val refreshed = cache.dealerRoomConversations(botId, response.results)
+                        _conversations.value = refreshed
+                        cache.syncDealerRooms(botId, refreshed)
+                    }
+            }
+        }
         viewModelScope.launch {
             repository.connect(
                 onEvent = ::handleEvent,
@@ -585,6 +600,21 @@ class ChatViewModel(
         }
     }
 
+    /** Updates the locally cached label only; server-side history APIs will replace this later. */
+    fun renameConversation(conversationId: String, title: String) {
+        val normalizedTitle = title.trim().replace(Regex("\\s+"), " ").take(80)
+        if (normalizedTitle.isBlank()) return
+        viewModelScope.launch { cache.renameConversation(conversationId, normalizedTitle) }
+    }
+
+    /** Removes the local Room record and its messages. The active chat is reset to a new draft. */
+    fun deleteConversation(conversationId: String) {
+        viewModelScope.launch {
+            cache.deleteConversation(conversationId)
+            if (conversationId == activeConversationId) startNewChat()
+        }
+    }
+
     /** Binds the server room to its Room record and restores cached rich websocket messages. */
     private suspend fun activateConversation(roomId: String): Boolean {
         val (conversationId, hasCachedMessages) = cache.activateForRoom(botId, roomId, activeConversationId)
@@ -605,7 +635,24 @@ class ChatViewModel(
                 restoringFromCache = false
             }
         }
-        return hasCachedMessages
+        val refreshed = refreshConversationHistory(conversationId, roomId)
+        return hasCachedMessages || refreshed
+    }
+
+    /** Shows cached messages first, then replaces them with the room-id API snapshot and caches it. */
+    private suspend fun refreshConversationHistory(conversationId: String, roomId: String): Boolean {
+        val history = runCatching { repository.fetchHistory(roomId) }.getOrNull() ?: return false
+        if (activeConversationId != conversationId) return history.isNotEmpty()
+        streamRawText.clear()
+        _uiState.update { it.copy(messages = emptyList(), isArchived = false, isLiveChat = false, assignedAgent = null) }
+        restoringFromCache = true
+        try {
+            history.map { it.toIncomingEvent() }.forEach(::handleEvent)
+        } finally {
+            restoringFromCache = false
+        }
+        cache.replaceRawHistory(conversationId, history)
+        return history.isNotEmpty()
     }
 
     private fun cacheIncomingEnvelope(raw: String) {
@@ -646,6 +693,8 @@ class ChatViewModel(
             } finally {
                 restoringFromCache = false
             }
+            val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
+            if (roomId != null) refreshConversationHistory(conversationId, roomId)
         }
     }
 
@@ -670,6 +719,7 @@ class ChatViewModel(
         private val baseUrl: String,
         private val botId: String,
         private val historyEnabled: Boolean = true,
+        private val dealerCode: String? = null,
         private val suppressInitialBotMessages: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -678,6 +728,8 @@ class ChatViewModel(
                 repository = ChatRepository(baseUrl, botId, historyEnabled = historyEnabled),
                 botId = botId,
                 cache = ChatCacheRepository(ChatCacheDatabase.get(context).dao()),
+                dealerRoomsApi = Chat360ApiService(baseUrl),
+                dealerCode = dealerCode,
                 suppressInitialBotMessages = suppressInitialBotMessages,
             ) as T
         }

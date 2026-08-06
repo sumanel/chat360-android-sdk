@@ -12,6 +12,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "chat_conversations", indices = [Index(value = ["botId", "roomId"])])
@@ -55,17 +56,58 @@ interface ChatCacheDao {
     @Query("SELECT * FROM chat_messages WHERE conversationId = :conversationId ORDER BY id ASC")
     suspend fun messages(conversationId: String): List<CachedMessageEntity>
 
+    @Query("SELECT id FROM chat_conversations WHERE botId = :botId AND id LIKE 'dealer-room:%'")
+    suspend fun dealerRoomConversationIds(botId: String): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertConversation(conversation: CachedConversationEntity)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertConversationIfMissing(conversation: CachedConversationEntity)
+
+    @Query("UPDATE chat_conversations SET roomId = :roomId, title = :title, updatedAt = :updatedAt WHERE id = :conversationId")
+    suspend fun updateRemoteConversation(conversationId: String, roomId: String, title: String, updatedAt: Long)
+
+    @Transaction
+    suspend fun replaceDealerRoomConversations(botId: String, conversations: List<CachedConversationEntity>) {
+        val refreshedIds = conversations.mapTo(mutableSetOf()) { it.id }
+        dealerRoomConversationIds(botId)
+            .filterNot(refreshedIds::contains)
+            .forEach { deleteConversation(it) }
+        conversations.forEach { conversation ->
+            insertConversationIfMissing(conversation)
+            updateRemoteConversation(
+                conversation.id,
+                conversation.roomId.orEmpty(),
+                conversation.title,
+                conversation.updatedAt,
+            )
+        }
+    }
+
     @Insert
     suspend fun insertMessage(message: CachedMessageEntity)
+
+    @Insert
+    suspend fun insertMessages(messages: List<CachedMessageEntity>)
+
+    @Query("DELETE FROM chat_messages WHERE conversationId = :conversationId")
+    suspend fun deleteMessages(conversationId: String)
+
+    @Transaction
+    suspend fun replaceMessages(conversationId: String, messages: List<CachedMessageEntity>) {
+        deleteMessages(conversationId)
+        if (messages.isNotEmpty()) insertMessages(messages)
+    }
 
     @Query("UPDATE chat_conversations SET roomId = :roomId, updatedAt = :updatedAt WHERE id = :conversationId")
     suspend fun setRoom(conversationId: String, roomId: String, updatedAt: Long)
 
     @Query("UPDATE chat_conversations SET title = :title, updatedAt = :updatedAt WHERE id = :conversationId")
     suspend fun updateTitle(conversationId: String, title: String, updatedAt: Long)
+
+    @Query("DELETE FROM chat_conversations WHERE id = :conversationId")
+    suspend fun deleteConversation(conversationId: String)
 
     @Query("UPDATE chat_conversations SET updatedAt = :updatedAt WHERE id = :conversationId")
     suspend fun touch(conversationId: String, updatedAt: Long)
