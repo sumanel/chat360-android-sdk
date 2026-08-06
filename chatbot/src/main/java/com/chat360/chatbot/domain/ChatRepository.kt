@@ -30,6 +30,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import android.util.Log
 
 /**
  * Session + connection orchestration. REST session-init must complete before the WebSocket
@@ -138,6 +139,11 @@ class ChatRepository(
             // session's targetId so the bot emits its first message (layout/index.tsx does the
             // same via sendSocketMessage when lastMessage.msgType === 'INIT').
             if (session.nodeType == "INIT") pendingInitJumpTargetId = session.targetId
+
+            Log.d("Sanket", "rooId = $roomId")
+            Log.d("Sanket", "session.room_id = ${session.room_id}")
+            Log.d("Sanket", "ownerId = ${session.owner_id}")
+            Log.d("Sanket", "targetId = ${session.targetId}")
 
             val resumedAgent = session.assigned_user?.let {
                 if (it.operator_name.isNullOrBlank() && it.user_designation.isNullOrBlank() && it.avatar.isNullOrBlank()) {
