@@ -33,10 +33,13 @@ public class CoreConfigs(botId: String, applicationContext: Context, flutter: Bo
     var customTypography: Chat360Typography? = null
     var customBranding: Chat360Branding? = null
     var historyEnabled: Boolean = true
-    /** Dealer identifier used to load dealer-scoped rooms on the chat history page. */
-    var dealerCode: String? = null
-    /** Employee identifier used to load employee-scoped Hyundai rooms. */
-    var employeeCode: String? = null
+    /** Identifies which external integration the backend should route agent-rooms calls to
+     * (e.g. "hyundai") - the SDK substitutes this single value into the rooms endpoint and
+     * never owns any other per-client request logic. Only used when both this and [agentCode]
+     * are set. */
+    var clientExternalName: String? = null
+    /** Agent identifier used to load the rooms assigned to this agent from [clientExternalName]'s backend. */
+    var agentCode: String? = null
     /** Optional modern, immutable Compose UI configuration. Legacy fields remain supported. */
     var Chat360UIConfig: Chat360UIConfig? = null
 }

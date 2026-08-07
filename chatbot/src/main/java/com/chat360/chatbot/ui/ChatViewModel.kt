@@ -1,6 +1,8 @@
 package com.chat360.chatbot.ui
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -17,6 +19,7 @@ import com.chat360.chatbot.model.wire.IncomingSocketEvent
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import com.chat360.chatbot.model.wire.toIncomingEvent
 import com.chat360.chatbot.network.rest.Chat360ApiService
+import com.chat360.chatbot.network.rest.dto.SessionLanguage
 import com.chat360.chatbot.ui.theme.toColorOverrides
 import com.chat360.chatbot.ui.theme.toLogoOverride
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,9 +37,13 @@ class ChatViewModel(
     private val repository: ChatRepository,
     private val botId: String,
     private val cache: ChatCacheRepository,
-    private val dealerRoomsApi: Chat360ApiService,
-    private val employeeCode: String? = null,
+    private val roomsApi: Chat360ApiService,
+    private val clientExternalName: String? = null,
+    private val agentCode: String? = null,
     private val suppressInitialBotMessages: Boolean = false,
+    /** Only used for the offline pre-send connectivity check (see [sendMessage]) - null is
+     * safe, it just disables that check and lets a send attempt fail normally instead. */
+    private val appContext: Context? = null,
 ) : ViewModel() {
 
     private var hasStartedConversation = false
@@ -45,25 +52,44 @@ class ChatViewModel(
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private val _conversations = MutableStateFlow<List<CachedConversationEntity>>(emptyList())
     val conversations: StateFlow<List<CachedConversationEntity>> = _conversations.asStateFlow()
+    /** label -> targetId, from session-init's `bot_settings.bot_shortcuts` - mirrors the
+     * widget's Shortcuts menu. Empty when the bot has none configured. */
+    private val _shortcuts = MutableStateFlow<Map<String, String>>(emptyMap())
+    val shortcuts: StateFlow<Map<String, String>> = _shortcuts.asStateFlow()
+    /** Mirrors session-init's `bot_settings.languages` - empty when the bot is single-language. */
+    private val _languages = MutableStateFlow<List<SessionLanguage>>(emptyList())
+    val languages: StateFlow<List<SessionLanguage>> = _languages.asStateFlow()
+    /** The conversation currently *displayed* - can diverge from [connectedConversationId] when
+     * the user is browsing an older cached conversation from the drawer (see [openConversation]). */
     private var activeConversationId: String? = null
+    /** The conversation the live [ChatRepository] socket is actually bound to - set once per
+     * `connect()`/[startNewChat]'s `startNewSession()`, never by [openConversation]. Live socket
+     * events/reconnects only ever belong to *this* conversation - caching and rendering both key
+     * off it, never off [activeConversationId], so browsing an old conversation can never
+     * misattribute a live frame into it. */
+    private var connectedConversationId: String? = null
     /** True only while Room entries are being replayed; cached messages are never “initial” UI. */
     private var restoringFromCache = false
     private val cacheJson = Json { ignoreUnknownKeys = true }
+    /** The active conversation's `previous_cursor` for [loadMoreHistory] - set by whichever
+     * fetch (seed or "load more") most recently ran, reset to null on every conversation
+     * switch since a cursor is only ever meaningful within the room it came from. */
+    private var previousHistoryCursor: Int? = null
 
     init {
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
-        employeeCode?.let { code ->
+        if (clientExternalName != null && agentCode != null) {
             viewModelScope.launch(Dispatchers.IO) {
-                runCatching { dealerRoomsApi.getEmployeeRooms(code) }
+                runCatching { roomsApi.getAgentRooms(clientExternalName, agentCode) }
                     .onSuccess { response ->
                         // Room emits first. The network snapshot then becomes visible immediately,
                         // followed by durable reconciliation back into Room.
-                        val refreshed = cache.dealerRoomConversations(botId, response.results)
+                        val refreshed = cache.agentRoomConversations(botId, response.results)
                         _conversations.value = refreshed
-                        cache.syncDealerRooms(botId, refreshed)
+                        cache.syncAgentRooms(botId, refreshed)
                     }
                     .onFailure { error ->
-                        Log.e("Sanket", "Sanket ===== Hyundai rooms request failed: ${error.message}", error)
+                        Log.e("Chat360", "Agent rooms request failed: ${error.message}", error)
                     }
             }
         }
@@ -94,11 +120,22 @@ class ChatViewModel(
                     _uiState.update { it.copy(isLiveChat = takeover, assignedAgent = agent ?: it.assignedAgent) }
                 },
                 onFeedbackRequested = { _uiState.update { it.copy(showFeedbackPrompt = true) } },
+                onBotSettingsLoaded = { shortcuts, languages ->
+                    _shortcuts.value = shortcuts
+                    _languages.value = languages
+                },
             )
         }
     }
 
     private fun handleEvent(event: IncomingSocketEvent) {
+        // A live frame arriving while the user is browsing a different (non-connected)
+        // conversation from the drawer must not render into that unrelated transcript - it still
+        // got cached correctly (cacheIncomingEnvelope keys off connectedConversationId, not
+        // this), so reopening the connected conversation will show it. Replay (cache or REST
+        // history) is always allowed through: it only ever runs against whatever
+        // activeConversationId was just set to immediately before it started.
+        if (!restoringFromCache && activeConversationId != connectedConversationId) return
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
                 if (suppressInitialBotMessages && !hasStartedConversation && !restoringFromCache) return
@@ -162,7 +199,18 @@ class ChatViewModel(
                 if (event.message != null) appendMessage(ChatMessage(text = event.message, fromUser = false), cacheUserMessage = false)
                 if (event.autoArchive) _uiState.update { it.copy(isArchived = true) }
             }
-            // Ack/echoed-user/pong only drive ChatRepository's internal bookkeeping (ack-timeout
+            // Live echoes only drive ChatRepository's ack-tracking - the user's own bubble was
+            // already appended optimistically the moment they hit send, so rendering it again
+            // here would duplicate it. During history replay there was no such optimistic
+            // append, so this is the only place that user turn ever gets reconstructed from.
+            is IncomingSocketEvent.EchoedUserMessage -> {
+                if (restoringFromCache) {
+                    event.text?.let {
+                        appendMessage(ChatMessage(chatMsgId = event.chatMsgId, text = it, fromUser = true), cacheUserMessage = false)
+                    }
+                }
+            }
+            // Ack/pong only drive ChatRepository's internal bookkeeping (ack-timeout
             // cancellation, heartbeat reset) - nothing further to reflect in the UI.
             else -> Unit
         }
@@ -198,14 +246,32 @@ class ChatViewModel(
         _uiState.update { it.copy(pendingUrlToOpen = null) }
     }
 
-    /** Appending any message locks the quick replies of everything before it (widget behavior). */
+    /** Appending any message locks the quick replies of everything before it (widget behavior).
+     * A user-authored message also persists to the local cache, keyed by [connectedConversationId]
+     * (the room the live socket is actually bound to) - never by [activeConversationId], which can
+     * point at a different, merely-browsed conversation with no live room behind it at all.
+     * Sending anything while browsing an old conversation snaps the display back to the connected
+     * one (replaying its cache) first, since there's nowhere else coherent for it to go. */
     private fun appendMessage(message: ChatMessage, cacheUserMessage: Boolean = message.fromUser) {
+        val target = connectedConversationId
+        if (message.fromUser && !restoringFromCache && target != null && activeConversationId != target) {
+            activeConversationId = target
+            viewModelScope.launch {
+                replayFromCache(target)
+                appendMessageNow(message, cacheUserMessage)
+            }
+            return
+        }
+        appendMessageNow(message, cacheUserMessage)
+    }
+
+    private fun appendMessageNow(message: ChatMessage, cacheUserMessage: Boolean) {
         _uiState.update { state ->
             state.copy(
                 messages = state.messages.map { it.copy(repliesEnabled = false) } + message,
             )
         }
-        if (cacheUserMessage) activeConversationId?.let { conversationId ->
+        if (cacheUserMessage) connectedConversationId?.let { conversationId ->
             viewModelScope.launch { cache.cacheUserMessage(conversationId, message.text, message.chatMsgId) }
         }
     }
@@ -399,6 +465,43 @@ class ChatViewModel(
         repository.jumpToNode(targetId)
     }
 
+    /** Answers a tap on the shortcuts menu - mirrors jumpToEleUser(): sends the shortcut's
+     * label as a real user-authored message that jumps straight to its target node. */
+    fun selectShortcut(targetId: String, label: String) {
+        val chatMsgId = repository.sendShortcut(targetId, label)
+        appendMessage(ChatMessage(chatMsgId = chatMsgId, text = label, fromUser = true))
+    }
+
+    /** Switches the bot flow to another language's entry node - mirrors onChangeLanguage():
+     * reconnects first if the socket dropped, clears the transcript (this is a flow restart,
+     * not a new conversation - same local conversation/room, just a fresh starting point), then
+     * jumps to the language's target with no user-authored bubble (matches jumpToEleBot). */
+    fun switchLanguage(targetId: String) {
+        if (connectedConversationId != null && activeConversationId != connectedConversationId) {
+            activeConversationId = connectedConversationId
+        }
+        if (!_uiState.value.isConnected) repository.reconnectNow()
+        streamRawText.clear()
+        hasStartedConversation = false
+        _uiState.update {
+            it.copy(
+                messages = emptyList(),
+                isAgentTyping = false,
+                isLiveChat = false,
+                assignedAgent = null,
+                isArchived = false,
+                showFeedbackPrompt = false,
+            )
+        }
+        repository.jumpToNode(targetId)
+    }
+
+    /** User-triggered "refresh this chat" action - reconnects immediately instead of waiting
+     * out the automatic backoff, for when a host app wants to expose a manual retry affordance. */
+    fun refreshConnection() {
+        repository.reconnectNow()
+    }
+
     fun updateFormField(messageId: String, fieldIndex: Int, value: String) {
         _uiState.update { state ->
             state.copy(
@@ -585,11 +688,16 @@ class ChatViewModel(
         _uiState.update { it.copy(inputText = text) }
     }
 
-    /** Starts a distinct locally persisted conversation. */
+    /** Starts a distinct locally persisted conversation backed by a genuinely new server room -
+     * the repository's roomId is otherwise fixed for the ViewModel's lifetime, so without this
+     * every "new chat" would keep sending into the same room as whatever conversation was
+     * active before, silently mixing them together (and clobbering each other's history on
+     * reopen, since [refreshConversationHistory] replaces a conversation's cache with its
+     * room's current server state). */
     fun startNewChat() {
         val conversationId = java.util.UUID.randomUUID().toString()
+        connectedConversationId = conversationId
         activeConversationId = conversationId
-        viewModelScope.launch { cache.createConversation(botId, conversationId) }
         streamRawText.clear()
         hasStartedConversation = false
         _uiState.update {
@@ -597,13 +705,19 @@ class ChatViewModel(
                 messages = emptyList(),
                 inputText = "",
                 isAgentTyping = false,
+                isConnected = false,
                 isLiveChat = false,
                 assignedAgent = null,
                 isArchived = false,
                 voiceDraft = null,
                 showFeedbackPrompt = false,
                 pendingUrlToOpen = null,
+                hasMoreHistory = false,
             )
+        }
+        viewModelScope.launch {
+            cache.createConversation(botId, conversationId)
+            repository.startNewSession(onConversationStarted = ::activateConversation)
         }
     }
 
@@ -614,40 +728,82 @@ class ChatViewModel(
         val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
         viewModelScope.launch(Dispatchers.IO) {
             cache.renameConversation(conversationId, normalizedTitle)
-            if (roomId != null) {
-                runCatching { dealerRoomsApi.renameRoom(roomId, normalizedTitle) }
+            if (roomId != null && clientExternalName != null) {
+                runCatching { roomsApi.renameRoom(clientExternalName, roomId, normalizedTitle) }
                     .onFailure { error -> Log.e("Chat360", "Room rename API failed: ${error.message}", error) }
             }
         }
     }
 
-    /** Binds the server room to its Room record and restores cached rich websocket messages. */
-    private suspend fun activateConversation(roomId: String): Boolean {
-        val (conversationId, hasCachedMessages) = cache.activateForRoom(botId, roomId, activeConversationId)
-        activeConversationId = conversationId
-        if (hasCachedMessages) {
-            streamRawText.clear()
-            _uiState.update { it.copy(messages = emptyList()) }
-            restoringFromCache = true
-            try {
-                cache.messages(conversationId).forEach { cached ->
-                    when (cached.kind) {
-                        "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true), cacheUserMessage = false)
-                        "RAW" -> runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }
-                            .getOrNull()?.let(::handleEvent)
-                    }
-                }
-            } finally {
-                restoringFromCache = false
+    /** Deletes a conversation from local history. Deleting the *connected* one always starts a
+     * fresh chat - its live room's cache row is gone, so nothing should keep writing into it.
+     * Deleting a merely-*displayed* (browsed) one falls back to another existing conversation (or
+     * starts a fresh one if none remain) so the screen is never left pointing at a conversation
+     * that no longer exists. */
+    fun deleteConversation(conversationId: String) {
+        val wasConnected = conversationId == connectedConversationId
+        val wasActive = conversationId == activeConversationId
+        viewModelScope.launch {
+            cache.deleteConversation(conversationId)
+            if (wasConnected) {
+                startNewChat()
+                return@launch
             }
+            if (!wasActive) return@launch
+            val fallback = _conversations.value.firstOrNull { it.id != conversationId }
+            if (fallback != null) openConversation(fallback.id) else startNewChat()
         }
-        val refreshed = refreshConversationHistory(conversationId, roomId)
-        return hasCachedMessages || refreshed
     }
 
-    /** Shows cached messages first, then replaces them with the room-id API snapshot and caches it. */
+    /** Binds the server room to its Room record and restores cached rich websocket messages.
+     * Local cache is the durable source of truth for a conversation this device has already
+     * seen - [refreshConversationHistory]'s REST fetch only ever seeds a conversation that has
+     * none yet (matches the widget: `session.initialMessagePage` seeds a brand-new session
+     * once; growing it further is only ever additive pagination via getMoreMessages(), never a
+     * wholesale resync). Skipping it once local messages exist also avoids a real data-loss bug:
+     * that endpoint caps at a handful of the most recent raw items, and unconditionally
+     * replacing the local cache with a truncated snapshot on every reopen would silently delete
+     * everything older than that window. */
+    private suspend fun activateConversation(roomId: String): Boolean {
+        val (conversationId, hasCachedMessages) = cache.activateForRoom(botId, roomId, connectedConversationId)
+        connectedConversationId = conversationId
+        activeConversationId = conversationId
+        previousHistoryCursor = null
+        if (hasCachedMessages) {
+            replayFromCache(conversationId)
+            return true
+        }
+        return refreshConversationHistory(conversationId, roomId)
+    }
+
+    /** Replays a conversation's cached Room entries through [handleEvent] - shared by
+     * [activateConversation]'s cache-hit path, [openConversation], and [appendMessage]'s
+     * snap-back-to-connected path. Returns whether any cached entries were found. */
+    private suspend fun replayFromCache(conversationId: String): Boolean {
+        streamRawText.clear()
+        _uiState.update { it.copy(messages = emptyList(), hasMoreHistory = false) }
+        restoringFromCache = true
+        var hasCachedMessages = false
+        try {
+            cache.messages(conversationId).forEach { cached ->
+                hasCachedMessages = true
+                when (cached.kind) {
+                    "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true), cacheUserMessage = false)
+                    "RAW" -> runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }
+                        .getOrNull()?.let(::handleEvent)
+                }
+            }
+        } finally {
+            restoringFromCache = false
+        }
+        return hasCachedMessages
+    }
+
+    /** Seeds a conversation that has no local messages yet from the room's server snapshot -
+     * see [activateConversation]'s doc for why this must never run once local cache exists. */
     private suspend fun refreshConversationHistory(conversationId: String, roomId: String): Boolean {
-        val history = runCatching { repository.fetchHistory(roomId) }.getOrNull() ?: return false
+        val response = runCatching { repository.fetchHistory(roomId) }.getOrNull() ?: return false
+        val history = response.history
         if (activeConversationId != conversationId) return history.isNotEmpty()
         streamRawText.clear()
         _uiState.update { it.copy(messages = emptyList(), isArchived = false, isLiveChat = false, assignedAgent = null) }
@@ -658,11 +814,50 @@ class ChatViewModel(
             restoringFromCache = false
         }
         cache.replaceRawHistory(conversationId, history)
+        previousHistoryCursor = response.previous_cursor
+        _uiState.update { it.copy(hasMoreHistory = response.previous_cursor != null) }
         return history.isNotEmpty()
     }
 
-    private fun cacheIncomingEnvelope(raw: String) {
+    /** Pages one step further back - mirrors Messages/index.tsx's scroll-to-top trigger
+     * (`pos.y < THRESH_HOLD`), just called directly by the UI instead of derived from a raw
+     * scroll offset. Additive only: prepends the older page, never touches what's already shown. */
+    fun loadMoreHistory() {
         val conversationId = activeConversationId ?: return
+        val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId ?: return
+        val cursor = previousHistoryCursor ?: return
+        if (_uiState.value.isLoadingMoreHistory) return
+        _uiState.update { it.copy(isLoadingMoreHistory = true) }
+        viewModelScope.launch {
+            val response = runCatching { repository.fetchMoreHistory(roomId, cursor) }.getOrNull()
+            if (response == null || activeConversationId != conversationId) {
+                _uiState.update { it.copy(isLoadingMoreHistory = false) }
+                return@launch
+            }
+            val sizeBefore = _uiState.value.messages.size
+            restoringFromCache = true
+            try {
+                response.history.map { it.toIncomingEvent() }.forEach(::handleEvent)
+            } finally {
+                restoringFromCache = false
+            }
+            // handleEvent only ever appends - the older page just landed at the tail, so move
+            // it to the front instead of re-deriving each ChatMessage's construction here.
+            _uiState.update { state ->
+                val olderMessages = state.messages.drop(sizeBefore)
+                val existingMessages = state.messages.take(sizeBefore)
+                state.copy(
+                    messages = olderMessages + existingMessages,
+                    isLoadingMoreHistory = false,
+                    hasMoreHistory = response.previous_cursor != null,
+                )
+            }
+            previousHistoryCursor = response.previous_cursor
+        }
+    }
+
+    private fun cacheIncomingEnvelope(raw: String) {
+        val conversationId = connectedConversationId ?: return
         // Cache only envelopes that create visible bot-side state.  This is deliberately
         // committed before the websocket callback returns instead of launching another UI
         // coroutine: otherwise a fast Activity/ViewModel teardown can cancel the write and
@@ -685,22 +880,15 @@ class ChatViewModel(
         if (conversationId == activeConversationId) return
         viewModelScope.launch {
             activeConversationId = conversationId
-            streamRawText.clear()
-            _uiState.update { it.copy(messages = emptyList(), isArchived = false, isLiveChat = false, assignedAgent = null) }
-            restoringFromCache = true
-            try {
-                cache.messages(conversationId).forEach { cached ->
-                    when (cached.kind) {
-                        "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true), cacheUserMessage = false)
-                        "RAW" -> runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }
-                            .getOrNull()?.let(::handleEvent)
-                    }
-                }
-            } finally {
-                restoringFromCache = false
+            previousHistoryCursor = null
+            _uiState.update { it.copy(isArchived = false, isLiveChat = false, assignedAgent = null) }
+            val hasCachedMessages = replayFromCache(conversationId)
+            // See activateConversation's doc: only seed from the server when there's nothing
+            // local yet - never resync an already-known conversation and risk truncating it.
+            if (!hasCachedMessages) {
+                val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
+                if (roomId != null) refreshConversationHistory(conversationId, roomId)
             }
-            val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
-            if (roomId != null) refreshConversationHistory(conversationId, roomId)
         }
     }
 
@@ -710,9 +898,29 @@ class ChatViewModel(
         // live chat (`!value.trim() && !isLiveChat`) - live chat allows an empty submit through.
         if (text.isEmpty() && !_uiState.value.isLiveChat) return
         hasStartedConversation = true
-        val chatMsgId = repository.sendFreeText(text)
         _uiState.update { it.copy(inputText = "") }
+        // Mirrors sendUserMessage's `!navigator.onLine` check: with no connectivity at all,
+        // skip the send attempt entirely and show the bubble as failed immediately, rather than
+        // waiting out a doomed attempt and the ack-timeout that would eventually flag it anyway.
+        if (!isOnline()) {
+            appendMessage(ChatMessage(text = text, fromUser = true, failed = true))
+            return
+        }
+        val chatMsgId = repository.sendFreeText(text)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
+    }
+
+    /** Best-effort connectivity check - mirrors `!navigator.onLine`. Returns true (i.e. "don't
+     * block the send") when there's no [appContext] to check with or the platform API errors,
+     * since a failed send still degrades gracefully via the existing ack-timeout path. */
+    private fun isOnline(): Boolean {
+        val context = appContext ?: return true
+        return runCatching {
+            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+            val network = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }.getOrDefault(true)
     }
 
     override fun onCleared() {
@@ -725,7 +933,8 @@ class ChatViewModel(
         private val baseUrl: String,
         private val botId: String,
         private val historyEnabled: Boolean = true,
-        private val employeeCode: String? = null,
+        private val clientExternalName: String? = null,
+        private val agentCode: String? = null,
         private val suppressInitialBotMessages: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -734,9 +943,11 @@ class ChatViewModel(
                 repository = ChatRepository(baseUrl, botId, historyEnabled = historyEnabled),
                 botId = botId,
                 cache = ChatCacheRepository(ChatCacheDatabase.get(context).dao()),
-                dealerRoomsApi = Chat360ApiService(baseUrl),
-                employeeCode = employeeCode,
+                roomsApi = Chat360ApiService(baseUrl),
+                clientExternalName = clientExternalName,
+                agentCode = agentCode,
                 suppressInitialBotMessages = suppressInitialBotMessages,
+                appContext = context.applicationContext,
             ) as T
         }
     }

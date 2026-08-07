@@ -151,6 +151,26 @@ val DarkModeIcon: ImageVector by lazy {
     }
 }
 
+val RefreshIcon: ImageVector by lazy {
+    materialIcon("Refresh") {
+        filledPath {
+            moveTo(12f, 4f); curveTo(7.58f, 4f, 4f, 7.58f, 4f, 12f); curveTo(4f, 16.42f, 7.58f, 20f, 12f, 20f)
+            curveTo(15.73f, 20f, 18.84f, 17.45f, 19.73f, 14f); lineTo(17.65f, 14f)
+            curveTo(16.83f, 16.33f, 14.61f, 18f, 12f, 18f); curveTo(8.69f, 18f, 6f, 15.31f, 6f, 12f)
+            curveTo(6f, 8.69f, 8.69f, 6f, 12f, 6f); curveTo(13.66f, 6f, 15.14f, 6.69f, 16.22f, 7.78f)
+            lineTo(13f, 11f); lineTo(20f, 11f); lineTo(20f, 4f); lineTo(17.65f, 6.35f)
+            curveTo(16.35f, 5.03f, 14.28f, 4f, 12f, 4f); close()
+        }
+    }
+}
+
+/** A bolt glyph for the shortcuts/quick-jump menu - distinct from [MenuIcon]'s hamburger. */
+val ShortcutIcon: ImageVector by lazy {
+    materialIcon("Shortcut") {
+        filledPath { moveTo(11f, 21f); lineTo(12.5f, 13.5f); lineTo(7f, 13.5f); lineTo(14f, 3f); lineTo(12.5f, 10.5f); lineTo(18f, 10.5f); close() }
+    }
+}
+
 private fun ImageVector.Builder.filledPath(block: PathBuilder.() -> Unit) =
     path(fill = SolidColor(androidx.compose.ui.graphics.Color.Black), pathBuilder = block)
 

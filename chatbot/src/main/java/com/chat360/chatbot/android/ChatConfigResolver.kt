@@ -15,8 +15,8 @@ const val EXTRA_BOT_ID = "extra_bot_id"
 const val EXTRA_BASE_URL = "extra_base_url"
 const val EXTRA_THEME_PRESET = "extra_theme_preset"
 const val EXTRA_HISTORY_ENABLED = "extra_history_enabled"
-const val EXTRA_DEALER_CODE = "extra_dealer_code"
-const val EXTRA_EMPLOYEE_CODE = "extra_employee_code"
+const val EXTRA_CLIENT_EXTERNAL_NAME = "extra_client_external_name"
+const val EXTRA_AGENT_CODE = "extra_agent_code"
 
 data class ResolvedChatConfig(
     val botId: String,
@@ -27,8 +27,8 @@ data class ResolvedChatConfig(
     val customTypography: Chat360Typography?,
     val customBranding: Chat360Branding?,
     val historyEnabled: Boolean,
-    val dealerCode: String?,
-    val employeeCode: String?,
+    val clientExternalName: String?,
+    val agentCode: String?,
     val Chat360UIConfig: Chat360UIConfig,
 )
 
@@ -51,8 +51,8 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
             customTypography = config.customTypography,
             customBranding = config.customBranding,
             historyEnabled = config.historyEnabled,
-            dealerCode = config.dealerCode?.trim()?.takeIf { it.isNotEmpty() },
-            employeeCode = config.employeeCode?.trim()?.takeIf { it.isNotEmpty() },
+            clientExternalName = config.clientExternalName?.trim()?.takeIf { it.isNotEmpty() },
+            agentCode = config.agentCode?.trim()?.takeIf { it.isNotEmpty() },
             Chat360UIConfig = config.Chat360UIConfig ?: Chat360UIConfig(),
         )
     }
@@ -66,8 +66,8 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
         customTypography = null,
         customBranding = null,
         historyEnabled = extras?.getBoolean(EXTRA_HISTORY_ENABLED, true) ?: true,
-        dealerCode = extras?.getString(EXTRA_DEALER_CODE)?.trim()?.takeIf { it.isNotEmpty() },
-        employeeCode = extras?.getString(EXTRA_EMPLOYEE_CODE)?.trim()?.takeIf { it.isNotEmpty() },
+        clientExternalName = extras?.getString(EXTRA_CLIENT_EXTERNAL_NAME)?.trim()?.takeIf { it.isNotEmpty() },
+        agentCode = extras?.getString(EXTRA_AGENT_CODE)?.trim()?.takeIf { it.isNotEmpty() },
         Chat360UIConfig = Chat360UIConfig(),
     )
 }

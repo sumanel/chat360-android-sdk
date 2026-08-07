@@ -1,7 +1,7 @@
 package com.chat360.chatbot.cache
 
 import kotlinx.coroutines.flow.Flow
-import com.chat360.chatbot.network.rest.dto.DealerRoomDto
+import com.chat360.chatbot.network.rest.dto.AgentRoomDto
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -30,11 +30,11 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
     suspend fun messages(conversationId: String): List<CachedMessageEntity> = dao.messages(conversationId)
 
     /** Adds server rooms to the same observable list as local chats without replacing cached messages. */
-    fun dealerRoomConversations(botId: String, rooms: List<DealerRoomDto>): List<CachedConversationEntity> {
+    fun agentRoomConversations(botId: String, rooms: List<AgentRoomDto>): List<CachedConversationEntity> {
         val fetchedAt = System.currentTimeMillis()
         return rooms.mapIndexed { index, room ->
             CachedConversationEntity(
-                id = "dealer-room:${room.agentUuid}",
+                id = "agent-room:${room.agentUuid}",
                 botId = botId,
                 roomId = room.roomId,
                 title = room.roomName.trim().ifEmpty { "Conversation" },
@@ -44,8 +44,8 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
         }
     }
 
-    suspend fun syncDealerRooms(botId: String, conversations: List<CachedConversationEntity>) {
-        dao.replaceDealerRoomConversations(botId, conversations)
+    suspend fun syncAgentRooms(botId: String, conversations: List<CachedConversationEntity>) {
+        dao.replaceAgentRoomConversations(botId, conversations)
     }
 
     suspend fun replaceRawHistory(conversationId: String, history: List<RawSocketEnvelope>) {

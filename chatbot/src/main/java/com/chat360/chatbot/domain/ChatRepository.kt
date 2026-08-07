@@ -14,6 +14,8 @@ import com.chat360.chatbot.model.wire.SystemJumpMessage
 import com.chat360.chatbot.model.wire.toIncomingEvent
 import com.chat360.chatbot.network.rest.Chat360ApiService
 import com.chat360.chatbot.network.rest.dto.BotAppearanceDetails
+import com.chat360.chatbot.network.rest.dto.HistoryResponse
+import com.chat360.chatbot.network.rest.dto.SessionLanguage
 import com.chat360.chatbot.network.rest.dto.details
 import com.chat360.chatbot.network.ws.AckTracker
 import com.chat360.chatbot.network.ws.Chat360WebSocketClient
@@ -23,14 +25,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
-import android.util.Log
 
 /**
  * Session + connection orchestration. REST session-init must complete before the WebSocket
@@ -65,6 +70,10 @@ class ChatRepository(
     private var pendingInitJumpTargetId: String? = null
     private var suppressReconnect = false
     private var manuallyDisconnected = false
+    /** The last bot node id actually dispatched - mirrors handleDuplicateMessageFilter's
+     * `lastMessage.id === message.data.id` (MessageHandlers.ts): a dropped/flaky connection can
+     * redeliver the exact same frame, which would otherwise render as a second identical bubble. */
+    private var lastDispatchedNodeId: String? = null
 
     private var onEvent: (IncomingSocketEvent) -> Unit = {}
     private var onConnected: () -> Unit = {}
@@ -74,6 +83,9 @@ class ChatRepository(
     private var onOpenUrl: (String) -> Unit = {}
     private var onFeedbackRequested: () -> Unit = {}
     private var onRawIncoming: (String) -> Unit = {}
+    private var onAppearanceLoaded: (BotAppearanceDetails?, String?) -> Unit = { _, _ -> }
+    private var onSessionResumed: (Boolean, AssignedAgent?) -> Unit = { _, _ -> }
+    private var onBotSettingsLoaded: (shortcuts: Map<String, String>, languages: List<SessionLanguage>) -> Unit = { _, _ -> }
     /** From session init's `configs.should_ask_feedback` - gates whether LiveChatEnded also closes the socket. */
     private var shouldAskFeedback: Boolean = false
 
@@ -109,6 +121,9 @@ class ChatRepository(
         /** Mirrors the widget's shouldAskFeedback-gated close: the session ended but is being
          * held open (see LiveChatEnded below) so the UI can show the post-chat survey first. */
         onFeedbackRequested: () -> Unit = {},
+        /** The room's shortcut menu (label -> targetId) and available languages, straight from
+         * session-init's `bot_settings` - mirrors initSession.ts's `botSettings` mapping. */
+        onBotSettingsLoaded: (shortcuts: Map<String, String>, languages: List<SessionLanguage>) -> Unit = { _, _ -> },
     ) {
         this.onEvent = onEvent
         this.onConnected = onConnected
@@ -119,7 +134,44 @@ class ChatRepository(
         this.onOpenUrl = onOpenUrl
         this.onFeedbackRequested = onFeedbackRequested
         this.onRawIncoming = onRawIncoming
+        this.onAppearanceLoaded = onAppearanceLoaded
+        this.onSessionResumed = onSessionResumed
+        this.onBotSettingsLoaded = onBotSettingsLoaded
 
+        establishSession(onConversationStarted)
+    }
+
+    /**
+     * Tears down the current room's socket/session state and re-runs session-init from
+     * scratch, so the backend allocates a genuinely new room instead of resuming the one
+     * [connect] already established. Unlike a dropped-connection reconnect (which
+     * deliberately reuses ownerId/roomId, see the class doc), this is for a user-initiated
+     * "start a new conversation" action, where reusing the old room would mix unrelated
+     * conversations together in the same room history.
+     */
+    suspend fun startNewSession(onConversationStarted: suspend (roomId: String) -> Boolean = { false }) {
+        // Suppresses handleClosed()'s auto-reconnect for this intentional close. Left set
+        // until establishSession() is about to reopen the socket (not reset immediately
+        // here) since wsClient.close() delivers its onClosed callback asynchronously - if it
+        // lands after this function returns, an early reset would let handleClosed() treat
+        // it as an unexpected drop and schedule a redundant reconnect of the new room.
+        manuallyDisconnected = true
+        heartbeat.stop()
+        reconnectManager.cancel()
+        ackTracker.cancelAll()
+        wsClient.close()
+
+        ownerId = null
+        roomId = null
+        currentTargetId = null
+        lastBotNode = null
+        pendingInitJumpTargetId = null
+        shouldAskFeedback = false
+
+        establishSession(onConversationStarted)
+    }
+
+    private suspend fun establishSession(onConversationStarted: suspend (roomId: String) -> Boolean) {
         try {
             // The widget derives website_url/current_url from the browser's own window.location,
             // which always points at the chat360-hosted page regardless of who embeds it - a
@@ -140,11 +192,6 @@ class ChatRepository(
             // same via sendSocketMessage when lastMessage.msgType === 'INIT').
             if (session.nodeType == "INIT") pendingInitJumpTargetId = session.targetId
 
-            Log.d("Sanket", "Sanket ===== roomId = $roomId")
-            Log.d("Sanket", "Sanket ===== session.room_id = ${session.room_id}")
-            Log.d("Sanket", "Sanket ===== ownerId = ${session.owner_id}")
-            Log.d("Sanket", "Sanket ===== targetId = ${session.targetId}")
-
             val resumedAgent = session.assigned_user?.let {
                 if (it.operator_name.isNullOrBlank() && it.user_designation.isNullOrBlank() && it.avatar.isNullOrBlank()) {
                     null
@@ -153,6 +200,15 @@ class ChatRepository(
                 }
             }
             onSessionResumed(session.takeover, resumedAgent)
+            val shortcuts = runCatching {
+                session.bot_settings?.get("bot_shortcuts")
+                    ?.let { json.decodeFromJsonElement(MapSerializer(String.serializer(), String.serializer()), it) }
+            }.getOrNull().orEmpty()
+            val languages = runCatching {
+                session.bot_settings?.get("languages")
+                    ?.let { json.decodeFromJsonElement(ListSerializer(SessionLanguage.serializer()), it) }
+            }.getOrNull().orEmpty()
+            onBotSettingsLoaded(shortcuts, languages)
 
             fetchAppearance(host, onAppearanceLoaded)
             val hadHistory = onConversationStarted(session.room_id)
@@ -162,19 +218,28 @@ class ChatRepository(
             // it's ready to be a real session - so the closest equivalent moment is "this room
             // has no history yet": show the starter content as the opening bubbles instead of an
             // empty WelcomeSplash, using the exact same wire parsing as any other frame.
-
-
-
-//            if (!hadHistory) loadConversationStarter(onRawIncoming)   // load initial messages commmented by Sanket
+            // Mirrors layout/index.tsx suppressing its socket auto-jump via
+            // `!convoStarter?.isActive` while starter content is being shown: sending the
+            // pending INIT jump too would re-request (and re-render) the exact same first
+            // node the starter fetch just displayed.
+            if (!hadHistory && loadConversationStarter(onRawIncoming)) pendingInitJumpTargetId = null
             openSocket()
         } catch (e: Exception) {
             onError(e)
         }
     }
 
-    /** Fetches the latest server snapshot for cache-first conversation refreshes. */
-    suspend fun fetchHistory(roomId: String): List<RawSocketEnvelope> =
-        if (historyEnabled) apiService.getHistory(roomId).history else emptyList()
+    /** Fetches the most recent page for cache-first conversation seeding - only ever called
+     * when the caller has no local messages yet (see ChatViewModel.activateConversation's doc).
+     * Carries [HistoryResponse.previous_cursor] so the caller can page further back on demand. */
+    suspend fun fetchHistory(roomId: String): HistoryResponse =
+        if (historyEnabled) apiService.getHistory(roomId) else HistoryResponse()
+
+    /** Pages one step further back from [cursor] (a prior response's `previous_cursor`) -
+     * mirrors getMoreMessages()'s `task_type: 'PREVIOUS'` fetch (layout/index.tsx). Additive
+     * only: the caller prepends this page, it never replaces anything already shown. */
+    suspend fun fetchMoreHistory(roomId: String, cursor: Int): HistoryResponse =
+        if (historyEnabled) apiService.getHistory(roomId, taskType = "PREVIOUS", taskValue = cursor) else HistoryResponse()
 
     /** Returns true if any history was found (and dispatched), so callers can fall back to conversation-starter content on a genuinely fresh room. */
     private suspend fun loadHistory(onRawIncoming: (String) -> Unit): Boolean {
@@ -193,9 +258,11 @@ class ChatRepository(
         }
     }
 
-    /** Best-effort like loadHistory()/fetchAppearance() - a failed/empty fetch just means no starter bubbles, never blocks connecting. */
-    private suspend fun loadConversationStarter(onRawIncoming: (String) -> Unit) {
-        try {
+    /** Best-effort like loadHistory()/fetchAppearance() - a failed/empty fetch just means no
+     * starter bubbles, never blocks connecting. Returns whether any starter content actually
+     * rendered, so the caller knows whether the pending INIT jump is now redundant. */
+    private suspend fun loadConversationStarter(onRawIncoming: (String) -> Unit): Boolean {
+        return try {
             val items = apiService.getFirstMessages(botId)
             items.forEach { item ->
                 onRawIncoming(json.encodeToString(item))
@@ -206,8 +273,10 @@ class ChatRepository(
                 }
                 onEvent(event)
             }
+            items.isNotEmpty()
         } catch (e: Exception) {
             // Non-fatal - the real session's own first message still arrives once the socket opens.
+            false
         }
     }
 
@@ -231,9 +300,29 @@ class ChatRepository(
         }
     }
 
+    /** User-triggered "refresh this chat" action - mirrors onRefresh() (layout/index.tsx):
+     * reconnects immediately with the same ownerId/roomId (unlike [startNewSession], which
+     * gets a whole new room), bypassing [ReconnectManager]'s backoff delay. A no-op if the
+     * session hasn't been established yet (nothing to reconnect to). */
+    fun reconnectNow() {
+        if (ownerId == null || roomId == null) return
+        // See startNewSession()'s doc: manuallyDisconnected stays set across the close so a
+        // delayed async onClosed from the old socket can't slip through and schedule a
+        // redundant backoff reconnect; openSocket() clears it right before reopening.
+        manuallyDisconnected = true
+        reconnectManager.cancel()
+        wsClient.close()
+        openSocket()
+    }
+
     private fun openSocket() {
         val oId = ownerId ?: return
         val rId = roomId ?: return
+        // Only meaningful when startNewSession() left it set - a plain connect() call
+        // already starts false. Reset here rather than right after wsClient.close() so a
+        // delayed async onClosed from the just-closed old socket can't slip through and
+        // trigger a redundant reconnect for the room we're about to open.
+        manuallyDisconnected = false
         val wsScheme = if (baseUrl.startsWith("https")) "wss" else "ws"
         val host = baseUrl.substringAfter("://")
         val wsUrl = "$wsScheme://$host/ws/chat_updated/$oId/$rId"
@@ -270,9 +359,20 @@ class ChatRepository(
         heartbeat.onMessageReceived(isPong = envelope.type == "pong")
 
         val event = envelope.toIncomingEvent()
+        // Agent-authored messages are excluded (mirrors MessageHandlers.ts checking
+        // !isLiveChat): an agent legitimately repeating themselves shouldn't be swallowed, and
+        // admin/operator frames don't carry the same node-id-per-flow-step guarantee bot nodes do.
+        if (event is IncomingSocketEvent.BotMessage &&
+            event.node.author != BotNode.MessageAuthor.AGENT &&
+            event.node.nodeId != null &&
+            event.node.nodeId == lastDispatchedNodeId
+        ) {
+            return
+        }
         onRawIncoming(raw)
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
+                lastDispatchedNodeId = event.node.nodeId
                 lastBotNode = event.node
                 currentTargetId = event.node.targetId ?: currentTargetId
                 handleWindowEventNode(event.node.content)
@@ -326,7 +426,6 @@ class ChatRepository(
     /** The inbound half: an event handed to the active session becomes an outgoing message
      * carrying it as `variables`, matching onMoveForward(targetId, {variableValues: data}). */
     private fun sendWindowEvent(event: Map<String, String>) {
-        Log.d("Sanket", "Sanket ===== Sending window event to bot: $event")
         val node = lastBotNode
         val outgoing = OutgoingMessage(
             message = JsonObject(emptyMap()),
@@ -342,6 +441,22 @@ class ChatRepository(
 
     /** Advances the bot flow without a user-authored message - used by IFRAME's postMessage bridge. */
     fun jumpToNode(targetId: String) = sendSystemJump(targetId)
+
+    /** Answers a tap on the shortcuts menu (label -> targetId, from session-init's
+     * `bot_settings`) - mirrors jumpToEleUser's `sendUserMessage(label, {targetId})` (unlike
+     * [jumpToNode], this is user-authored and gets its own chat bubble showing the label). */
+    fun sendShortcut(targetId: String, label: String): String {
+        val node = lastBotNode
+        val outgoing = OutgoingMessage(
+            message = JsonPrimitive(label),
+            bot_id = botId,
+            targetId = targetId,
+            room_id = roomId,
+            currentId = node?.nodeId,
+            nodeType = node?.nodeType,
+        )
+        return sendTracked(outgoing)
+    }
 
     private fun sendSystemJump(targetId: String) {
         val jump = SystemJumpMessage(

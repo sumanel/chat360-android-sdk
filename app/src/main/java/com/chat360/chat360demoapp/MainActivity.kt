@@ -3,12 +3,12 @@ package com.chat360.chat360demoapp
 
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import androidx.annotation.RequiresApi
 import com.chat360.chatbot.android.ChatComposeActivity
 import com.chat360.chatbot.common.Chat360
@@ -26,16 +26,22 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 
 
 class MainActivity : AppCompatActivity() {
     companion object {
+        // Hyundai's own dealer-validation gate, unrelated to Chat360's rooms/history API -
+        // this app owns the URL, the request shape, and the identifiers entirely.
         private const val HYUNDAI_EMPLOYEE_AUTH_URL =
             "https://staging.chat360.io/api/client_hyundai_lms/sales-executive/validate/"
         private const val HYUNDAI_DEALER_CODE = "DLR001"
         private const val HYUNDAI_EMPLOYEE_CODE = "EMP1001"
         private const val HYUNDAI_EMPLOYEE_NAME = "Rahul Sharma"
         private const val HYUNDAI_EMPLOYEE_STATUS = "ACTIVE"
+        // Single opaque identifier the Chat360 backend uses to route rooms/history calls to
+        // Hyundai's integration - the SDK itself never hardcodes this.
+        private const val HYUNDAI_CLIENT_EXTERNAL_NAME = "hyundai"
     }
 
     private val httpClient = OkHttpClient()
@@ -56,7 +62,6 @@ class MainActivity : AppCompatActivity() {
 
         chat360.setBaseUrl("https://app.chat360.io");
         chat360.setHandleWindowEvent { eventData ->
-            Log.d("Sanket", "Sanket ===== Window event received: $eventData")
             var metaMap: Map<String, String> = mapOf(
                 "dealer_code" to HYUNDAI_DEALER_CODE,
                 "emp_code" to HYUNDAI_EMPLOYEE_CODE,
@@ -70,7 +75,6 @@ class MainActivity : AppCompatActivity() {
                     "dynamic_date" to  java.time.ZonedDateTime.now().toString()
                 )
             }
-            Log.d("Sanket", "Sanket ===== Window event response: $metaMap")
 
             Handler(Looper.getMainLooper()).postDelayed({
                 chat360.sendEventToBot(mapOf(
@@ -117,21 +121,31 @@ class MainActivity : AppCompatActivity() {
         }
         val hyundaiButton = findViewById<MaterialButton>(R.id.buttonOpenNativePocHyundai)
         hyundaiButton.setOnClickListener {
-            authenticateHyundaiDealer(hyundaiButton) {
-                // Hyundai isn't a library-shipped preset - it's assigned here as CUSTOM details,
-                // exactly like any other client would configure their own brand.
-                chat360.coreConfig = CoreConfigs(nativePocBotId, applicationContext, flutter, meta, false, true).apply {
-                    themePreset = Chat360ThemePreset.CUSTOM
-                    customLightColors = HyundaiLightColors
-                    customDarkColors = HyundaiDarkColors
-                    customTypography = HyundaiTypography
-                    customBranding = HyundaiBranding
-                    Chat360UIConfig = HyundaiConfig
-                    dealerCode = HYUNDAI_DEALER_CODE
-                    employeeCode = HYUNDAI_EMPLOYEE_CODE
-                }
-                chat360.startBot(this)
+            // authenticateHyundaiDealer(
+            //     onSuccess = {
+                  
+            //     },
+            //     onFailure = { message ->
+            //         hyundaiButton.isEnabled = true
+            //         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+            //     },
+            //     button = hyundaiButton,
+            // )
+            hyundaiButton.isEnabled = true
+                    // Hyundai isn't a library-shipped preset - it's assigned here as CUSTOM details,
+                    // exactly like any other client would configure their own brand.
+            chat360.coreConfig = CoreConfigs(nativePocBotId, applicationContext, flutter, meta, false, true).apply {
+                        themePreset = Chat360ThemePreset.CUSTOM
+                        customLightColors = HyundaiLightColors
+                        customDarkColors = HyundaiDarkColors
+                        customTypography = HyundaiTypography
+                        customBranding = HyundaiBranding
+                        Chat360UIConfig = HyundaiConfig
+                        clientExternalName = HYUNDAI_CLIENT_EXTERNAL_NAME
+                        agentCode = HYUNDAI_EMPLOYEE_CODE
             }
+            chat360.startBot(this)
+
         }
         findViewById<MaterialButton>(R.id.buttonOpenNativePocMaruti).setOnClickListener {
             chat360.coreConfig = CoreConfigs(nativePocBotId, applicationContext, flutter, meta, false, true).apply {
@@ -146,51 +160,40 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Validates the dealer/agent against Hyundai's own LMS before the chat session starts -
+     * entirely this app's concern, the SDK never sees this endpoint or these identifiers. */
     private fun authenticateHyundaiDealer(
+        onSuccess: () -> Unit,
+        onFailure: (String) -> Unit,
         button: MaterialButton,
-        onAuthenticated: () -> Unit,
     ) {
         button.isEnabled = false
+        val body = JSONObject()
+            .put("dealer_code", HYUNDAI_DEALER_CODE)
+            .put("emp_code", HYUNDAI_EMPLOYEE_CODE)
+            .put("name", HYUNDAI_EMPLOYEE_NAME)
+            .put("status", HYUNDAI_EMPLOYEE_STATUS)
+            .toString()
         val request = Request.Builder()
             .url(HYUNDAI_EMPLOYEE_AUTH_URL)
             .header("Content-Type", "application/json")
             .header("Cookie", "multidb_pin_writes=y")
-            .post("""{"dealer_code":"$HYUNDAI_DEALER_CODE","emp_code":"$HYUNDAI_EMPLOYEE_CODE","name":"$HYUNDAI_EMPLOYEE_NAME","status":"$HYUNDAI_EMPLOYEE_STATUS"}"""
-                .toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
             .build()
-
-        Log.d("Sanket", "Sanket ===== Hyundai authentication request: dealer_code=$HYUNDAI_DEALER_CODE, emp_code=$HYUNDAI_EMPLOYEE_CODE, name=$HYUNDAI_EMPLOYEE_NAME, status=$HYUNDAI_EMPLOYEE_STATUS")
 
         httpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
-                Log.e("Sanket", "Sanket ===== Hyundai authentication failed: ${e.message}", e)
-                showDealerAuthFailure(button, "Unable to authenticate dealer. Please try again.")
+                Log.e("Chat360Demo", "Hyundai dealer authentication failed: ${e.message}", e)
+                runOnUiThread { onFailure("Unable to authenticate dealer. Please try again.") }
             }
 
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
                 response.use {
-                    Log.d("Sanket", "Sanket ===== Hyundai authentication response: HTTP ${response.code}")
                     runOnUiThread {
-                        button.isEnabled = true
-                        if (response.code == 200) {
-                            onAuthenticated()
-                        } else {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Dealer authentication failed. Please try again.",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
+                        if (response.code == 200) onSuccess() else onFailure("Dealer authentication failed. Please try again.")
                     }
                 }
             }
         })
-    }
-
-    private fun showDealerAuthFailure(button: MaterialButton, message: String) {
-        runOnUiThread {
-            button.isEnabled = true
-            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-        }
     }
 }

@@ -123,4 +123,8 @@ data class ChatUiState(
     val showFeedbackPrompt: Boolean = false,
     /** A `chat_inactivity_message` with `auto_archival` - mirrors innerNotification?.autoArchive gating showInputBox()/showVoiceInput() in the widget: the session is closing for inactivity, so the input bar disables. */
     val isArchived: Boolean = false,
+    /** True once a fetched page's `previous_cursor` was null - mirrors `hasMoreMessages={!!previousCursor}` (Chatbox/index.tsx): gates whether scrolling to the top requests another page at all. */
+    val hasMoreHistory: Boolean = false,
+    /** True while a scroll-to-top page fetch is in flight - mirrors `gettingMessages` (Messages/index.tsx), guards against firing another fetch mid-request. */
+    val isLoadingMoreHistory: Boolean = false,
 )

@@ -126,5 +126,5 @@ val HyundaiConfig = Chat360UIConfig(
         showVoiceInput = false, showSpeechToText = true,
         showAssistantMode = true, showAppearanceSwitcher = true,
     ),
-    behavior = BehaviorConfig(suppressInitialBotMessages = true),
+    behavior = BehaviorConfig(suppressInitialBotMessages = false),
 )

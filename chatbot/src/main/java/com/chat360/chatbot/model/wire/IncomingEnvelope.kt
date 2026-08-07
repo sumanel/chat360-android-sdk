@@ -40,7 +40,10 @@ sealed interface IncomingSocketEvent {
     data object Pong : IncomingSocketEvent
     data class CloseConnection(val suppressReconnect: Boolean) : IncomingSocketEvent
     data class Ack(val chatMsgId: String?) : IncomingSocketEvent
-    data class EchoedUserMessage(val chatMsgId: String?) : IncomingSocketEvent
+    /** [text] is only meaningful when replaying history (see toIncomingEvent()) - live echoes
+     * only ever drive ack-tracking, since the user's own bubble was already appended
+     * optimistically the moment they hit send. */
+    data class EchoedUserMessage(val chatMsgId: String?, val text: String?) : IncomingSocketEvent
     data class TypingStatus(val isTyping: Boolean) : IncomingSocketEvent
     data class BotMessage(val node: BotNode) : IncomingSocketEvent
     /** A `highlight` frame's `assigned_user` - takes precedence over any other msgType the same frame might carry. */
@@ -75,7 +78,7 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     }
 
     if (user == "end_user") {
-        return IncomingSocketEvent.EchoedUserMessage(chat_msg_id)
+        return IncomingSocketEvent.EchoedUserMessage(chat_msg_id, (message as? JsonPrimitive)?.contentOrNull)
     }
 
     if (type == "typing_status") {

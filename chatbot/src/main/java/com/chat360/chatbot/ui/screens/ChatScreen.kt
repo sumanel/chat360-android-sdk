@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -23,6 +25,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -71,6 +75,8 @@ import android.util.Log
 fun ChatScreen(viewModel: ChatViewModel) {
     val state by viewModel.uiState.collectAsState()
     val conversations by viewModel.conversations.collectAsState()
+    val shortcuts by viewModel.shortcuts.collectAsState()
+    val languages by viewModel.languages.collectAsState()
     val baseColors = LocalChat360Colors.current
     val baseBranding = LocalChat360Branding.current
 //    val effectiveColors = baseColors.applyOverrides(state.colorOverrides)
@@ -116,10 +122,26 @@ fun ChatScreen(viewModel: ChatViewModel) {
             if (speechToText.isListening) viewModel.onInputChange(speechToText.transcript)
         }
 
-        LaunchedEffect(state.messages.size, state.isAgentTyping) {
-            if (state.messages.isNotEmpty()) {
+        // Keyed on the tail message's id (not messages.size) so loadMoreHistory() prepending
+        // older messages at the head - which also changes size - never yanks the view back
+        // down to the bottom; LazyColumn's own key-based item tracking already keeps the
+        // visible messages anchored in place when items are inserted above them.
+        var lastTailMessageId by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(state.messages.lastOrNull()?.id, state.isAgentTyping) {
+            val newTailId = state.messages.lastOrNull()?.id
+            if (state.messages.isNotEmpty() && newTailId != lastTailMessageId) {
                 listState.animateScrollToItem(state.messages.size - 1 + if (state.isAgentTyping) 1 else 0)
             }
+            lastTailMessageId = newTailId
+        }
+
+        // Mirrors Messages/index.tsx's handleScroll: scrolling within THRESH_HOLD of the top
+        // requests the next older page, gated by hasMoreHistory/isLoadingMoreHistory exactly
+        // like the widget's `hasMoreMessages`/`gettingMessages`.
+        LaunchedEffect(listState, state.hasMoreHistory, state.isLoadingMoreHistory) {
+            if (!state.hasMoreHistory || state.isLoadingMoreHistory) return@LaunchedEffect
+            snapshotFlow { listState.firstVisibleItemIndex }
+                .collect { index -> if (index <= 2) viewModel.loadMoreHistory() }
         }
 
         val context = LocalContext.current
@@ -153,6 +175,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 sdkConfig.callbacks.onNewChatClicked()
                                 viewModel.startNewChat()
                             },
+                            shortcuts = shortcuts,
+                            onShortcutSelected = { targetId, label -> viewModel.selectShortcut(targetId, label) },
+                            onRefreshClick = { viewModel.refreshConnection() },
                         )
                     }
                 }
@@ -174,6 +199,13 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
+                    if (state.isLoadingMoreHistory) {
+                        item(key = "loading_more_history") {
+                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = baseColors.accent)
+                            }
+                        }
+                    }
                     items(listMessages, key = { it.id }) { message ->
                         if (message.fromUser) {
                             UserMessageRow(message)
@@ -272,6 +304,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 showHistorySidebar = false
                             },
                             onConversationRenamed = viewModel::renameConversation,
+                            onConversationDeleted = viewModel::deleteConversation,
+                            languages = languages,
+                            onLanguageSelected = { key ->
+                                viewModel.switchLanguage(key)
+                                showHistorySidebar = false
+                            },
                         )
                     }
                 }

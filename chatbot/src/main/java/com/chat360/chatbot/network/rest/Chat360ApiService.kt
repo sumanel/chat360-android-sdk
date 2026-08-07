@@ -1,8 +1,8 @@
 package com.chat360.chatbot.network.rest
 
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
+import com.chat360.chatbot.network.rest.dto.AgentRoomsResponse
 import com.chat360.chatbot.network.rest.dto.BotAppearanceResponse
-import com.chat360.chatbot.network.rest.dto.DealerRoomsResponse
 import com.chat360.chatbot.network.rest.dto.HistoryResponse
 import com.chat360.chatbot.network.rest.dto.RenameRoomRequest
 import com.chat360.chatbot.network.rest.dto.SessionInitResponse
@@ -20,7 +20,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
-import android.util.Log
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -34,19 +33,20 @@ class Chat360ApiService(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun getEmployeeRooms(employeeCode: String): DealerRoomsResponse {
-        val url = "https://staging.chat360.io/agentic-ai/api/client-hyundailms/rooms/".toHttpUrl()
+    /** [clientExternalName] is the single identifier the backend uses to route this call to
+     * the right external integration (e.g. "hyundai") - the SDK never owns per-client request
+     * logic beyond substituting this one parameter into the URL. */
+    suspend fun getAgentRooms(clientExternalName: String, agentCode: String): AgentRoomsResponse {
+        val url = "${baseUrl.trimEnd('/')}/agentic-ai/api/$clientExternalName/rooms/".toHttpUrl()
             .newBuilder()
-            .addQueryParameter("employee_code", employeeCode)
+            .addQueryParameter("employee_code", agentCode)
             .build()
-        Log.d("Sanket", "Sanket ===== Fetching Hyundai rooms: $url")
         val body = execute(Request.Builder().url(url).get().build())
-        Log.d("Sanket", "Sanket ===== Hyundai rooms response: $body")
-        return json.decodeFromString(DealerRoomsResponse.serializer(), body)
+        return json.decodeFromString(AgentRoomsResponse.serializer(), body)
     }
 
-    suspend fun renameRoom(roomId: String, newRoomName: String) {
-        val url = "https://staging.chat360.io/agentic-ai/api/client-hyundailms/rooms/rename/"
+    suspend fun renameRoom(clientExternalName: String, roomId: String, newRoomName: String) {
+        val url = "${baseUrl.trimEnd('/')}/agentic-ai/api/$clientExternalName/rooms/rename/"
         val requestBody = json.encodeToString(
             RenameRoomRequest.serializer(),
             RenameRoomRequest(roomId = roomId, newRoomName = newRoomName),
@@ -87,10 +87,15 @@ class Chat360ApiService(
         return json.decodeFromString(ListSerializer(RawSocketEnvelope.serializer()), body)
     }
 
-    suspend fun getHistory(roomId: String, limit: Int = 10): HistoryResponse {
+    /** [taskType]/[taskValue] mirror getMessages()'s cursor params (fetchServices.ts) - pass
+     * both to page backwards via a prior response's `previous_cursor`; omit both for the first
+     * (most recent) page, exactly like the widget's own initial fetch. */
+    suspend fun getHistory(roomId: String, limit: Int = 10, taskType: String? = null, taskValue: Int? = null): HistoryResponse {
         val url = "${baseUrl.trimEnd('/')}/api/clientwidget_updated/chatbox/messages/$roomId".toHttpUrl()
             .newBuilder()
             .addQueryParameter("limit", limit.toString())
+            .apply { taskType?.let { addQueryParameter("task_type", it) } }
+            .apply { taskValue?.let { addQueryParameter("task_value", it.toString()) } }
             .build()
         val body = execute(Request.Builder().url(url).get().build())
         return json.decodeFromString(HistoryResponse.serializer(), body)

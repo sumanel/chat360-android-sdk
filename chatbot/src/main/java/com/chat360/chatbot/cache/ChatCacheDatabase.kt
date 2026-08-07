@@ -56,8 +56,8 @@ interface ChatCacheDao {
     @Query("SELECT * FROM chat_messages WHERE conversationId = :conversationId ORDER BY id ASC")
     suspend fun messages(conversationId: String): List<CachedMessageEntity>
 
-    @Query("SELECT id FROM chat_conversations WHERE botId = :botId AND id LIKE 'dealer-room:%'")
-    suspend fun dealerRoomConversationIds(botId: String): List<String>
+    @Query("SELECT id FROM chat_conversations WHERE botId = :botId AND id LIKE 'agent-room:%'")
+    suspend fun agentRoomConversationIds(botId: String): List<String>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertConversation(conversation: CachedConversationEntity)
@@ -69,9 +69,9 @@ interface ChatCacheDao {
     suspend fun updateRemoteConversation(conversationId: String, roomId: String, title: String, updatedAt: Long)
 
     @Transaction
-    suspend fun replaceDealerRoomConversations(botId: String, conversations: List<CachedConversationEntity>) {
+    suspend fun replaceAgentRoomConversations(botId: String, conversations: List<CachedConversationEntity>) {
         val refreshedIds = conversations.mapTo(mutableSetOf()) { it.id }
-        dealerRoomConversationIds(botId)
+        agentRoomConversationIds(botId)
             .filterNot(refreshedIds::contains)
             .forEach { deleteConversation(it) }
         conversations.forEach { conversation ->

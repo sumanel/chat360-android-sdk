@@ -1,6 +1,7 @@
 package com.chat360.chatbot.network.rest.dto
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class SessionInitResponse(
@@ -16,6 +17,21 @@ data class SessionInitResponse(
     val takeover: Boolean = false,
     val assigned_user: SessionAssignedUser? = null,
     val configs: SessionConfigs? = null,
+    // Kept as a raw JsonObject rather than a typed SessionBotSettings: this is a large,
+    // loosely-specified server object (initSession.ts:135-151 lists a dozen+ fields, most
+    // with inconsistent shapes across bot configs - e.g. an empty `bot_shortcuts` can come
+    // back as `[]` instead of `{}`), and this SDK only cares about a couple of fields inside
+    // it. Strict-typing the whole thing risks a shape mismatch on a field we don't even use
+    // crashing session-init entirely; extracting just what we need (see ChatRepository) is
+    // best-effort instead, matching how fetchAppearance/loadHistory degrade gracefully.
+    val bot_settings: JsonObject? = null,
+)
+
+@Serializable
+data class SessionLanguage(
+    val key: String,
+    val value: String,
+    val default: Boolean = false,
 )
 
 @Serializable

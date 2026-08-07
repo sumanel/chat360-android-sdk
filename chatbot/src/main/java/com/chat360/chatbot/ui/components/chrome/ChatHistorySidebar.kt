@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chat360.chatbot.cache.CachedConversationEntity
+import com.chat360.chatbot.network.rest.dto.SessionLanguage
 import com.chat360.chatbot.ui.components.icons.AddIcon
 import com.chat360.chatbot.ui.components.icons.ChevronLeftIcon
 import com.chat360.chatbot.ui.components.icons.DarkModeIcon
@@ -65,6 +68,9 @@ fun ChatHistorySidebar(
     conversations: List<CachedConversationEntity>,
     onConversationSelected: (String) -> Unit,
     onConversationRenamed: (String, String) -> Unit,
+    onConversationDeleted: (String) -> Unit = {},
+    languages: List<SessionLanguage> = emptyList(),
+    onLanguageSelected: (String) -> Unit = {},
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -144,6 +150,7 @@ fun ChatHistorySidebar(
                     items = conversations,
                     onConversationSelected = onConversationSelected,
                     onConversationRenamed = onConversationRenamed,
+                    onConversationDeleted = onConversationDeleted,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -185,7 +192,51 @@ fun ChatHistorySidebar(
                     ModeOption("Dark", DarkModeIcon, Modifier.weight(1f), isDarkTheme) { onThemeChanged(true) }
                 }
             }
+            if (languages.size > 1) {
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    "LANGUAGE",
+                    fontFamily = typography.textFamily,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.textSecondary
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    languages.forEach { language ->
+                        LanguageChip(language.value, language.default) { onLanguageSelected(language.key) }
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun LanguageChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = LocalChat360Colors.current
+    val typography = LocalChat360Typography.current
+    Row(
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .background(if (selected) colors.backgroundElevated else colors.backgroundSunken)
+            .then(if (selected) Modifier.border(1.dp, colors.line, RoundedCornerShape(0.dp)) else Modifier)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        Text(
+            label,
+            fontFamily = typography.textFamily,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) colors.accent else colors.textPrimary,
+        )
     }
 }
 
@@ -195,6 +246,7 @@ private fun HistoryGroup(
     items: List<CachedConversationEntity>,
     onConversationSelected: (String) -> Unit,
     onConversationRenamed: (String, String) -> Unit,
+    onConversationDeleted: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalChat360Colors.current
@@ -221,6 +273,7 @@ private fun HistoryGroup(
                     conversation = conversation,
                     onSelected = { onConversationSelected(conversation.id) },
                     onRenamed = { onConversationRenamed(conversation.id, it) },
+                    onDeleted = { onConversationDeleted(conversation.id) },
                 )
             }
         }
@@ -233,11 +286,13 @@ private fun ConversationItem(
     conversation: CachedConversationEntity,
     onSelected: () -> Unit,
     onRenamed: (String) -> Unit,
+    onDeleted: () -> Unit,
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
     var showActions by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     var title by remember(conversation.id, conversation.title) { mutableStateOf(conversation.title) }
 
     Row(
@@ -259,6 +314,7 @@ private fun ConversationItem(
             }
             DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
                 DropdownMenuItem(text = { Text("Rename") }, onClick = { showActions = false; showRenameDialog = true })
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { showActions = false; showDeleteDialog = true })
             }
         }
     }
@@ -270,6 +326,16 @@ private fun ConversationItem(
             text = { OutlinedTextField(value = title, onValueChange = { title = it }, singleLine = true, label = { Text("Conversation name") }) },
             confirmButton = { TextButton(onClick = { onRenamed(title); showRenameDialog = false }) { Text("Save") } },
             dismissButton = { TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete conversation") },
+            text = { Text("This can't be undone. Delete \"${conversation.title}\"?") },
+            confirmButton = { TextButton(onClick = { onDeleted(); showDeleteDialog = false }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } },
         )
     }
 }
