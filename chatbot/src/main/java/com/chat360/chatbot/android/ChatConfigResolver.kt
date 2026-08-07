@@ -3,6 +3,7 @@ package com.chat360.chatbot.android
 import android.content.Intent
 import android.os.Bundle
 import com.chat360.chatbot.common.models.ConfigService
+import com.chat360.chatbot.config.Chat360UIConfig
 import com.chat360.chatbot.ui.theme.Chat360Branding
 import com.chat360.chatbot.ui.theme.Chat360Colors
 import com.chat360.chatbot.ui.theme.Chat360ThemePreset
@@ -14,6 +15,8 @@ const val EXTRA_BOT_ID = "extra_bot_id"
 const val EXTRA_BASE_URL = "extra_base_url"
 const val EXTRA_THEME_PRESET = "extra_theme_preset"
 const val EXTRA_HISTORY_ENABLED = "extra_history_enabled"
+const val EXTRA_DEALER_CODE = "extra_dealer_code"
+const val EXTRA_EMPLOYEE_CODE = "extra_employee_code"
 
 data class ResolvedChatConfig(
     val botId: String,
@@ -24,6 +27,9 @@ data class ResolvedChatConfig(
     val customTypography: Chat360Typography?,
     val customBranding: Chat360Branding?,
     val historyEnabled: Boolean,
+    val dealerCode: String?,
+    val employeeCode: String?,
+    val Chat360UIConfig: Chat360UIConfig,
 )
 
 /**
@@ -45,6 +51,9 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
             customTypography = config.customTypography,
             customBranding = config.customBranding,
             historyEnabled = config.historyEnabled,
+            dealerCode = config.dealerCode?.trim()?.takeIf { it.isNotEmpty() },
+            employeeCode = config.employeeCode?.trim()?.takeIf { it.isNotEmpty() },
+            Chat360UIConfig = config.Chat360UIConfig ?: Chat360UIConfig(),
         )
     }
     return ResolvedChatConfig(
@@ -57,6 +66,9 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
         customTypography = null,
         customBranding = null,
         historyEnabled = extras?.getBoolean(EXTRA_HISTORY_ENABLED, true) ?: true,
+        dealerCode = extras?.getString(EXTRA_DEALER_CODE)?.trim()?.takeIf { it.isNotEmpty() },
+        employeeCode = extras?.getString(EXTRA_EMPLOYEE_CODE)?.trim()?.takeIf { it.isNotEmpty() },
+        Chat360UIConfig = Chat360UIConfig(),
     )
 }
 

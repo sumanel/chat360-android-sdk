@@ -3,7 +3,13 @@ package com.chat360.chatbot.ui.theme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.setValue
+import com.chat360.chatbot.config.Chat360UIConfig
+import com.chat360.chatbot.config.LocalChat360UIConfig
 
 /**
  * Named starting points a host app (or our own demo) can pick from. `CUSTOM` means "use the
@@ -14,6 +20,17 @@ import androidx.compose.runtime.staticCompositionLocalOf
 enum class Chat360ThemePreset { DEFAULT, CUSTOM }
 
 val LocalChat360Colors = staticCompositionLocalOf { DefaultLightColors }
+
+class Chat360ThemeController internal constructor(initialDarkTheme: Boolean) {
+    var isDarkTheme by mutableStateOf(initialDarkTheme)
+        private set
+
+    fun selectDarkTheme(isDark: Boolean) {
+        isDarkTheme = isDark
+    }
+}
+
+val LocalChat360ThemeController = staticCompositionLocalOf<Chat360ThemeController?> { null }
 
 /**
  * Resolves a preset (or a client's own custom colors/typography/branding) to the
@@ -30,9 +47,16 @@ fun Chat360Theme(
     customTypography: Chat360Typography? = null,
     customBranding: Chat360Branding? = null,
     colorOverrides: Chat360ColorOverrides? = null,
+    config: Chat360UIConfig = Chat360UIConfig(),
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
+    val initialDarkTheme = when (config.theme.defaultTheme) {
+        com.chat360.chatbot.config.DefaultTheme.LIGHT -> false
+        com.chat360.chatbot.config.DefaultTheme.DARK -> true
+        com.chat360.chatbot.config.DefaultTheme.SYSTEM -> darkTheme
+    }
+    val themeController = remember(config.theme) { Chat360ThemeController(initialDarkTheme) }
     val (lightColors, darkColors, typography, branding) = when (preset) {
         Chat360ThemePreset.CUSTOM ->
             Chat360ThemeBundle(
@@ -45,12 +69,29 @@ fun Chat360Theme(
             Chat360ThemeBundle(DefaultLightColors, DefaultDarkColors, DefaultChat360Typography, DefaultBranding)
     }
 
-    val resolvedColors = (if (darkTheme) darkColors else lightColors).applyOverrides(colorOverrides)
+    val selectedColors = if (themeController.isDarkTheme) darkColors else lightColors
+
+    val base = selectedColors.applyOverrides(colorOverrides)
+
+    val resolvedColors = base.copy(
+        accent = config.branding.primaryColor ?: base.accent,
+        textSecondary = config.branding.secondaryColor ?: base.textSecondary,
+    )
+    val resolvedBranding = branding.copy(
+        botTitle = config.branding.botName ?: branding.botTitle,
+        logo = config.branding.logo ?: config.branding.avatar ?: branding.logo,
+        welcomeHeading = config.branding.welcomeTitle ?: branding.welcomeHeading,
+        disclaimerText = config.branding.welcomeSubtitle ?: branding.disclaimerText,
+        inputPlaceholder = config.branding.inputPlaceholder ?: branding.inputPlaceholder,
+    )
+    val resolvedTypography = config.branding.fontFamily?.let { Chat360Typography(it, it) } ?: typography
 
     CompositionLocalProvider(
         LocalChat360Colors provides resolvedColors,
-        LocalChat360Typography provides typography,
-        LocalChat360Branding provides branding,
+        LocalChat360Typography provides resolvedTypography,
+        LocalChat360Branding provides resolvedBranding,
+        LocalChat360ThemeController provides themeController,
+        LocalChat360UIConfig provides config,
         content = content,
     )
 }

@@ -30,6 +30,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import android.util.Log
 
 /**
  * Session + connection orchestration. REST session-init must complete before the WebSocket
@@ -72,6 +73,7 @@ class ChatRepository(
     private var onMessageTimedOut: (String) -> Unit = {}
     private var onOpenUrl: (String) -> Unit = {}
     private var onFeedbackRequested: () -> Unit = {}
+    private var onRawIncoming: (String) -> Unit = {}
     /** From session init's `configs.should_ask_feedback` - gates whether LiveChatEnded also closes the socket. */
     private var shouldAskFeedback: Boolean = false
 
@@ -96,6 +98,11 @@ class ChatRepository(
         onSlowConnectionChanged: (Boolean) -> Unit = {},
         onMessageTimedOut: (String) -> Unit = {},
         onAppearanceLoaded: (BotAppearanceDetails?, chatboxName: String?) -> Unit = { _, _ -> },
+        /** Called after session init so the local cache can select the matching conversation.
+         * Return true when its cached messages were replayed; remote history is then skipped. */
+        onConversationStarted: suspend (roomId: String) -> Boolean = { false },
+        /** Every server envelope, including history/starter frames, for durable local replay. */
+        onRawIncoming: (String) -> Unit = {},
         onOpenUrl: (String) -> Unit = {},
         /** Seeds live-chat state from the session itself (takeover/assigned_user) before any history replays - lets a killed-and-reopened app resume mid-live-chat correctly instead of assuming a fresh bot-flow session. */
         onSessionResumed: (takeover: Boolean, agent: AssignedAgent?) -> Unit = { _, _ -> },
@@ -111,6 +118,7 @@ class ChatRepository(
         this.onMessageTimedOut = onMessageTimedOut
         this.onOpenUrl = onOpenUrl
         this.onFeedbackRequested = onFeedbackRequested
+        this.onRawIncoming = onRawIncoming
 
         try {
             // The widget derives website_url/current_url from the browser's own window.location,
@@ -132,6 +140,11 @@ class ChatRepository(
             // same via sendSocketMessage when lastMessage.msgType === 'INIT').
             if (session.nodeType == "INIT") pendingInitJumpTargetId = session.targetId
 
+            Log.d("Sanket", "Sanket ===== roomId = $roomId")
+            Log.d("Sanket", "Sanket ===== session.room_id = ${session.room_id}")
+            Log.d("Sanket", "Sanket ===== ownerId = ${session.owner_id}")
+            Log.d("Sanket", "Sanket ===== targetId = ${session.targetId}")
+
             val resumedAgent = session.assigned_user?.let {
                 if (it.operator_name.isNullOrBlank() && it.user_designation.isNullOrBlank() && it.avatar.isNullOrBlank()) {
                     null
@@ -142,26 +155,36 @@ class ChatRepository(
             onSessionResumed(session.takeover, resumedAgent)
 
             fetchAppearance(host, onAppearanceLoaded)
-            val hadHistory = if (historyEnabled) loadHistory() else false
+            val hadHistory = onConversationStarted(session.room_id)
             // ConversationStarter/index.tsx shows its teaser bubbles independently of the real
             // session, floating outside the (not-yet-opened) chat launcher on the host page. This
             // SDK has no such closed-launcher state - a host app only shows the chat screen once
             // it's ready to be a real session - so the closest equivalent moment is "this room
             // has no history yet": show the starter content as the opening bubbles instead of an
             // empty WelcomeSplash, using the exact same wire parsing as any other frame.
-            if (!hadHistory) loadConversationStarter()
+
+
+
+//            if (!hadHistory) loadConversationStarter(onRawIncoming)   // load initial messages commmented by Sanket
             openSocket()
         } catch (e: Exception) {
             onError(e)
         }
     }
 
+    /** Fetches the latest server snapshot for cache-first conversation refreshes. */
+    suspend fun fetchHistory(roomId: String): List<RawSocketEnvelope> =
+        if (historyEnabled) apiService.getHistory(roomId).history else emptyList()
+
     /** Returns true if any history was found (and dispatched), so callers can fall back to conversation-starter content on a genuinely fresh room. */
-    private suspend fun loadHistory(): Boolean {
+    private suspend fun loadHistory(onRawIncoming: (String) -> Unit): Boolean {
         val room = roomId ?: return false
         return try {
             val response = apiService.getHistory(room)
-            response.history.forEach { item -> onEvent(item.toIncomingEvent()) }
+            response.history.forEach { item ->
+                onRawIncoming(json.encodeToString(item))
+                onEvent(item.toIncomingEvent())
+            }
             response.history.isNotEmpty()
         } catch (e: Exception) {
             // Non-fatal: a fresh room has no history yet, and a failed fetch shouldn't block
@@ -171,10 +194,11 @@ class ChatRepository(
     }
 
     /** Best-effort like loadHistory()/fetchAppearance() - a failed/empty fetch just means no starter bubbles, never blocks connecting. */
-    private suspend fun loadConversationStarter() {
+    private suspend fun loadConversationStarter(onRawIncoming: (String) -> Unit) {
         try {
             val items = apiService.getFirstMessages(botId)
             items.forEach { item ->
+                onRawIncoming(json.encodeToString(item))
                 val event = item.toIncomingEvent()
                 if (event is IncomingSocketEvent.BotMessage) {
                     lastBotNode = event.node
@@ -225,7 +249,7 @@ class ChatRepository(
                     sendSystemJump(targetId)
                 }
             },
-            onMessage = { raw -> handleIncoming(raw) },
+            onMessage = { raw -> handleIncoming(raw, onRawIncoming) },
             onClosed = { _, _ -> handleClosed() },
             onFailure = { t ->
                 handleClosed()
@@ -241,11 +265,12 @@ class ChatRepository(
         }
     }
 
-    private fun handleIncoming(raw: String) {
+    private fun handleIncoming(raw: String, onRawIncoming: (String) -> Unit) {
         val envelope = json.decodeFromString(RawSocketEnvelope.serializer(), raw)
         heartbeat.onMessageReceived(isPong = envelope.type == "pong")
 
         val event = envelope.toIncomingEvent()
+        onRawIncoming(raw)
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
                 lastBotNode = event.node
@@ -301,6 +326,7 @@ class ChatRepository(
     /** The inbound half: an event handed to the active session becomes an outgoing message
      * carrying it as `variables`, matching onMoveForward(targetId, {variableValues: data}). */
     private fun sendWindowEvent(event: Map<String, String>) {
+        Log.d("Sanket", "Sanket ===== Sending window event to bot: $event")
         val node = lastBotNode
         val outgoing = OutgoingMessage(
             message = JsonObject(emptyMap()),

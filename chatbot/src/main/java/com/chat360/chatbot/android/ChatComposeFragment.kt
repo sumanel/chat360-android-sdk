@@ -25,7 +25,7 @@ class ChatComposeFragment : Fragment() {
     private val config: ResolvedChatConfig by lazy { resolveChatConfig(arguments) }
 
     private val viewModel: ChatViewModel by viewModels {
-        ChatViewModel.Factory(baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled)
+        ChatViewModel.Factory(context = requireContext().applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, employeeCode = config.employeeCode, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages)
     }
 
     override fun onCreateView(
@@ -40,6 +40,7 @@ class ChatComposeFragment : Fragment() {
                 customDarkColors = config.customDarkColors,
                 customTypography = config.customTypography,
                 customBranding = config.customBranding,
+                config = config.Chat360UIConfig,
             ) {
                 ChatScreen(viewModel)
             }
@@ -53,12 +54,16 @@ class ChatComposeFragment : Fragment() {
             baseUrl: String = "https://app.chat360.io",
             themePreset: Chat360ThemePreset = Chat360ThemePreset.DEFAULT,
             historyEnabled: Boolean = true,
+            dealerCode: String? = null,
+            employeeCode: String? = null,
         ): ChatComposeFragment = ChatComposeFragment().apply {
             arguments = Bundle().apply {
                 putString(EXTRA_BOT_ID, botId)
                 putString(EXTRA_BASE_URL, baseUrl)
                 putString(EXTRA_THEME_PRESET, themePreset.name)
                 putBoolean(EXTRA_HISTORY_ENABLED, historyEnabled)
+                putString(EXTRA_DEALER_CODE, dealerCode)
+                putString(EXTRA_EMPLOYEE_CODE, employeeCode)
             }
         }
     }

@@ -81,4 +81,17 @@
         android:textAllCaps="false"
         android:textColor="@color/white"
         app:layout_constraintTop_toBottomOf="@id/buttonOpenNativePoc" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonOpenNativePocMaruti"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="20dp"
+        android:backgroundTint="#005BAC"
+        android:paddingVertical="16dp"
+        android:text="@string/open_native_poc_maruti"
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toBottomOf="@id/buttonOpenNativePocHyundai" />
 </androidx.constraintlayout.widget.ConstraintLayout>

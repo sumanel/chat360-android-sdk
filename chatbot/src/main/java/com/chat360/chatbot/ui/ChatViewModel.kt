@@ -1,33 +1,80 @@
 package com.chat360.chatbot.ui
 
+import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.chat360.chatbot.cache.CachedConversationEntity
+import com.chat360.chatbot.cache.ChatCacheDatabase
+import com.chat360.chatbot.cache.ChatCacheRepository
 import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.validation.FormFieldValidator
 import com.chat360.chatbot.domain.validation.InputValidators
 import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.model.wire.IncomingSocketEvent
+import com.chat360.chatbot.model.wire.RawSocketEnvelope
+import com.chat360.chatbot.model.wire.toIncomingEvent
+import com.chat360.chatbot.network.rest.Chat360ApiService
 import com.chat360.chatbot.ui.theme.toColorOverrides
 import com.chat360.chatbot.ui.theme.toLogoOverride
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
-class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
+class ChatViewModel(
+    private val repository: ChatRepository,
+    private val botId: String,
+    private val cache: ChatCacheRepository,
+    private val dealerRoomsApi: Chat360ApiService,
+    private val employeeCode: String? = null,
+    private val suppressInitialBotMessages: Boolean = false,
+) : ViewModel() {
+
+    private var hasStartedConversation = false
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+    private val _conversations = MutableStateFlow<List<CachedConversationEntity>>(emptyList())
+    val conversations: StateFlow<List<CachedConversationEntity>> = _conversations.asStateFlow()
+    private var activeConversationId: String? = null
+    /** True only while Room entries are being replayed; cached messages are never “initial” UI. */
+    private var restoringFromCache = false
+    private val cacheJson = Json { ignoreUnknownKeys = true }
 
     init {
+        viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
+        employeeCode?.let { code ->
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching { dealerRoomsApi.getEmployeeRooms(code) }
+                    .onSuccess { response ->
+                        // Room emits first. The network snapshot then becomes visible immediately,
+                        // followed by durable reconciliation back into Room.
+                        val refreshed = cache.dealerRoomConversations(botId, response.results)
+                        _conversations.value = refreshed
+                        cache.syncDealerRooms(botId, refreshed)
+                    }
+                    .onFailure { error ->
+                        Log.e("Sanket", "Sanket ===== Hyundai rooms request failed: ${error.message}", error)
+                    }
+            }
+        }
         viewModelScope.launch {
             repository.connect(
                 onEvent = ::handleEvent,
                 onConnected = { _uiState.update { it.copy(isConnected = true, error = null) } },
-                onError = { e -> _uiState.update { it.copy(isConnected = false, error = e.message ?: "Connection failed") } },
+                onError = { e ->
+                    Log.e("Chat360", "Chat connection failed: ${e.message}", e)
+                    _uiState.update { it.copy(isConnected = false) }
+                },
                 onSlowConnectionChanged = { slow -> _uiState.update { it.copy(isSlowConnection = slow) } },
                 onMessageTimedOut = ::handleMessageTimedOut,
                 onAppearanceLoaded = { details, chatboxName ->
@@ -40,6 +87,8 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
                         )
                     }
                 },
+                onConversationStarted = { roomId -> activateConversation(roomId) },
+                onRawIncoming = ::cacheIncomingEnvelope,
                 onOpenUrl = { url -> _uiState.update { it.copy(pendingUrlToOpen = url) } },
                 onSessionResumed = { takeover, agent ->
                     _uiState.update { it.copy(isLiveChat = takeover, assignedAgent = agent ?: it.assignedAgent) }
@@ -52,6 +101,7 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
     private fun handleEvent(event: IncomingSocketEvent) {
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
+                if (suppressInitialBotMessages && !hasStartedConversation && !restoringFromCache) return
                 val node = event.node
                 // An Unsupported node with no text at all renders nothing (yet) rather than an
                 // empty bubble; one with fallback text (most node types include questionText)
@@ -101,7 +151,7 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
                         } else {
                             null
                         },
-                    ),
+                    ), cacheUserMessage = false,
                 )
             }
             is IncomingSocketEvent.TypingStatus -> _uiState.update { it.copy(isAgentTyping = event.isTyping) }
@@ -109,7 +159,7 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
             is IncomingSocketEvent.AgentAssigned -> _uiState.update { it.copy(assignedAgent = event.agent) }
             is IncomingSocketEvent.LiveChatEnded -> _uiState.update { it.copy(isLiveChat = false) }
             is IncomingSocketEvent.InactivityNotice -> {
-                if (event.message != null) appendMessage(ChatMessage(text = event.message, fromUser = false))
+                if (event.message != null) appendMessage(ChatMessage(text = event.message, fromUser = false), cacheUserMessage = false)
                 if (event.autoArchive) _uiState.update { it.copy(isArchived = true) }
             }
             // Ack/echoed-user/pong only drive ChatRepository's internal bookkeeping (ack-timeout
@@ -149,11 +199,14 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
     }
 
     /** Appending any message locks the quick replies of everything before it (widget behavior). */
-    private fun appendMessage(message: ChatMessage) {
+    private fun appendMessage(message: ChatMessage, cacheUserMessage: Boolean = message.fromUser) {
         _uiState.update { state ->
             state.copy(
                 messages = state.messages.map { it.copy(repliesEnabled = false) } + message,
             )
+        }
+        if (cacheUserMessage) activeConversationId?.let { conversationId ->
+            viewModelScope.launch { cache.cacheUserMessage(conversationId, message.text, message.chatMsgId) }
         }
     }
 
@@ -532,11 +585,131 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
         _uiState.update { it.copy(inputText = text) }
     }
 
+    /** Starts a distinct locally persisted conversation. */
+    fun startNewChat() {
+        val conversationId = java.util.UUID.randomUUID().toString()
+        activeConversationId = conversationId
+        viewModelScope.launch { cache.createConversation(botId, conversationId) }
+        streamRawText.clear()
+        hasStartedConversation = false
+        _uiState.update {
+            it.copy(
+                messages = emptyList(),
+                inputText = "",
+                isAgentTyping = false,
+                isLiveChat = false,
+                assignedAgent = null,
+                isArchived = false,
+                voiceDraft = null,
+                showFeedbackPrompt = false,
+                pendingUrlToOpen = null,
+            )
+        }
+    }
+
+    /** Updates the sidebar immediately; the server rename is a best-effort background sync. */
+    fun renameConversation(conversationId: String, title: String) {
+        val normalizedTitle = title.trim().replace(Regex("\\s+"), " ").take(80)
+        if (normalizedTitle.isBlank()) return
+        val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
+        viewModelScope.launch(Dispatchers.IO) {
+            cache.renameConversation(conversationId, normalizedTitle)
+            if (roomId != null) {
+                runCatching { dealerRoomsApi.renameRoom(roomId, normalizedTitle) }
+                    .onFailure { error -> Log.e("Chat360", "Room rename API failed: ${error.message}", error) }
+            }
+        }
+    }
+
+    /** Binds the server room to its Room record and restores cached rich websocket messages. */
+    private suspend fun activateConversation(roomId: String): Boolean {
+        val (conversationId, hasCachedMessages) = cache.activateForRoom(botId, roomId, activeConversationId)
+        activeConversationId = conversationId
+        if (hasCachedMessages) {
+            streamRawText.clear()
+            _uiState.update { it.copy(messages = emptyList()) }
+            restoringFromCache = true
+            try {
+                cache.messages(conversationId).forEach { cached ->
+                    when (cached.kind) {
+                        "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true), cacheUserMessage = false)
+                        "RAW" -> runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }
+                            .getOrNull()?.let(::handleEvent)
+                    }
+                }
+            } finally {
+                restoringFromCache = false
+            }
+        }
+        val refreshed = refreshConversationHistory(conversationId, roomId)
+        return hasCachedMessages || refreshed
+    }
+
+    /** Shows cached messages first, then replaces them with the room-id API snapshot and caches it. */
+    private suspend fun refreshConversationHistory(conversationId: String, roomId: String): Boolean {
+        val history = runCatching { repository.fetchHistory(roomId) }.getOrNull() ?: return false
+        if (activeConversationId != conversationId) return history.isNotEmpty()
+        streamRawText.clear()
+        _uiState.update { it.copy(messages = emptyList(), isArchived = false, isLiveChat = false, assignedAgent = null) }
+        restoringFromCache = true
+        try {
+            history.map { it.toIncomingEvent() }.forEach(::handleEvent)
+        } finally {
+            restoringFromCache = false
+        }
+        cache.replaceRawHistory(conversationId, history)
+        return history.isNotEmpty()
+    }
+
+    private fun cacheIncomingEnvelope(raw: String) {
+        val conversationId = activeConversationId ?: return
+        // Cache only envelopes that create visible bot-side state.  This is deliberately
+        // committed before the websocket callback returns instead of launching another UI
+        // coroutine: otherwise a fast Activity/ViewModel teardown can cancel the write and
+        // leave a conversation containing only the locally authored user messages.
+        val isRenderableBotEvent = runCatching {
+            when (cacheJson.decodeFromString<RawSocketEnvelope>(raw).toIncomingEvent()) {
+                is IncomingSocketEvent.BotMessage,
+                is IncomingSocketEvent.InactivityNotice -> true
+                else -> false
+            }
+        }.getOrDefault(false)
+        if (isRenderableBotEvent) {
+            runCatching {
+                runBlocking(Dispatchers.IO) { cache.cacheRaw(conversationId, raw) }
+            }
+        }
+    }
+
+    fun openConversation(conversationId: String) {
+        if (conversationId == activeConversationId) return
+        viewModelScope.launch {
+            activeConversationId = conversationId
+            streamRawText.clear()
+            _uiState.update { it.copy(messages = emptyList(), isArchived = false, isLiveChat = false, assignedAgent = null) }
+            restoringFromCache = true
+            try {
+                cache.messages(conversationId).forEach { cached ->
+                    when (cached.kind) {
+                        "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true), cacheUserMessage = false)
+                        "RAW" -> runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }
+                            .getOrNull()?.let(::handleEvent)
+                    }
+                }
+            } finally {
+                restoringFromCache = false
+            }
+            val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
+            if (roomId != null) refreshConversationHistory(conversationId, roomId)
+        }
+    }
+
     fun sendMessage() {
         val text = _uiState.value.inputText.trim()
         // Ports UserInput/index.tsx's validate(): the empty-message guard only applies outside
         // live chat (`!value.trim() && !isLiveChat`) - live chat allows an empty submit through.
         if (text.isEmpty() && !_uiState.value.isLiveChat) return
+        hasStartedConversation = true
         val chatMsgId = repository.sendFreeText(text)
         _uiState.update { it.copy(inputText = "") }
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
@@ -548,13 +721,23 @@ class ChatViewModel(private val repository: ChatRepository) : ViewModel() {
     }
 
     class Factory(
+        private val context: Context,
         private val baseUrl: String,
         private val botId: String,
         private val historyEnabled: Boolean = true,
+        private val employeeCode: String? = null,
+        private val suppressInitialBotMessages: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return ChatViewModel(ChatRepository(baseUrl, botId, historyEnabled = historyEnabled)) as T
+            return ChatViewModel(
+                repository = ChatRepository(baseUrl, botId, historyEnabled = historyEnabled),
+                botId = botId,
+                cache = ChatCacheRepository(ChatCacheDatabase.get(context).dao()),
+                dealerRoomsApi = Chat360ApiService(baseUrl),
+                employeeCode = employeeCode,
+                suppressInitialBotMessages = suppressInitialBotMessages,
+            ) as T
         }
     }
 }
