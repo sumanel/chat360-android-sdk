@@ -110,6 +110,47 @@ val ChevronRightIcon: ImageVector by lazy {
     }
 }
 
+val HistoryIcon: ImageVector by lazy {
+    materialIcon("History") {
+        filledPath { moveTo(11f, 4f); lineTo(13f, 4f); lineTo(13f, 11.4f); lineTo(18f, 14.4f); lineTo(17f, 16.1f); lineTo(11f, 12.5f); close() }
+        filledPath { moveTo(12f, 2f); curveTo(6.5f, 2f, 2f, 6.5f, 2f, 12f); curveTo(2f, 17.5f, 6.5f, 22f, 12f, 22f); curveTo(17.5f, 22f, 22f, 17.5f, 22f, 12f); lineTo(20f, 12f); curveTo(20f, 16.4f, 16.4f, 20f, 12f, 20f); curveTo(7.6f, 20f, 4f, 16.4f, 4f, 12f); curveTo(4f, 7.6f, 7.6f, 4f, 12f, 4f); close() }
+    }
+}
+
+val MoreIcon: ImageVector by lazy {
+    materialIcon("More") {
+        filledPath { moveTo(3f, 10f); lineTo(7f, 10f); lineTo(7f, 14f); lineTo(3f, 14f); close() }
+        filledPath { moveTo(10f, 10f); lineTo(14f, 10f); lineTo(14f, 14f); lineTo(10f, 14f); close() }
+        filledPath { moveTo(17f, 10f); lineTo(21f, 10f); lineTo(21f, 14f); lineTo(17f, 14f); close() }
+    }
+}
+
+val PersonIcon: ImageVector by lazy {
+    materialIcon("Person") {
+        filledPath { moveTo(12f, 3f); curveTo(9.8f, 3f, 8f, 4.8f, 8f, 7f); curveTo(8f, 9.2f, 9.8f, 11f, 12f, 11f); curveTo(14.2f, 11f, 16f, 9.2f, 16f, 7f); curveTo(16f, 4.8f, 14.2f, 3f, 12f, 3f); close() }
+        filledPath { moveTo(4f, 21f); curveTo(4f, 16.6f, 7.6f, 13f, 12f, 13f); curveTo(16.4f, 13f, 20f, 16.6f, 20f, 21f); close() }
+    }
+}
+
+val TrainingIcon: ImageVector by lazy {
+    materialIcon("Training") {
+        filledPath { moveTo(2f, 7f); lineTo(12f, 2f); lineTo(22f, 7f); lineTo(12f, 12f); close() }
+        filledPath { moveTo(6f, 10f); lineTo(12f, 13f); lineTo(18f, 10f); lineTo(18f, 16f); curveTo(15f, 19f, 9f, 19f, 6f, 16f); close() }
+    }
+}
+
+val LightModeIcon: ImageVector by lazy {
+    materialIcon("LightMode") {
+        filledPath { moveTo(12f, 6f); curveTo(8.7f, 6f, 6f, 8.7f, 6f, 12f); curveTo(6f, 15.3f, 8.7f, 18f, 12f, 18f); curveTo(15.3f, 18f, 18f, 15.3f, 18f, 12f); curveTo(18f, 8.7f, 15.3f, 6f, 12f, 6f); close() }
+    }
+}
+
+val DarkModeIcon: ImageVector by lazy {
+    materialIcon("DarkMode") {
+        filledPath { moveTo(20f, 15f); curveTo(14f, 17f, 8f, 11f, 10f, 5f); curveTo(10.4f, 3.8f, 11f, 2.8f, 12f, 2f); curveTo(6f, 2f, 2f, 6.5f, 2f, 12f); curveTo(2f, 17.5f, 6.5f, 22f, 12f, 22f); curveTo(16f, 22f, 19f, 19.8f, 20f, 15f); close() }
+    }
+}
+
 private fun ImageVector.Builder.filledPath(block: PathBuilder.() -> Unit) =
     path(fill = SolidColor(androidx.compose.ui.graphics.Color.Black), pathBuilder = block)
 

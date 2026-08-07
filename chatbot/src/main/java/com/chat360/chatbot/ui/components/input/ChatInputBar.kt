@@ -63,7 +63,7 @@ fun ChatInputBar(
                 .padding(8.dp)
                 .size(24.dp),
         )
-        if (showDictationIcon && showVoiceInput) {
+        if (showDictationIcon) {
             Icon(
                 imageVector = com.chat360.chatbot.ui.components.icons.DictateIcon,
                 contentDescription = "Dictate message",

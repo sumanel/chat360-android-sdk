@@ -16,6 +16,7 @@ const val EXTRA_BASE_URL = "extra_base_url"
 const val EXTRA_THEME_PRESET = "extra_theme_preset"
 const val EXTRA_HISTORY_ENABLED = "extra_history_enabled"
 const val EXTRA_DEALER_CODE = "extra_dealer_code"
+const val EXTRA_EMPLOYEE_CODE = "extra_employee_code"
 
 data class ResolvedChatConfig(
     val botId: String,
@@ -27,6 +28,7 @@ data class ResolvedChatConfig(
     val customBranding: Chat360Branding?,
     val historyEnabled: Boolean,
     val dealerCode: String?,
+    val employeeCode: String?,
     val Chat360UIConfig: Chat360UIConfig,
 )
 
@@ -50,6 +52,7 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
             customBranding = config.customBranding,
             historyEnabled = config.historyEnabled,
             dealerCode = config.dealerCode?.trim()?.takeIf { it.isNotEmpty() },
+            employeeCode = config.employeeCode?.trim()?.takeIf { it.isNotEmpty() },
             Chat360UIConfig = config.Chat360UIConfig ?: Chat360UIConfig(),
         )
     }
@@ -64,6 +67,7 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
         customBranding = null,
         historyEnabled = extras?.getBoolean(EXTRA_HISTORY_ENABLED, true) ?: true,
         dealerCode = extras?.getString(EXTRA_DEALER_CODE)?.trim()?.takeIf { it.isNotEmpty() },
+        employeeCode = extras?.getString(EXTRA_EMPLOYEE_CODE)?.trim()?.takeIf { it.isNotEmpty() },
         Chat360UIConfig = Chat360UIConfig(),
     )
 }

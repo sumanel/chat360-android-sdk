@@ -157,7 +157,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     }
                 }
 
-            state.error?.let { StatusBanner(text = "Error: $it", emphasized = true) }
             if (state.isSlowConnection) StatusBanner(text = "Slow connection…", emphasized = false)
 
             pinnedWelcomeMessage?.let { pinned ->
@@ -233,7 +232,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     onSend = viewModel::sendMessage,
                     onAttachmentClick = pickAttachment,
                     onMicClick = { voiceRecorder.requestStart() },
-                    showDictationIcon = speechToText.isSupported(),
+                    showDictationIcon = features.showSpeechToText && speechToText.isSupported(),
                     onDictateClick = { speechToText.requestStart() },
                     onEmojiClick = { showEmojiPicker = !showEmojiPicker },
                     showAttachment = features.showAttachment,
@@ -273,7 +272,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 showHistorySidebar = false
                             },
                             onConversationRenamed = viewModel::renameConversation,
-                            onConversationDeleted = viewModel::deleteConversation,
                         )
                     }
                 }

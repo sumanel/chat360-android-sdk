@@ -49,6 +49,8 @@ data class FeatureConfig(
     val showEmoji: Boolean = false,
     val showAttachment: Boolean = false,
     val showVoiceInput: Boolean = true,
+    /** Shows speech-to-text beside the input. Defaults to the legacy voice-input setting. */
+    val showSpeechToText: Boolean = showVoiceInput,
     val showCamera: Boolean = true,
     val showSend: Boolean = true,
     val showAssistantMode: Boolean = false,

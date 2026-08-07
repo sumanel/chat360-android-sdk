@@ -4,6 +4,7 @@ import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import com.chat360.chatbot.network.rest.dto.BotAppearanceResponse
 import com.chat360.chatbot.network.rest.dto.DealerRoomsResponse
 import com.chat360.chatbot.network.rest.dto.HistoryResponse
+import com.chat360.chatbot.network.rest.dto.RenameRoomRequest
 import com.chat360.chatbot.network.rest.dto.SessionInitResponse
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.builtins.ListSerializer
@@ -16,8 +17,10 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
+import android.util.Log
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -31,13 +34,24 @@ class Chat360ApiService(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun getDealerRooms(dealerCode: String): DealerRoomsResponse {
+    suspend fun getEmployeeRooms(employeeCode: String): DealerRoomsResponse {
         val url = "https://staging.chat360.io/agentic-ai/api/client-hyundailms/rooms/".toHttpUrl()
             .newBuilder()
-            .addQueryParameter("dealer_code", dealerCode)
+            .addQueryParameter("employee_code", employeeCode)
             .build()
+        Log.d("Sanket", "Sanket ===== Fetching Hyundai rooms: $url")
         val body = execute(Request.Builder().url(url).get().build())
+        Log.d("Sanket", "Sanket ===== Hyundai rooms response: $body")
         return json.decodeFromString(DealerRoomsResponse.serializer(), body)
+    }
+
+    suspend fun renameRoom(roomId: String, newRoomName: String) {
+        val url = "https://staging.chat360.io/agentic-ai/api/client-hyundailms/rooms/rename/"
+        val requestBody = json.encodeToString(
+            RenameRoomRequest.serializer(),
+            RenameRoomRequest(roomId = roomId, newRoomName = newRoomName),
+        ).toRequestBody("application/json".toMediaTypeOrNull())
+        execute(Request.Builder().url(url).patch(requestBody).build())
     }
 
     suspend fun getSession(

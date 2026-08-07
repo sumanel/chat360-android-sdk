@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,12 +32,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chat360.chatbot.cache.CachedConversationEntity
+import com.chat360.chatbot.ui.components.icons.AddIcon
+import com.chat360.chatbot.ui.components.icons.ChevronLeftIcon
+import com.chat360.chatbot.ui.components.icons.DarkModeIcon
+import com.chat360.chatbot.ui.components.icons.HistoryIcon
+import com.chat360.chatbot.ui.components.icons.LightModeIcon
+import com.chat360.chatbot.ui.components.icons.MoreIcon
+import com.chat360.chatbot.ui.components.icons.PersonIcon
+import com.chat360.chatbot.ui.components.icons.TrainingIcon
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 import java.text.SimpleDateFormat
@@ -54,7 +65,6 @@ fun ChatHistorySidebar(
     conversations: List<CachedConversationEntity>,
     onConversationSelected: (String) -> Unit,
     onConversationRenamed: (String, String) -> Unit,
-    onConversationDeleted: (String) -> Unit,
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -75,7 +85,7 @@ fun ChatHistorySidebar(
                 .padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("<", fontSize = 24.sp, color = colors.accent)
+            Icon(ChevronLeftIcon, contentDescription = "Close menu", tint = colors.accent)
             Spacer(Modifier.width(12.dp))
             Text(
                 "Menu",
@@ -109,7 +119,7 @@ fun ChatHistorySidebar(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("+", fontSize = 25.sp, color = colors.accentContrast)
+                Icon(AddIcon, contentDescription = null, tint = colors.accentContrast)
                 Spacer(Modifier.width(12.dp))
                 Text(
                     "New chat",
@@ -134,7 +144,6 @@ fun ChatHistorySidebar(
                     items = conversations,
                     onConversationSelected = onConversationSelected,
                     onConversationRenamed = onConversationRenamed,
-                    onConversationDeleted = onConversationDeleted,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -157,8 +166,8 @@ fun ChatHistorySidebar(
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth()) {
-                    ModeOption("Training", Modifier.weight(1f), isTrainingMode) { onAssistantModeChanged(true) }
-                    ModeOption("Customer", Modifier.weight(1f), !isTrainingMode) { onAssistantModeChanged(false) }
+                    ModeOption("Training", TrainingIcon, Modifier.weight(1f), isTrainingMode) { onAssistantModeChanged(true) }
+                    ModeOption("Customer", PersonIcon, Modifier.weight(1f), !isTrainingMode) { onAssistantModeChanged(false) }
                 }
             }
             Spacer(Modifier.height(18.dp))
@@ -172,8 +181,8 @@ fun ChatHistorySidebar(
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth()) {
-                    ModeOption("Light", Modifier.weight(1f), !isDarkTheme) { onThemeChanged(false) }
-                    ModeOption("Dark", Modifier.weight(1f), isDarkTheme) { onThemeChanged(true) }
+                    ModeOption("Light", LightModeIcon, Modifier.weight(1f), !isDarkTheme) { onThemeChanged(false) }
+                    ModeOption("Dark", DarkModeIcon, Modifier.weight(1f), isDarkTheme) { onThemeChanged(true) }
                 }
             }
         }
@@ -186,7 +195,6 @@ private fun HistoryGroup(
     items: List<CachedConversationEntity>,
     onConversationSelected: (String) -> Unit,
     onConversationRenamed: (String, String) -> Unit,
-    onConversationDeleted: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalChat360Colors.current
@@ -213,7 +221,6 @@ private fun HistoryGroup(
                     conversation = conversation,
                     onSelected = { onConversationSelected(conversation.id) },
                     onRenamed = { onConversationRenamed(conversation.id, it) },
-                    onDeleted = { onConversationDeleted(conversation.id) },
                 )
             }
         }
@@ -226,14 +233,11 @@ private fun ConversationItem(
     conversation: CachedConversationEntity,
     onSelected: () -> Unit,
     onRenamed: (String) -> Unit,
-    onDeleted: () -> Unit,
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
-    val destructiveColor = Color(0xFFB3261E)
     var showActions by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
     var title by remember(conversation.id, conversation.title) { mutableStateOf(conversation.title) }
 
     Row(
@@ -243,17 +247,18 @@ private fun ConversationItem(
             .padding(bottom = 22.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        Text("o", fontSize = 19.sp, color = colors.textSecondary)
+        Icon(HistoryIcon, contentDescription = null, tint = colors.textSecondary)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(conversation.title, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(conversation.updatedAt)), fontFamily = typography.textFamily, fontSize = 13.sp, color = colors.textSecondary)
         }
         Column {
-            Text("...", fontSize = 16.sp, color = colors.textSecondary, modifier = Modifier.clickable { showActions = true }.padding(horizontal = 8.dp))
+            IconButton(onClick = { showActions = true }) {
+                Icon(MoreIcon, contentDescription = "Conversation options", tint = colors.textSecondary)
+            }
             DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
                 DropdownMenuItem(text = { Text("Rename") }, onClick = { showActions = false; showRenameDialog = true })
-                DropdownMenuItem(text = { Text("Delete", color = destructiveColor) }, onClick = { showActions = false; showDeleteDialog = true })
             }
         }
     }
@@ -267,36 +272,30 @@ private fun ConversationItem(
             dismissButton = { TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") } },
         )
     }
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete conversation?") },
-            text = { Text("This removes the conversation and its cached messages from this device.") },
-            confirmButton = { TextButton(onClick = { onDeleted(); showDeleteDialog = false }) { Text("Delete", color = destructiveColor) } },
-            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } },
-        )
-    }
 }
 
 @Composable
 private fun ModeOption(
     text: String,
+    icon: ImageVector,
     modifier: Modifier,
     selected: Boolean,
     onClick: () -> Unit
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
-    Text(
-        text = text,
-        fontFamily = typography.textFamily,
-        fontSize = 16.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = if (selected) colors.accent else colors.textPrimary,
+    val contentColor = if (selected) colors.accent else colors.textPrimary
+    Row(
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .background(if (selected) colors.backgroundElevated else colors.backgroundSunken)
             .then(if (selected) Modifier.border(1.dp, colors.line, RoundedCornerShape(0.dp)) else Modifier)
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp),
-    )
+    ) {
+        Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text, fontFamily = typography.textFamily, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = contentColor)
+    }
 }

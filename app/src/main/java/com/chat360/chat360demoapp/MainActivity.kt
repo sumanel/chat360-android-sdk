@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.annotation.RequiresApi
 import com.chat360.chatbot.android.ChatComposeActivity
 import com.chat360.chatbot.common.Chat360
@@ -29,9 +30,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
 class MainActivity : AppCompatActivity() {
     companion object {
-        private const val HYUNDAI_DEALER_AUTH_URL =
-            "https://staging.chat360.io/api/client_hyundai_lms/hyundai/dealerAuth/"
+        private const val HYUNDAI_EMPLOYEE_AUTH_URL =
+            "https://staging.chat360.io/api/client_hyundai_lms/sales-executive/validate/"
         private const val HYUNDAI_DEALER_CODE = "DLR001"
+        private const val HYUNDAI_EMPLOYEE_CODE = "EMP1001"
+        private const val HYUNDAI_EMPLOYEE_NAME = "Rahul Sharma"
+        private const val HYUNDAI_EMPLOYEE_STATUS = "ACTIVE"
     }
 
     private val httpClient = OkHttpClient()
@@ -52,19 +56,21 @@ class MainActivity : AppCompatActivity() {
 
         chat360.setBaseUrl("https://app.chat360.io");
         chat360.setHandleWindowEvent { eventData ->
-            print(eventData)
-            var metaMap : Map<String, String> = mapOf()
+            Log.d("Sanket", "Sanket ===== Window event received: $eventData")
+            var metaMap: Map<String, String> = mapOf(
+                "dealer_code" to HYUNDAI_DEALER_CODE,
+                "emp_code" to HYUNDAI_EMPLOYEE_CODE,
+            )
             if(eventData["type"] == "get_auth_chat360") {
-                 metaMap = mapOf(
+                 metaMap = metaMap + mapOf(
                     "token" to "New Token from app",
                 )
             } else if(eventData["type"] == "get_date") {
-                metaMap = mapOf(
+                metaMap = metaMap + mapOf(
                     "dynamic_date" to  java.time.ZonedDateTime.now().toString()
                 )
-            } else if (eventData["type"] == "initiate_payment") {
-                metaMap = mapOf()
             }
+            Log.d("Sanket", "Sanket ===== Window event response: $metaMap")
 
             Handler(Looper.getMainLooper()).postDelayed({
                 chat360.sendEventToBot(mapOf(
@@ -122,6 +128,7 @@ class MainActivity : AppCompatActivity() {
                     customBranding = HyundaiBranding
                     Chat360UIConfig = HyundaiConfig
                     dealerCode = HYUNDAI_DEALER_CODE
+                    employeeCode = HYUNDAI_EMPLOYEE_CODE
                 }
                 chat360.startBot(this)
             }
@@ -145,20 +152,24 @@ class MainActivity : AppCompatActivity() {
     ) {
         button.isEnabled = false
         val request = Request.Builder()
-            .url(HYUNDAI_DEALER_AUTH_URL)
+            .url(HYUNDAI_EMPLOYEE_AUTH_URL)
             .header("Content-Type", "application/json")
             .header("Cookie", "multidb_pin_writes=y")
-            .post("{\"dealer_code\":\"$HYUNDAI_DEALER_CODE\"}"
+            .post("""{"dealer_code":"$HYUNDAI_DEALER_CODE","emp_code":"$HYUNDAI_EMPLOYEE_CODE","name":"$HYUNDAI_EMPLOYEE_NAME","status":"$HYUNDAI_EMPLOYEE_STATUS"}"""
                 .toRequestBody("application/json; charset=utf-8".toMediaType()))
             .build()
 
+        Log.d("Sanket", "Sanket ===== Hyundai authentication request: dealer_code=$HYUNDAI_DEALER_CODE, emp_code=$HYUNDAI_EMPLOYEE_CODE, name=$HYUNDAI_EMPLOYEE_NAME, status=$HYUNDAI_EMPLOYEE_STATUS")
+
         httpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                Log.e("Sanket", "Sanket ===== Hyundai authentication failed: ${e.message}", e)
                 showDealerAuthFailure(button, "Unable to authenticate dealer. Please try again.")
             }
 
             override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
                 response.use {
+                    Log.d("Sanket", "Sanket ===== Hyundai authentication response: HTTP ${response.code}")
                     runOnUiThread {
                         button.isEnabled = true
                         if (response.code == 200) {

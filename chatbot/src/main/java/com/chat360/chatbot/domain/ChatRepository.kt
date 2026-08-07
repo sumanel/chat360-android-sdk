@@ -140,10 +140,10 @@ class ChatRepository(
             // same via sendSocketMessage when lastMessage.msgType === 'INIT').
             if (session.nodeType == "INIT") pendingInitJumpTargetId = session.targetId
 
-            Log.d("Sanket", "rooId = $roomId")
-            Log.d("Sanket", "session.room_id = ${session.room_id}")
-            Log.d("Sanket", "ownerId = ${session.owner_id}")
-            Log.d("Sanket", "targetId = ${session.targetId}")
+            Log.d("Sanket", "Sanket ===== roomId = $roomId")
+            Log.d("Sanket", "Sanket ===== session.room_id = ${session.room_id}")
+            Log.d("Sanket", "Sanket ===== ownerId = ${session.owner_id}")
+            Log.d("Sanket", "Sanket ===== targetId = ${session.targetId}")
 
             val resumedAgent = session.assigned_user?.let {
                 if (it.operator_name.isNullOrBlank() && it.user_designation.isNullOrBlank() && it.avatar.isNullOrBlank()) {
@@ -326,6 +326,7 @@ class ChatRepository(
     /** The inbound half: an event handed to the active session becomes an outgoing message
      * carrying it as `variables`, matching onMoveForward(targetId, {variableValues: data}). */
     private fun sendWindowEvent(event: Map<String, String>) {
+        Log.d("Sanket", "Sanket ===== Sending window event to bot: $event")
         val node = lastBotNode
         val outgoing = OutgoingMessage(
             message = JsonObject(emptyMap()),

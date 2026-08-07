@@ -25,7 +25,7 @@ class ChatComposeActivity : ComponentActivity() {
     private val config: ResolvedChatConfig by lazy { resolveChatConfig(intent) }
 
     private val viewModel: ChatViewModel by viewModels {
-        ChatViewModel.Factory(context = applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, dealerCode = config.dealerCode, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages)
+        ChatViewModel.Factory(context = applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, employeeCode = config.employeeCode, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,6 +59,7 @@ class ChatComposeActivity : ComponentActivity() {
             themePreset: Chat360ThemePreset = Chat360ThemePreset.DEFAULT,
             historyEnabled: Boolean = true,
             dealerCode: String? = null,
+            employeeCode: String? = null,
         ) {
             val intent = Intent(context, ChatComposeActivity::class.java)
                 .putExtra(EXTRA_BOT_ID, botId)
@@ -66,6 +67,7 @@ class ChatComposeActivity : ComponentActivity() {
                 .putExtra(EXTRA_THEME_PRESET, themePreset.name)
                 .putExtra(EXTRA_HISTORY_ENABLED, historyEnabled)
                 .putExtra(EXTRA_DEALER_CODE, dealerCode)
+                .putExtra(EXTRA_EMPLOYEE_CODE, employeeCode)
             context.startActivity(intent)
         }
     }

@@ -1,6 +1,7 @@
 package com.chat360.chatbot.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -34,7 +35,7 @@ class ChatViewModel(
     private val botId: String,
     private val cache: ChatCacheRepository,
     private val dealerRoomsApi: Chat360ApiService,
-    private val dealerCode: String? = null,
+    private val employeeCode: String? = null,
     private val suppressInitialBotMessages: Boolean = false,
 ) : ViewModel() {
 
@@ -51,9 +52,9 @@ class ChatViewModel(
 
     init {
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
-        dealerCode?.let { code ->
+        employeeCode?.let { code ->
             viewModelScope.launch(Dispatchers.IO) {
-                runCatching { dealerRoomsApi.getDealerRooms(code) }
+                runCatching { dealerRoomsApi.getEmployeeRooms(code) }
                     .onSuccess { response ->
                         // Room emits first. The network snapshot then becomes visible immediately,
                         // followed by durable reconciliation back into Room.
@@ -61,13 +62,19 @@ class ChatViewModel(
                         _conversations.value = refreshed
                         cache.syncDealerRooms(botId, refreshed)
                     }
+                    .onFailure { error ->
+                        Log.e("Sanket", "Sanket ===== Hyundai rooms request failed: ${error.message}", error)
+                    }
             }
         }
         viewModelScope.launch {
             repository.connect(
                 onEvent = ::handleEvent,
                 onConnected = { _uiState.update { it.copy(isConnected = true, error = null) } },
-                onError = { e -> _uiState.update { it.copy(isConnected = false, error = e.message ?: "Connection failed") } },
+                onError = { e ->
+                    Log.e("Chat360", "Chat connection failed: ${e.message}", e)
+                    _uiState.update { it.copy(isConnected = false) }
+                },
                 onSlowConnectionChanged = { slow -> _uiState.update { it.copy(isSlowConnection = slow) } },
                 onMessageTimedOut = ::handleMessageTimedOut,
                 onAppearanceLoaded = { details, chatboxName ->
@@ -600,18 +607,17 @@ class ChatViewModel(
         }
     }
 
-    /** Updates the locally cached label only; server-side history APIs will replace this later. */
+    /** Updates the sidebar immediately; the server rename is a best-effort background sync. */
     fun renameConversation(conversationId: String, title: String) {
         val normalizedTitle = title.trim().replace(Regex("\\s+"), " ").take(80)
         if (normalizedTitle.isBlank()) return
-        viewModelScope.launch { cache.renameConversation(conversationId, normalizedTitle) }
-    }
-
-    /** Removes the local Room record and its messages. The active chat is reset to a new draft. */
-    fun deleteConversation(conversationId: String) {
-        viewModelScope.launch {
-            cache.deleteConversation(conversationId)
-            if (conversationId == activeConversationId) startNewChat()
+        val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
+        viewModelScope.launch(Dispatchers.IO) {
+            cache.renameConversation(conversationId, normalizedTitle)
+            if (roomId != null) {
+                runCatching { dealerRoomsApi.renameRoom(roomId, normalizedTitle) }
+                    .onFailure { error -> Log.e("Chat360", "Room rename API failed: ${error.message}", error) }
+            }
         }
     }
 
@@ -719,7 +725,7 @@ class ChatViewModel(
         private val baseUrl: String,
         private val botId: String,
         private val historyEnabled: Boolean = true,
-        private val dealerCode: String? = null,
+        private val employeeCode: String? = null,
         private val suppressInitialBotMessages: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -729,7 +735,7 @@ class ChatViewModel(
                 botId = botId,
                 cache = ChatCacheRepository(ChatCacheDatabase.get(context).dao()),
                 dealerRoomsApi = Chat360ApiService(baseUrl),
-                dealerCode = dealerCode,
+                employeeCode = employeeCode,
                 suppressInitialBotMessages = suppressInitialBotMessages,
             ) as T
         }

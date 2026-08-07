@@ -114,11 +114,16 @@ val HyundaiConfig = Chat360UIConfig(
         welcomeTitle = "Hyundai Sales AI Assistant",
         inputPlaceholder = "Ask about vehicles, pricing, offers...",
     ),
-    theme = ThemeConfig(defaultTheme = DefaultTheme.DARK, allowThemeSwitch = true),
+    theme = ThemeConfig(
+        defaultTheme = DefaultTheme.LIGHT,
+        allowThemeSwitch = true,
+        followSystemTheme = false,
+    ),
     features = FeatureConfig(
         showMenu = true, showHistorySidebar = true, showNewChat = true,
         showCopyMessage = true, showRegenerate = true, showLike = true, showDislike = true,
-        showEmoji = false, showAttachment = false, showVoiceInput = true,
+        showEmoji = false, showAttachment = false,
+        showVoiceInput = false, showSpeechToText = true,
         showAssistantMode = true, showAppearanceSwitcher = true,
     ),
     behavior = BehaviorConfig(suppressInitialBotMessages = true),
