@@ -103,7 +103,7 @@ val HyundaiBranding = Chat360Branding(
         lightResId = R.drawable.chat360_hyundai_logo,
         darkResId = R.drawable.chat360_hyundai_logo_dark,
     ),
-    welcomeHeading = "Hyundai Sales AI Assistant",
+    welcomeHeading = "Sales AI Assistant",
     disclaimerText = "H-Smart AI can make mistakes. Verify important information with your dealer.",
     inputPlaceholder = "Ask about vehicles, pricing, offers…",
 )
@@ -111,7 +111,7 @@ val HyundaiBranding = Chat360Branding(
 val HyundaiConfig = Chat360UIConfig(
     branding = BrandingConfig(
         botName = "H-Smart AI",
-        welcomeTitle = "Hyundai Sales AI Assistant",
+        welcomeTitle = "Sales AI Assistant",
         inputPlaceholder = "Ask about vehicles, pricing, offers...",
     ),
     theme = ThemeConfig(
