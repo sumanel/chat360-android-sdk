@@ -19,13 +19,12 @@ fun BotContentBody(message: ChatMessage, actions: BotContentActions, isLiveChat:
         is BotContent.DownloadMedia -> DownloadMediaContent(content)
         is BotContent.Rating -> RatingContent(message, content, isLiveChat, actions.onRatingSelected)
         is BotContent.Form -> FormContent(message, content, isLiveChat, actions.onFormFieldChange, actions.onMediaFieldPicked, actions.onFormSubmit)
-        // Never actually reaches the message list (ChatViewModel skips WINDOW_EVENT nodes
-        // entirely, matching the widget's isWithoutMessage/unStyled/hideAvatar) - kept only so
-        // this `when` stays exhaustive as BotContent grows.
+        // Never actually reaches the message list - ChatViewModel skips WINDOW_EVENT nodes
+        // entirely - kept only so this `when` stays exhaustive as BotContent grows.
         is BotContent.WindowEvent -> Unit
         BotContent.EmailPrompt -> EmailPromptContent(message, isLiveChat, actions.onPromptValueChange, actions.onEmailSubmit)
-        // A non-international PhonePrompt has no dedicated widget in the source either - the
-        // always-visible bottom input bar already answers it as free text.
+        // A non-international PhonePrompt has no dedicated renderer - the always-visible bottom
+        // input bar already answers it as free text.
         is BotContent.PhonePrompt -> if (content.allowInternational) {
             PhonePromptContent(message, content, isLiveChat, actions.onPromptValueChange, actions.onPhoneSubmit)
         } else {

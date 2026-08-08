@@ -55,8 +55,7 @@ fun BrandLogo(modifier: Modifier = Modifier) {
  * (the generic default) falls back to a plain initial-letter badge instead of a broken image.
  *
  * [overrideName]/[overrideAvatarUrl] let a live-chat message show the assigned human agent's
- * avatar/initial instead of the bot's, reusing the exact same badge styling (mirrors the
- * widget's agent-avatar swap in `BotMessageBox.tsx`).
+ * avatar/initial instead of the bot's, reusing the exact same badge styling.
  */
 @Composable
 fun LogoBadge(size: Dp, cornerRadius: Dp = 6.dp, overrideName: String? = null, overrideAvatarUrl: String? = null) {

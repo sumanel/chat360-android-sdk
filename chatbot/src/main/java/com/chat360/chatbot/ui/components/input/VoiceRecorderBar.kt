@@ -38,10 +38,9 @@ private fun formatMs(ms: Long): String {
 }
 
 /**
- * Swaps in for [ChatInputBar]'s whole row while a voice note is being recorded or reviewed -
- * mirrors VoiceInput/index.tsx's `fullWidth` state (recording -> [VoiceMessageReviewChip]'s
- * waveform+cancel+stop, review -> its lastRecording branch: play/delete/send with upload
- * progress/error).
+ * Swaps in for [ChatInputBar]'s whole row while a voice note is being recorded or reviewed:
+ * while recording, shows a waveform with cancel/stop; while reviewing, shows play/delete/send
+ * with upload progress/error.
  */
 @Composable
 fun VoiceRecorderBar(

@@ -11,6 +11,9 @@ import com.chat360.chatbot.cache.CachedConversationEntity
 import com.chat360.chatbot.cache.ChatCacheDatabase
 import com.chat360.chatbot.cache.ChatCacheRepository
 import com.chat360.chatbot.domain.ChatRepository
+import com.chat360.chatbot.domain.thirdparty.ChatHistoryRepository
+import com.chat360.chatbot.domain.thirdparty.ThirdPartyTokenManager
+import com.chat360.chatbot.network.rest.thirdparty.ThirdPartyTasksApiService
 import com.chat360.chatbot.domain.validation.FormFieldValidator
 import com.chat360.chatbot.domain.validation.InputValidators
 import com.chat360.chatbot.model.wire.BotContent
@@ -18,7 +21,6 @@ import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.model.wire.IncomingSocketEvent
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import com.chat360.chatbot.model.wire.toIncomingEvent
-import com.chat360.chatbot.network.rest.Chat360ApiService
 import com.chat360.chatbot.network.rest.dto.SessionLanguage
 import com.chat360.chatbot.ui.theme.toColorOverrides
 import com.chat360.chatbot.ui.theme.toLogoOverride
@@ -37,9 +39,7 @@ class ChatViewModel(
     private val repository: ChatRepository,
     private val botId: String,
     private val cache: ChatCacheRepository,
-    private val roomsApi: Chat360ApiService,
-    private val clientExternalName: String? = null,
-    private val agentCode: String? = null,
+    private val chatHistoryRepository: ChatHistoryRepository? = null,
     private val suppressInitialBotMessages: Boolean = false,
     /** Only used for the offline pre-send connectivity check (see [sendMessage]) - null is
      * safe, it just disables that check and lets a send attempt fail normally instead. */
@@ -52,8 +52,8 @@ class ChatViewModel(
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
     private val _conversations = MutableStateFlow<List<CachedConversationEntity>>(emptyList())
     val conversations: StateFlow<List<CachedConversationEntity>> = _conversations.asStateFlow()
-    /** label -> targetId, from session-init's `bot_settings.bot_shortcuts` - mirrors the
-     * widget's Shortcuts menu. Empty when the bot has none configured. */
+    /** label -> targetId, from session-init's `bot_settings.bot_shortcuts`. Empty when the
+     * bot has none configured. */
     private val _shortcuts = MutableStateFlow<Map<String, String>>(emptyMap())
     val shortcuts: StateFlow<Map<String, String>> = _shortcuts.asStateFlow()
     /** Mirrors session-init's `bot_settings.languages` - empty when the bot is single-language. */
@@ -78,19 +78,18 @@ class ChatViewModel(
 
     init {
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
-        if (clientExternalName != null && agentCode != null) {
+        if (chatHistoryRepository != null) {
             viewModelScope.launch(Dispatchers.IO) {
-                runCatching { roomsApi.getAgentRooms(clientExternalName, agentCode) }
-                    .onSuccess { response ->
-                        // Room emits first. The network snapshot then becomes visible immediately,
-                        // followed by durable reconciliation back into Room.
-                        val refreshed = cache.agentRoomConversations(botId, response.results)
-                        _conversations.value = refreshed
-                        cache.syncAgentRooms(botId, refreshed)
-                    }
-                    .onFailure { error ->
-                        Log.e("Chat360", "Agent rooms request failed: ${error.message}", error)
-                    }
+                // Room emits first (see collector above). A successful rooms/list fetch then
+                // becomes visible immediately; a failure leaves whatever's already shown alone,
+                // only flipping isHistoryUnavailable so a host UI can show a retry affordance.
+                val refreshed = chatHistoryRepository.refreshRooms()
+                if (refreshed != null) {
+                    _conversations.value = refreshed
+                    _uiState.update { it.copy(isHistoryUnavailable = false) }
+                } else {
+                    _uiState.update { it.copy(isHistoryUnavailable = true) }
+                }
             }
         }
         viewModelScope.launch {
@@ -143,18 +142,16 @@ class ChatViewModel(
                 // An Unsupported node with no text at all renders nothing (yet) rather than an
                 // empty bubble; one with fallback text (most node types include questionText)
                 // still shows as plain text even before its specific renderer exists. A
-                // WINDOW_EVENT node never renders a bubble at all (the widget marks it
-                // isWithoutMessage/unStyled/hideAvatar) - it only drives the bridge.
+                // WINDOW_EVENT node never renders a bubble at all - it only drives the bridge.
                 if (node.text == null && node.content is BotContent.Unsupported) return
                 if (node.content is BotContent.WindowEvent) return
                 // isLiveChat flips true on the transfer notice OR any admin/operator-authored
-                // message (matches handleAdminOrEndUserMessage's flip condition), and - unlike
-                // the source, which never resets it except via update_status - also flips back
-                // false on the next bot-authored message. That's a deliberate simplification: it
-                // makes replaying loaded history alone correctly reconstruct whether the session
-                // is *currently* live (mirrors getHistory.ts's hasAdminMessages walk) without a
-                // separate one-off scan, at the minor cost of diverging from source in the rare
-                // case a bot message is ever injected mid-live-session.
+                // message, and also flips back false on the next bot-authored message (rather
+                // than staying true until an explicit update_status). That's a deliberate
+                // simplification: it makes replaying loaded history alone correctly reconstruct
+                // whether the session is *currently* live without a separate one-off scan, at
+                // the minor cost of misclassifying the rare case where a bot message is ever
+                // injected mid-live-session.
                 _uiState.update {
                     it.copy(
                         isLiveChat = when {
@@ -246,7 +243,7 @@ class ChatViewModel(
         _uiState.update { it.copy(pendingUrlToOpen = null) }
     }
 
-    /** Appending any message locks the quick replies of everything before it (widget behavior).
+    /** Appending any message locks the quick replies of everything before it.
      * A user-authored message also persists to the local cache, keyed by [connectedConversationId]
      * (the room the live socket is actually bound to) - never by [activeConversationId], which can
      * point at a different, merely-browsed conversation with no live room behind it at all.
@@ -465,17 +462,17 @@ class ChatViewModel(
         repository.jumpToNode(targetId)
     }
 
-    /** Answers a tap on the shortcuts menu - mirrors jumpToEleUser(): sends the shortcut's
-     * label as a real user-authored message that jumps straight to its target node. */
+    /** Answers a tap on the shortcuts menu - sends the shortcut's label as a real
+     * user-authored message that jumps straight to its target node. */
     fun selectShortcut(targetId: String, label: String) {
         val chatMsgId = repository.sendShortcut(targetId, label)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = label, fromUser = true))
     }
 
-    /** Switches the bot flow to another language's entry node - mirrors onChangeLanguage():
-     * reconnects first if the socket dropped, clears the transcript (this is a flow restart,
-     * not a new conversation - same local conversation/room, just a fresh starting point), then
-     * jumps to the language's target with no user-authored bubble (matches jumpToEleBot). */
+    /** Switches the bot flow to another language's entry node - reconnects first if the socket
+     * dropped, clears the transcript (this is a flow restart, not a new conversation - same
+     * local conversation/room, just a fresh starting point), then jumps to the language's
+     * target with no user-authored bubble. */
     fun switchLanguage(targetId: String) {
         if (connectedConversationId != null && activeConversationId != connectedConversationId) {
             activeConversationId = connectedConversationId
@@ -560,8 +557,8 @@ class ChatViewModel(
 
     /**
      * Validates every field with FormFieldValidator before sending - on failure, marks
-     * attemptedSubmit so FormContent starts showing each field's inline error, matching the
-     * widget's "errors appear once you try to submit" behavior.
+     * attemptedSubmit so FormContent starts showing each field's inline error only once
+     * a submit has been attempted.
      */
     fun submitForm(messageId: String) {
         val message = _uiState.value.messages.find { it.id == messageId } ?: return
@@ -611,19 +608,19 @@ class ChatViewModel(
         }
     }
 
-    /** A recording just stopped - hold it as a reviewable draft (mirrors onVoiceMessageCaptured). */
+    /** A recording just stopped - hold it as a reviewable draft. */
     fun onVoiceRecordingCaptured(filePath: String, amplitudes: List<Int>, durationMs: Long) {
         _uiState.update { it.copy(voiceDraft = VoiceDraftState(filePath, amplitudes, durationMs)) }
     }
 
-    /** Discards the draft file entirely (mirrors onClear/cancelVoiceMessage) - not recoverable. */
+    /** Discards the draft file entirely - not recoverable. */
     fun cancelVoiceDraft() {
         val path = _uiState.value.voiceDraft?.filePath
         _uiState.update { it.copy(voiceDraft = null) }
         path?.let { java.io.File(it).delete() }
     }
 
-    /** Uploads the draft then appends it as a sent bubble (mirrors sendVoiceMessage/retryVoiceUpload - retry just calls this again). */
+    /** Uploads the draft then appends it as a sent bubble - retry just calls this again. */
     fun sendVoiceDraft() {
         val draft = _uiState.value.voiceDraft ?: return
         if (draft.uploading) return
@@ -728,9 +725,8 @@ class ChatViewModel(
         val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
         viewModelScope.launch(Dispatchers.IO) {
             cache.renameConversation(conversationId, normalizedTitle)
-            if (roomId != null && clientExternalName != null) {
-                runCatching { roomsApi.renameRoom(clientExternalName, roomId, normalizedTitle) }
-                    .onFailure { error -> Log.e("Chat360", "Room rename API failed: ${error.message}", error) }
+            if (roomId != null && chatHistoryRepository != null) {
+                chatHistoryRepository.renameRoom(roomId, normalizedTitle)
             }
         }
     }
@@ -743,8 +739,12 @@ class ChatViewModel(
     fun deleteConversation(conversationId: String) {
         val wasConnected = conversationId == connectedConversationId
         val wasActive = conversationId == activeConversationId
+        val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
         viewModelScope.launch {
             cache.deleteConversation(conversationId)
+            if (roomId != null && chatHistoryRepository != null) {
+                launch(Dispatchers.IO) { chatHistoryRepository.markRoomInactive(roomId) }
+            }
             if (wasConnected) {
                 startNewChat()
                 return@launch
@@ -758,9 +758,8 @@ class ChatViewModel(
     /** Binds the server room to its Room record and restores cached rich websocket messages.
      * Local cache is the durable source of truth for a conversation this device has already
      * seen - [refreshConversationHistory]'s REST fetch only ever seeds a conversation that has
-     * none yet (matches the widget: `session.initialMessagePage` seeds a brand-new session
-     * once; growing it further is only ever additive pagination via getMoreMessages(), never a
-     * wholesale resync). Skipping it once local messages exist also avoids a real data-loss bug:
+     * none yet; growing it further is only ever additive pagination, never a wholesale resync.
+     * Skipping it once local messages exist also avoids a real data-loss bug:
      * that endpoint caps at a handful of the most recent raw items, and unconditionally
      * replacing the local cache with a truncated snapshot on every reopen would silently delete
      * everything older than that window. */
@@ -819,9 +818,8 @@ class ChatViewModel(
         return history.isNotEmpty()
     }
 
-    /** Pages one step further back - mirrors Messages/index.tsx's scroll-to-top trigger
-     * (`pos.y < THRESH_HOLD`), just called directly by the UI instead of derived from a raw
-     * scroll offset. Additive only: prepends the older page, never touches what's already shown. */
+    /** Pages one step further back, triggered directly by the UI when the scroll position
+     * nears the top. Additive only: prepends the older page, never touches what's already shown. */
     fun loadMoreHistory() {
         val conversationId = activeConversationId ?: return
         val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId ?: return
@@ -894,14 +892,14 @@ class ChatViewModel(
 
     fun sendMessage() {
         val text = _uiState.value.inputText.trim()
-        // Ports UserInput/index.tsx's validate(): the empty-message guard only applies outside
-        // live chat (`!value.trim() && !isLiveChat`) - live chat allows an empty submit through.
+        // The empty-message guard only applies outside live chat; live chat allows an empty
+        // submit through.
         if (text.isEmpty() && !_uiState.value.isLiveChat) return
         hasStartedConversation = true
         _uiState.update { it.copy(inputText = "") }
-        // Mirrors sendUserMessage's `!navigator.onLine` check: with no connectivity at all,
-        // skip the send attempt entirely and show the bubble as failed immediately, rather than
-        // waiting out a doomed attempt and the ack-timeout that would eventually flag it anyway.
+        // With no connectivity at all, skip the send attempt entirely and show the bubble as
+        // failed immediately, rather than waiting out a doomed attempt and the ack-timeout that
+        // would eventually flag it anyway.
         if (!isOnline()) {
             appendMessage(ChatMessage(text = text, fromUser = true, failed = true))
             return
@@ -910,9 +908,9 @@ class ChatViewModel(
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
     }
 
-    /** Best-effort connectivity check - mirrors `!navigator.onLine`. Returns true (i.e. "don't
-     * block the send") when there's no [appContext] to check with or the platform API errors,
-     * since a failed send still degrades gracefully via the existing ack-timeout path. */
+    /** Best-effort connectivity check. Returns true (i.e. "don't block the send") when there's
+     * no [appContext] to check with or the platform API errors, since a failed send still
+     * degrades gracefully via the existing ack-timeout path. */
     private fun isOnline(): Boolean {
         val context = appContext ?: return true
         return runCatching {
@@ -933,22 +931,57 @@ class ChatViewModel(
         private val baseUrl: String,
         private val botId: String,
         private val historyEnabled: Boolean = true,
-        private val clientExternalName: String? = null,
-        private val agentCode: String? = null,
+        private val clientId: String? = null,
+        private val apiKey: String? = null,
+        private val endUserId: String? = null,
         private val suppressInitialBotMessages: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            val cache = ChatCacheRepository(ChatCacheDatabase.get(context).dao())
+            val chatHistoryRepository = buildChatHistoryRepository(cache)
             return ChatViewModel(
                 repository = ChatRepository(baseUrl, botId, historyEnabled = historyEnabled),
                 botId = botId,
-                cache = ChatCacheRepository(ChatCacheDatabase.get(context).dao()),
-                roomsApi = Chat360ApiService(baseUrl),
-                clientExternalName = clientExternalName,
-                agentCode = agentCode,
+                cache = cache,
+                chatHistoryRepository = chatHistoryRepository,
                 suppressInitialBotMessages = suppressInitialBotMessages,
                 appContext = context.applicationContext,
             ) as T
+        }
+
+        /** History (the rooms list backed by the `third-party-tasks` API) requires [clientId],
+         * [apiKey], [endUserId], and [botId] *all* set - there is no partially-configured mode.
+         * Leaving all three third-party fields unset is a valid choice (history is simply off);
+         * setting only some of them is almost certainly a host-app integration mistake, so it's
+         * always logged loudly - but never crashes the host app, in any build type, since a
+         * third-party SDK misconfiguration must never be able to take down the whole app. */
+        private fun buildChatHistoryRepository(cache: ChatCacheRepository): ChatHistoryRepository? {
+            val trimmedClientId = clientId?.trim()?.takeIf { it.isNotEmpty() }
+            val trimmedApiKey = apiKey?.trim()?.takeIf { it.isNotEmpty() }
+            val trimmedEndUserId = endUserId?.trim()?.takeIf { it.isNotEmpty() }
+            val hasAnyThirdPartyConfig = trimmedClientId != null || trimmedApiKey != null || trimmedEndUserId != null
+            if (trimmedClientId == null || trimmedApiKey == null || trimmedEndUserId == null || botId.isBlank()) {
+                if (hasAnyThirdPartyConfig) {
+                    Log.e(
+                        "Chat360",
+                        "Chat360 history is misconfigured: clientId, apiKey, and endUserId must ALL " +
+                            "be set together (botId is already required) to enable the rooms/history " +
+                            "list. Got clientId=${trimmedClientId != null}, apiKey=${trimmedApiKey != null}, " +
+                            "endUserId=${trimmedEndUserId != null}. History will stay disabled until all are provided.",
+                    )
+                }
+                return null
+            }
+            val thirdPartyApi = ThirdPartyTasksApiService(baseUrl)
+            return ChatHistoryRepository(
+                apiService = thirdPartyApi,
+                tokenManager = ThirdPartyTokenManager(thirdPartyApi, trimmedClientId, trimmedApiKey),
+                cache = cache,
+                clientId = trimmedClientId,
+                botId = botId,
+                endUserId = trimmedEndUserId,
+            )
         }
     }
 }

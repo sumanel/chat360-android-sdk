@@ -40,8 +40,7 @@ import kotlinx.serialization.json.put
 /**
  * Session + connection orchestration. REST session-init must complete before the WebSocket
  * connects (ownerId/roomId only come from that response); reconnects reuse that same
- * ownerId/roomId rather than re-running session-init (matches createSocketUrl() in
- * layout/index.tsx, which reuses `session?.ownerId`/`session?.roomId`).
+ * ownerId/roomId rather than re-running session-init.
  */
 class ChatRepository(
     private val baseUrl: String,
@@ -54,8 +53,7 @@ class ChatRepository(
     // encodeDefaults is essential: most wire fields (type/user/replyType/chat_msg_id/...) are
     // Kotlin default values, and kotlinx.serialization omits defaults unless told otherwise -
     // the server silently ignores frames missing them. explicitNulls=false keeps absent
-    // optional fields (targetId/currentId/post_data/...) off the wire entirely, matching how
-    // the widget conditionally adds them.
+    // optional fields (targetId/currentId/post_data/...) off the wire entirely.
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -70,9 +68,8 @@ class ChatRepository(
     private var pendingInitJumpTargetId: String? = null
     private var suppressReconnect = false
     private var manuallyDisconnected = false
-    /** The last bot node id actually dispatched - mirrors handleDuplicateMessageFilter's
-     * `lastMessage.id === message.data.id` (MessageHandlers.ts): a dropped/flaky connection can
-     * redeliver the exact same frame, which would otherwise render as a second identical bubble. */
+    /** The last bot node id actually dispatched - a dropped/flaky connection can redeliver the
+     * exact same frame, which would otherwise render as a second identical bubble. */
     private var lastDispatchedNodeId: String? = null
 
     private var onEvent: (IncomingSocketEvent) -> Unit = {}
@@ -118,11 +115,11 @@ class ChatRepository(
         onOpenUrl: (String) -> Unit = {},
         /** Seeds live-chat state from the session itself (takeover/assigned_user) before any history replays - lets a killed-and-reopened app resume mid-live-chat correctly instead of assuming a fresh bot-flow session. */
         onSessionResumed: (takeover: Boolean, agent: AssignedAgent?) -> Unit = { _, _ -> },
-        /** Mirrors the widget's shouldAskFeedback-gated close: the session ended but is being
-         * held open (see LiveChatEnded below) so the UI can show the post-chat survey first. */
+        /** The session ended but is being held open (see LiveChatEnded below) so the UI can
+         * show the post-chat survey first. */
         onFeedbackRequested: () -> Unit = {},
         /** The room's shortcut menu (label -> targetId) and available languages, straight from
-         * session-init's `bot_settings` - mirrors initSession.ts's `botSettings` mapping. */
+         * session-init's `bot_settings`. */
         onBotSettingsLoaded: (shortcuts: Map<String, String>, languages: List<SessionLanguage>) -> Unit = { _, _ -> },
     ) {
         this.onEvent = onEvent
@@ -173,10 +170,8 @@ class ChatRepository(
 
     private suspend fun establishSession(onConversationStarted: suspend (roomId: String) -> Boolean) {
         try {
-            // The widget derives website_url/current_url from the browser's own window.location,
-            // which always points at the chat360-hosted page regardless of who embeds it - a
-            // native client mimics that with the bot host itself (the backend 400s on
-            // non-URL-shaped values like a bare app identifier).
+            // website_url/current_url must be URL-shaped - the backend 400s on non-URL-shaped
+            // values like a bare app identifier, so the bot host itself is sent here.
             val host = baseUrl.substringAfter("://")
             val session = apiService.getSession(
                 botId = botId,
@@ -188,8 +183,7 @@ class ChatRepository(
             currentTargetId = session.targetId
             shouldAskFeedback = session.configs?.should_ask_feedback ?: false
             // An INIT node means the flow hasn't started: after the socket opens, jump to the
-            // session's targetId so the bot emits its first message (layout/index.tsx does the
-            // same via sendSocketMessage when lastMessage.msgType === 'INIT').
+            // session's targetId so the bot emits its first message.
             if (session.nodeType == "INIT") pendingInitJumpTargetId = session.targetId
 
             val resumedAgent = session.assigned_user?.let {
@@ -212,15 +206,10 @@ class ChatRepository(
 
             fetchAppearance(host, onAppearanceLoaded)
             val hadHistory = onConversationStarted(session.room_id)
-            // ConversationStarter/index.tsx shows its teaser bubbles independently of the real
-            // session, floating outside the (not-yet-opened) chat launcher on the host page. This
-            // SDK has no such closed-launcher state - a host app only shows the chat screen once
-            // it's ready to be a real session - so the closest equivalent moment is "this room
-            // has no history yet": show the starter content as the opening bubbles instead of an
-            // empty WelcomeSplash, using the exact same wire parsing as any other frame.
-            // Mirrors layout/index.tsx suppressing its socket auto-jump via
-            // `!convoStarter?.isActive` while starter content is being shown: sending the
-            // pending INIT jump too would re-request (and re-render) the exact same first
+            // Conversation-starter teaser content applies when a room has no history yet: show
+            // it as the opening bubbles instead of an empty WelcomeSplash, using the exact same
+            // wire parsing as any other frame. Suppressing the pending INIT jump while starter
+            // content is shown avoids re-requesting (and re-rendering) the exact same first
             // node the starter fetch just displayed.
             if (!hadHistory && loadConversationStarter(onRawIncoming)) pendingInitJumpTargetId = null
             openSocket()
@@ -235,9 +224,8 @@ class ChatRepository(
     suspend fun fetchHistory(roomId: String): HistoryResponse =
         if (historyEnabled) apiService.getHistory(roomId) else HistoryResponse()
 
-    /** Pages one step further back from [cursor] (a prior response's `previous_cursor`) -
-     * mirrors getMoreMessages()'s `task_type: 'PREVIOUS'` fetch (layout/index.tsx). Additive
-     * only: the caller prepends this page, it never replaces anything already shown. */
+    /** Pages one step further back from [cursor] (a prior response's `previous_cursor`).
+     * Additive only: the caller prepends this page, it never replaces anything already shown. */
     suspend fun fetchMoreHistory(roomId: String, cursor: Int): HistoryResponse =
         if (historyEnabled) apiService.getHistory(roomId, taskType = "PREVIOUS", taskValue = cursor) else HistoryResponse()
 
@@ -300,10 +288,10 @@ class ChatRepository(
         }
     }
 
-    /** User-triggered "refresh this chat" action - mirrors onRefresh() (layout/index.tsx):
-     * reconnects immediately with the same ownerId/roomId (unlike [startNewSession], which
-     * gets a whole new room), bypassing [ReconnectManager]'s backoff delay. A no-op if the
-     * session hasn't been established yet (nothing to reconnect to). */
+    /** User-triggered "refresh this chat" action - reconnects immediately with the same
+     * ownerId/roomId (unlike [startNewSession], which gets a whole new room), bypassing
+     * [ReconnectManager]'s backoff delay. A no-op if the session hasn't been established yet
+     * (nothing to reconnect to). */
     fun reconnectNow() {
         if (ownerId == null || roomId == null) return
         // See startNewSession()'s doc: manuallyDisconnected stays set across the close so a
@@ -359,9 +347,9 @@ class ChatRepository(
         heartbeat.onMessageReceived(isPong = envelope.type == "pong")
 
         val event = envelope.toIncomingEvent()
-        // Agent-authored messages are excluded (mirrors MessageHandlers.ts checking
-        // !isLiveChat): an agent legitimately repeating themselves shouldn't be swallowed, and
-        // admin/operator frames don't carry the same node-id-per-flow-step guarantee bot nodes do.
+        // Agent-authored messages are excluded from this dedup: an agent legitimately repeating
+        // themselves shouldn't be swallowed, and admin/operator frames don't carry the same
+        // node-id-per-flow-step guarantee bot nodes do.
         if (event is IncomingSocketEvent.BotMessage &&
             event.node.author != BotNode.MessageAuthor.AGENT &&
             event.node.nodeId != null &&
@@ -376,23 +364,22 @@ class ChatRepository(
                 lastBotNode = event.node
                 currentTargetId = event.node.targetId ?: currentTargetId
                 handleWindowEventNode(event.node.content)
-                // END-node side effects - not about rendering (isURLActionMessage/handleEndSession
-                // in MessageHandlers.ts). urlMessage opens externally in addition to whatever
-                // bubble/nothing the node's own text produces; end_session closes the socket.
+                // END-node side effects - not about rendering. urlMessage opens externally in
+                // addition to whatever bubble/nothing the node's own text produces; end_session
+                // closes the socket.
                 event.node.endUrlMessage?.let { onOpenUrl(it) }
                 if (event.node.endSessionRequested) disconnect()
             }
             is IncomingSocketEvent.Ack -> ackTracker.acknowledge(event.chatMsgId)
-            // The server also uses the echoed end_user message itself as a delivery ack
-            // (handleEndUserMessage in MessageHandlers.ts), not only the explicit `ack` type.
+            // The server also uses the echoed end_user message itself as a delivery ack,
+            // not only the explicit `ack` type.
             is IncomingSocketEvent.EchoedUserMessage -> ackTracker.acknowledge(event.chatMsgId)
             is IncomingSocketEvent.CloseConnection -> {
                 if (event.suppressReconnect) suppressReconnect = true
             }
-            // Mirrors handleStatusUpdate in MessageHandlers.ts: closes the socket outright unless
-            // the session is configured to ask for post-chat feedback afterward - the widget
-            // gates that survey behind a header close-icon tap; this SDK has no equivalent
-            // in-chrome close affordance, so it surfaces the prompt immediately instead.
+            // Closes the socket outright unless the session is configured to ask for
+            // post-chat feedback afterward, in which case the prompt surfaces immediately
+            // instead of waiting on an in-chrome close affordance.
             is IncomingSocketEvent.LiveChatEnded -> {
                 if (!shouldAskFeedback) disconnect() else onFeedbackRequested()
             }
@@ -402,11 +389,9 @@ class ChatRepository(
     }
 
     /**
-     * Mirrors WebCommunicationBridge.postMessage's exact chain (see ChatFragment.kt, now
-     * replaced): a WINDOW_EVENT node's shouldSend fires the host's handleWindowEvent callback;
-     * its return value is fed straight back through the same "currently receiving" gate as an
-     * explicit sendEventToBot() call would use (that's how the original WebView bridge's
-     * CHAT360_WINDOW_EVENT_RESPONSE -> window.receiveFromApp -> window.onAppEvent chain behaved).
+     * A WINDOW_EVENT node's shouldSend fires the host's handleWindowEvent callback; its return
+     * value is fed straight back through the same "currently receiving" gate as an explicit
+     * sendEventToBot() call would use.
      */
     private fun handleWindowEventNode(content: BotContent) {
         if (content !is BotContent.WindowEvent) {
@@ -424,7 +409,7 @@ class ChatRepository(
     }
 
     /** The inbound half: an event handed to the active session becomes an outgoing message
-     * carrying it as `variables`, matching onMoveForward(targetId, {variableValues: data}). */
+     * carrying it as `variables`. */
     private fun sendWindowEvent(event: Map<String, String>) {
         val node = lastBotNode
         val outgoing = OutgoingMessage(
@@ -443,8 +428,8 @@ class ChatRepository(
     fun jumpToNode(targetId: String) = sendSystemJump(targetId)
 
     /** Answers a tap on the shortcuts menu (label -> targetId, from session-init's
-     * `bot_settings`) - mirrors jumpToEleUser's `sendUserMessage(label, {targetId})` (unlike
-     * [jumpToNode], this is user-authored and gets its own chat bubble showing the label). */
+     * `bot_settings`) - unlike [jumpToNode], this is user-authored and gets its own chat
+     * bubble showing the label. */
     fun sendShortcut(targetId: String, label: String): String {
         val node = lastBotNode
         val outgoing = OutgoingMessage(
@@ -472,8 +457,8 @@ class ChatRepository(
 
     /**
      * Returns the generated chat_msg_id so the UI can tag its optimistic bubble for ack-timeout.
-     * Node context (currentId/nodeType/post_data) comes from the last bot node - sendUserMessage
-     * in the widget always attaches it, and LLM/webhook nodes won't answer without it.
+     * Node context (currentId/nodeType/post_data) comes from the last bot node - LLM/webhook
+     * nodes won't answer without it.
      */
     fun sendFreeText(text: String): String {
         val sanitized = InputValidators.sanitizeInput(text)
@@ -495,15 +480,15 @@ class ChatRepository(
     fun sendEmail(email: String): String = sendFreeText(email)
 
     /**
-     * Answers a plain (non-international) PHONE node - identical to free text in the widget too
-     * (no dedicated payload shape, no client-side validation).
+     * Answers a plain (non-international) PHONE node - no dedicated payload shape, no
+     * client-side validation, just free text.
      */
     fun sendPhone(value: String): String = sendFreeText(value)
 
     /**
      * Answers an international PHONE node with `splitVariable` set: country code and national
-     * number land in two separate variables (mirrors Phone/index.tsx's split-variable branch),
-     * and `doNotUpdateVariable`/`multiple_vars` are set exactly as the widget sends them.
+     * number land in two separate variables, with `doNotUpdateVariable`/`multiple_vars` set so
+     * the server keeps them apart.
      */
     fun sendSplitPhone(countryCode: String, nationalNumber: String, countryCodeVar: String): String {
         val node = lastBotNode
@@ -530,7 +515,7 @@ class ChatRepository(
     /** Answers the AUTOSUGGESTION sub-case of CUSTOMINPUT - a plain-text reply of the picked choice. */
     fun sendAutoSuggestion(choice: String): String = sendFreeText(choice)
 
-    /** Answers a standalone DATE node - {type:'date', value, format} (mirrors Date/index.tsx's onSubmit). */
+    /** Answers a standalone DATE node - {type:'date', value, format}. */
     fun sendDate(formattedDate: String, format: String): String {
         val node = lastBotNode
         val outgoing = OutgoingMessage(
@@ -576,8 +561,8 @@ class ChatRepository(
 
     /**
      * Answers an IMAGE_BUTTON reply-type button. `submitType == "IMAGE_AND_BUTTON"` echoes the
-     * tapped card's image back as a MEDIA-type user message (mirrors Carousel/index.tsx:73-104);
-     * web_url-type buttons never reach this (the UI opens them externally instead).
+     * tapped card's image back as a MEDIA-type user message; web_url-type buttons never reach
+     * this (the UI opens them externally instead).
      */
     fun sendImageButton(card: BotContent.ImageButtons.Card, button: BotContent.ImageButtons.Button, submitType: String): String {
         val node = lastBotNode
@@ -627,10 +612,9 @@ class ChatRepository(
     }
 
     /**
-     * Answers a MULTI_CHOICE node. Payload mirrors createMultiChoicePayload + sendUserMessage
-     * in the widget: message = {type:'multichoice-option', value: index+1, text}, post_data =
-     * display text, currentId = the node's id, targetId = the clicked button's own targetId
-     * (falling back to the node's), shouldValidate = false.
+     * Answers a MULTI_CHOICE node: message = {type:'multichoice-option', value: index+1, text},
+     * post_data = display text, currentId = the node's id, targetId = the clicked button's own
+     * targetId (falling back to the node's), shouldValidate = false.
      */
     fun sendQuickReply(option: BotContent.MultiChoice.Option): String {
         val node = lastBotNode
@@ -653,10 +637,9 @@ class ChatRepository(
     }
 
     /**
-     * Uploads a file (mirrors uploadFile() in fetchServices.ts) then answers the current node
-     * with it, matching FileUpload.tsx's submitFile(): message = {type:'file-upload', value,
-     * fileName} where value is the uploaded URL(s) joined by "\n", skipPostData (no post_data
-     * field), variable set from the node if present.
+     * Uploads a file then answers the current node with it: message = {type:'file-upload',
+     * value, fileName} where value is the uploaded URL(s) joined by "\n", skipPostData (no
+     * post_data field), variable set from the node if present.
      */
     suspend fun uploadAndSendFile(
         fileBytes: ByteArray,
@@ -687,11 +670,11 @@ class ChatRepository(
     }
 
     /**
-     * Uploads a recorded voice note then answers the current node with it - mirrors UserInput's
-     * sendVoiceMessage(): upload via the same media endpoint as [uploadAndSendFile], but the
-     * outgoing message is free text (the transcript, usually empty) carrying voiceUrl/transcript
-     * in componentSpecificData rather than a `{type:'file-upload',...}` message body. Returns the
-     * uploaded URL so the UI can show the sent bubble immediately without waiting on an echo.
+     * Uploads a recorded voice note then answers the current node with it: upload via the same
+     * media endpoint as [uploadAndSendFile], but the outgoing message is free text (the
+     * transcript, usually empty) carrying voiceUrl/transcript in componentSpecificData rather
+     * than a `{type:'file-upload',...}` message body. Returns the uploaded URL so the UI can
+     * show the sent bubble immediately without waiting on an echo.
      */
     suspend fun uploadAndSendVoiceMessage(
         fileBytes: ByteArray,
@@ -727,10 +710,9 @@ class ChatRepository(
     /**
      * Uploads a MEDIA-type FORM field out-of-band, returning the uploaded URL - the field's own
      * value stays local (part of the draft form) until the whole form is submitted, unlike
-     * [uploadAndSendFile] which sends immediately (mirrors Form.tsx uploading each file field
-     * before building formValue at submit time, not as each file is picked... in practice this
-     * uploads on pick and holds the URL, since re-uploading at submit time would just repeat the
-     * same network call for no behavioral difference).
+     * [uploadAndSendFile] which sends immediately. Uploading eagerly on pick (rather than
+     * deferring to submit time) avoids repeating the same network call for no behavioral
+     * difference.
      */
     suspend fun uploadFormMedia(fileBytes: ByteArray, fileName: String, mimeType: String, onProgress: (Int) -> Unit): String {
         val room = roomId ?: throw IllegalStateException("Not connected")
@@ -739,9 +721,9 @@ class ChatRepository(
     }
 
     /**
-     * Answers a RATING node. Ratings/index.tsx's onSubmit sends the plain 1-based index string
-     * through the normal sendUserMessage path - not a distinct wire shape, just free text with
-     * the current node's context attached.
+     * Answers a RATING node by sending the plain 1-based index string through the normal
+     * free-text path - not a distinct wire shape, just free text with the current node's
+     * context attached.
      */
     fun sendRating(value: Int): String {
         val node = lastBotNode
@@ -760,10 +742,10 @@ class ChatRepository(
     }
 
     /**
-     * Answers a FORM node. Mirrors Form/index.tsx's handleSubmit(): message = {type:
-     * 'form-response', formValue: [...]} with one entry per field in index order, plus a
-     * variables map built from each field's own `variable` name. MEDIA fields' [fileNames] entry
-     * gets folded into their formValue as "{fileName}:-{uploadedUrl}" (see [uploadFormMedia]).
+     * Answers a FORM node: message = {type: 'form-response', formValue: [...]} with one entry
+     * per field in index order, plus a variables map built from each field's own `variable`
+     * name. MEDIA fields' [fileNames] entry gets folded into their formValue as
+     * "{fileName}:-{uploadedUrl}" (see [uploadFormMedia]).
      */
     fun sendFormResponse(
         values: Map<Int, String>,
@@ -773,7 +755,7 @@ class ChatRepository(
         val node = lastBotNode
         val ordered = fields.sortedBy { it.index }
         // A MEDIA field's formValue entry is "{fileName}:-{uploadedUrl}"; its variable is still
-        // just the plain URL (values[field.index]) - matches Form.tsx's file-field handling.
+        // just the plain URL (values[field.index]).
         val formValue = ordered.map { field ->
             val value = values[field.index].orEmpty()
             if (field.type == BotContent.Form.FieldType.MEDIA && value.isNotBlank()) {
@@ -801,13 +783,11 @@ class ChatRepository(
     }
 
     /**
-     * Submits the post-chat configurable feedback survey - mirrors ConfigurableFeedbackForm's
-     * session-submit path exactly: message = {rating, feedback, type:'feedback'}, nodeType:
-     * 'feedback', no targetId/currentId/variables (skipTargetId/skipCurrId/doNotUpdateVariable
-     * in the source - this is an out-of-band message, not an answer to the current flow node).
-     * [feedbackText] is the already-concatenated form-field text (source's getFeedbackText():
-     * every dynamic field's formatted value joined by newlines) - the session path never sends a
-     * separate structured per-field map, only the 'flow'/in-message variant does.
+     * Submits the post-chat configurable feedback survey: message = {rating, feedback,
+     * type:'feedback'}, nodeType: 'feedback', no targetId/currentId/variables - this is an
+     * out-of-band message, not an answer to the current flow node. [feedbackText] is the
+     * already-concatenated form-field text (every dynamic field's formatted value joined by
+     * newlines) - this path never sends a separate structured per-field map.
      */
     fun sendConfigurableFeedback(rating: Int?, feedbackText: String) {
         val sanitizedFeedback = InputValidators.sanitizeInput(feedbackText)
@@ -827,10 +807,9 @@ class ChatRepository(
     }
 
     /**
-     * Answers a WELCOME_SCREEN card tap. [clickedIndexOneBased] is sent as a STRING (source: `clickedIndex: \`${cardNumber}\``,
-     * unlike TEXT_CAROUSEL's numeric clickedIndex) - matches `onCardClick` in
-     * `WelcomeScreen/index.tsx` exactly. [ctaTargetId] overrides the node's own targetId only
-     * for `ctaType=="component"` cards; `external_link` cards still submit with the default.
+     * Answers a WELCOME_SCREEN card tap. [clickedIndexOneBased] is sent as a STRING (unlike
+     * TEXT_CAROUSEL's numeric clickedIndex). [ctaTargetId] overrides the node's own targetId
+     * only for `ctaType=="component"` cards; `external_link` cards still submit with the default.
      */
     fun sendWelcomeCard(cardTitle: String, clickedIndexOneBased: Int, ctaTargetId: String? = null): String {
         val node = lastBotNode

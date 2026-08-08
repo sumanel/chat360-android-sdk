@@ -39,13 +39,9 @@ class MainActivity : AppCompatActivity() {
         private const val HYUNDAI_EMPLOYEE_CODE = "EMP1001"
         private const val HYUNDAI_EMPLOYEE_NAME = "Rahul Sharma"
         private const val HYUNDAI_EMPLOYEE_STATUS = "ACTIVE"
-        // Single opaque identifier the Chat360 backend uses to route rooms/history calls to
-        // Hyundai's integration - the SDK itself never hardcodes this.
-        private const val HYUNDAI_CLIENT_EXTERNAL_NAME = "hyundai"
     }
 
     private val httpClient = OkHttpClient()
-    // Real production bot used to validate the native rewrite POCs end-to-end (see plan).
     private val nativePocBotId = "2e97deac-2877-495f-a568-8e0e5438fec1"
     private val botId = nativePocBotId
     private val flutter = false
@@ -98,13 +94,11 @@ class MainActivity : AppCompatActivity() {
         /* Note: if color is set from both setStatusBarColor and statusBarColorFromHex,
          * statusBarColorFromHex will take priority
          * */
-        // To set statusBarColor from hexadecimal color code
         chat360.coreConfig!!.statusBarColorFromHex = "#4299E1"
 
         /* Note: if color is set from both closeButtonColor and closeButtonColorHex,
          * closeButtonColorHex will take priority
          * */
-        // To set closeButtonColor from hexadecimal color code
         chat360.coreConfig!!.closeButtonColorFromHex = "#ffffff"
 
         findViewById<MaterialButton>(R.id.buttonOpenActivity).setOnClickListener {
@@ -121,16 +115,6 @@ class MainActivity : AppCompatActivity() {
         }
         val hyundaiButton = findViewById<MaterialButton>(R.id.buttonOpenNativePocHyundai)
         hyundaiButton.setOnClickListener {
-            // authenticateHyundaiDealer(
-            //     onSuccess = {
-                  
-            //     },
-            //     onFailure = { message ->
-            //         hyundaiButton.isEnabled = true
-            //         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-            //     },
-            //     button = hyundaiButton,
-            // )
             hyundaiButton.isEnabled = true
                     // Hyundai isn't a library-shipped preset - it's assigned here as CUSTOM details,
                     // exactly like any other client would configure their own brand.
@@ -141,8 +125,6 @@ class MainActivity : AppCompatActivity() {
                         customTypography = HyundaiTypography
                         customBranding = HyundaiBranding
                         Chat360UIConfig = HyundaiConfig
-                        clientExternalName = HYUNDAI_CLIENT_EXTERNAL_NAME
-                        agentCode = HYUNDAI_EMPLOYEE_CODE
             }
             chat360.startBot(this)
 
@@ -158,42 +140,5 @@ class MainActivity : AppCompatActivity() {
             }
             chat360.startBot(this)
         }
-    }
-
-    /** Validates the dealer/agent against Hyundai's own LMS before the chat session starts -
-     * entirely this app's concern, the SDK never sees this endpoint or these identifiers. */
-    private fun authenticateHyundaiDealer(
-        onSuccess: () -> Unit,
-        onFailure: (String) -> Unit,
-        button: MaterialButton,
-    ) {
-        button.isEnabled = false
-        val body = JSONObject()
-            .put("dealer_code", HYUNDAI_DEALER_CODE)
-            .put("emp_code", HYUNDAI_EMPLOYEE_CODE)
-            .put("name", HYUNDAI_EMPLOYEE_NAME)
-            .put("status", HYUNDAI_EMPLOYEE_STATUS)
-            .toString()
-        val request = Request.Builder()
-            .url(HYUNDAI_EMPLOYEE_AUTH_URL)
-            .header("Content-Type", "application/json")
-            .header("Cookie", "multidb_pin_writes=y")
-            .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
-            .build()
-
-        httpClient.newCall(request).enqueue(object : okhttp3.Callback {
-            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
-                Log.e("Chat360Demo", "Hyundai dealer authentication failed: ${e.message}", e)
-                runOnUiThread { onFailure("Unable to authenticate dealer. Please try again.") }
-            }
-
-            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                response.use {
-                    runOnUiThread {
-                        if (response.code == 200) onSuccess() else onFailure("Dealer authentication failed. Please try again.")
-                    }
-                }
-            }
-        })
     }
 }

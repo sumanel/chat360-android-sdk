@@ -45,15 +45,14 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
 private const val DEFAULT_RATING = 5
 
-/** Field types this pass renders - checkbox-matrix/radio-matrix/rank/file fall back to a plain notice (see [UnsupportedFieldNotice]), a deliberately bounded first cut of the 11-type builder. */
+/** Field types rendered directly - checkbox-matrix/radio-matrix/rank/file fall back to a plain notice (see [UnsupportedFieldNotice]). */
 private val SUPPORTED_FIELD_TYPES = setOf("label", "textarea", "textbox", "dropdown", "radio", "checkbox", "date")
 
 /**
- * The post-chat configurable survey - mirrors ConfigurableFeedbackForm's session-submit path:
- * a rating (star/emoji) picks which [FeedbackConfig.trigger_rules] form applies, then that
- * form's fields render below it. [onSubmit] receives the rating and every field's value already
- * concatenated into one text blob (mirrors getFeedbackText()) - the session path never sends a
- * separate structured per-field map.
+ * The post-chat configurable survey: a rating (star/emoji) picks which
+ * [FeedbackConfig.trigger_rules] form applies, then that form's fields render below it.
+ * [onSubmit] receives the rating and every field's value already concatenated into one text
+ * blob - a separate structured per-field map is never sent.
  */
 @Composable
 fun FeedbackFormDialog(
@@ -66,8 +65,8 @@ fun FeedbackFormDialog(
 
     val showDefaultForm = feedbackConfig.show_default_form
     val defaultRating = feedbackConfig.rating?.scale?.takeIf { it > 0 } ?: DEFAULT_RATING
-    // Ports the source's own (asymmetric) initial state: showing the default form starts with no
-    // rating picked yet; relying on trigger_rules instead starts with the top rating pre-selected.
+    // Initial state is asymmetric: showing the default form starts with no rating picked yet;
+    // relying on trigger_rules instead starts with the top rating pre-selected.
     var rating by remember { mutableStateOf(if (showDefaultForm) null else defaultRating) }
     var attemptedSubmit by remember { mutableStateOf(false) }
     val values = remember { mutableStateMapOf<String, String>() }
@@ -259,10 +258,9 @@ private fun FeedbackFieldRow(
                     inner()
                 },
             )
-            // Source renders this as a native <Select>; here it's a single-select list instead
-            // (no Compose dropdown-menu machinery pulled in for one field type) - same data
-            // (label doubles as value here, matching getFeedbackSelectOptions()) and interaction
-            // (pick exactly one), just a different widget.
+            // Rendered as a single-select list rather than a dropdown menu, to avoid pulling in
+            // Compose's dropdown-menu machinery for one field type; the label doubles as the
+            // value, and exactly one option can be picked.
             "dropdown" -> {
                 val options = normalizeFeedbackOptions(field.options)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -330,7 +328,7 @@ private fun FeedbackFieldRow(
     }
 }
 
-/** checkbox-matrix/radio-matrix/rank/file aren't ported yet - an honest placeholder beats silently dropping the field. */
+/** checkbox-matrix/radio-matrix/rank/file aren't supported - an honest placeholder beats silently dropping the field. */
 @Composable
 private fun UnsupportedFieldNotice(type: String) {
     val colors = LocalChat360Colors.current

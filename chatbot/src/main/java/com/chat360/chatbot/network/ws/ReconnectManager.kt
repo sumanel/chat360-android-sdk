@@ -6,8 +6,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Mirrors layout/index.tsx's onSocketClose reconnect logic: delay = baseDelayMs * intervalCount,
- * doubling intervalCount after each scheduled attempt and resetting to 1 on a successful open.
+ * Exponential backoff reconnect scheduling: delay = baseDelayMs * intervalCount, doubling
+ * intervalCount after each scheduled attempt and resetting to 1 on a successful open.
  * Pure state - no socket reference - so it's unit-testable with a virtual-time scope.
  */
 class ReconnectManager(

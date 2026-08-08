@@ -6,8 +6,8 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * Ports the disabled-date rule evaluation shared by DATE prompts (standalone `Date/index.tsx`
- * and FORM DATE fields' `excludeDate`) - one evaluator so both call sites agree.
+ * Disabled-date rule evaluation shared by standalone DATE prompts and FORM DATE fields' own
+ * exclusion rules - one evaluator so both call sites agree.
  */
 object DateAvailability {
 
@@ -17,7 +17,8 @@ object DateAvailability {
         if (rules.disableCurrent && date.isEqual(today)) return true
         if (rules.disablePrevious && date.isBefore(today)) return true
         if (rules.isScheduledDate) {
-            // LocalDate.dayOfWeek: Monday=1..Sunday=7; dayjs .day(): Sunday=0..Saturday=6.
+            // LocalDate.dayOfWeek is Monday=1..Sunday=7, but disabledDays is indexed
+            // Sunday=0..Saturday=6, matching the wire format - hence the % 7 conversion.
             val dayIndex = date.dayOfWeek.value % 7
             if (rules.disabledDays?.getOrNull(dayIndex) == true) return true
             if (rules.disabledDates.orEmpty().any { sameDay(it, date) }) return true

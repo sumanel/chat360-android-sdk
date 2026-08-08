@@ -28,7 +28,6 @@ import com.chat360.chatbot.ui.theme.LocalChat360Branding
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
-/** Bottom composer styled as the compact, full-width embedded chat control. */
 @Composable
 fun ChatInputBar(
     value: String,

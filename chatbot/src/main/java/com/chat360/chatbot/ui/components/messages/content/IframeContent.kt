@@ -16,13 +16,11 @@ import com.chat360.chatbot.model.wire.BotContent
 import org.json.JSONObject
 
 /**
- * Ports the IFRAME node, including its `postMessage` auto-advance (`Iframe/index.tsx`): the
- * widget listens on its own `window` for a `message` event from the embedded page and jumps the
- * bot flow forward when `data.type === moveForEvent`. A native WebView has no parent/child
- * browsing context to listen from outside, so the equivalent here is injecting a small script
+ * Renders the IFRAME node with `postMessage` auto-advance: the bot flow should jump forward when
+ * the embedded page posts a `message` event with `data.type === moveForEvent`. A native WebView
+ * has no parent/child browsing context to listen from outside, so this injects a small script
  * into the embedded page itself that listens on its *own* `window` and relays a match back to
- * Android through a `JavascriptInterface` - same trigger condition and origin check, different
- * plumbing to get there natively.
+ * Android through a `JavascriptInterface`.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable

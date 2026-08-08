@@ -29,7 +29,6 @@ import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import java.time.Instant
 import java.time.ZoneOffset
 
-/** Ports Date/index.tsx's standalone DATE node - a button opening a calendar, submitting the pick immediately. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DatePromptContent(

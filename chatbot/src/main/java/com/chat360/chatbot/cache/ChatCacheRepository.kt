@@ -1,7 +1,7 @@
 package com.chat360.chatbot.cache
 
 import kotlinx.coroutines.flow.Flow
-import com.chat360.chatbot.network.rest.dto.AgentRoomDto
+import com.chat360.chatbot.network.rest.dto.thirdparty.RoomDto
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -29,23 +29,28 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
 
     suspend fun messages(conversationId: String): List<CachedMessageEntity> = dao.messages(conversationId)
 
-    /** Adds server rooms to the same observable list as local chats without replacing cached messages. */
-    fun agentRoomConversations(botId: String, rooms: List<AgentRoomDto>): List<CachedConversationEntity> {
-        val fetchedAt = System.currentTimeMillis()
-        return rooms.mapIndexed { index, room ->
-            CachedConversationEntity(
-                id = "agent-room:${room.agentUuid}",
-                botId = botId,
-                roomId = room.roomId,
-                title = room.roomName.trim().ifEmpty { "Conversation" },
-                createdAt = fetchedAt - index,
-                updatedAt = fetchedAt - index,
-            )
-        }
-    }
-
     suspend fun syncAgentRooms(botId: String, conversations: List<CachedConversationEntity>) {
         dao.replaceAgentRoomConversations(botId, conversations)
+    }
+
+    /** Maps the third-party-tasks `rooms/list` result onto the same observable list as local
+     * chats, without replacing cached messages. Rooms already marked inactive (soft-deleted via
+     * `room/update/status`) are dropped so a background refresh can't resurrect a conversation
+     * the user just deleted. */
+    fun thirdPartyRoomConversations(botId: String, rooms: List<RoomDto>): List<CachedConversationEntity> {
+        val fetchedAt = System.currentTimeMillis()
+        return rooms
+            .filterNot { it.status.equals("inactive", ignoreCase = true) }
+            .mapIndexed { index, room ->
+                CachedConversationEntity(
+                    id = "agent-room:${room.roomId}",
+                    botId = botId,
+                    roomId = room.roomId,
+                    title = room.roomName.trim().ifEmpty { "Conversation" },
+                    createdAt = fetchedAt - index,
+                    updatedAt = fetchedAt - index,
+                )
+            }
     }
 
     suspend fun replaceRawHistory(conversationId: String, history: List<RawSocketEnvelope>) {

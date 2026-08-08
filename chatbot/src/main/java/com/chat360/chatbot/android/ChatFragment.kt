@@ -176,7 +176,6 @@ class ChatFragment : Fragment() {
             databaseEnabled = true
             setGeolocationEnabled(true)
             setSupportZoom(true)
-            //cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
         }
 
         webChromeClient()
@@ -191,7 +190,7 @@ class ChatFragment : Fragment() {
                 Handler().postDelayed({
                     injectJavascript(view)
                     injectJavascriptForCommunication(view)
-                }, 100) // Adjust the delay as needed
+                }, 100)
             }
         }
         webView.loadUrl(url)
@@ -309,7 +308,6 @@ class ChatFragment : Fragment() {
     }
 
 
-    //Adding callbacks and the permission function for web-view requirements
     private fun webChromeClient() {
         webView.webChromeClient = object : WebChromeClient() {
             private var mCustomView: View? = null
@@ -415,7 +413,6 @@ class ChatFragment : Fragment() {
                                 request.grant(request.resources)
                             } else {
                                 request.grant(request.resources)
-                                //checkAndLaunchAudioRecord()
                             }
                         }
                     }
@@ -482,7 +479,6 @@ class ChatFragment : Fragment() {
                 if (perm == Manifest.permission.RECORD_AUDIO) return true
             }
         } catch (e: PackageManager.NameNotFoundException) {
-            //Exception occurred
             return false
         }
         return false
@@ -502,7 +498,6 @@ class ChatFragment : Fragment() {
                 if (perm == Manifest.permission.ACCESS_FINE_LOCATION) return true
             }
         } catch (e: PackageManager.NameNotFoundException) {
-            //Exception occurred
             return false
         }
         return false
@@ -555,17 +550,13 @@ class ChatFragment : Fragment() {
             val color = ConfigService.getInstance()?.getConfig()?.statusBarColor
             if (color != -1) {
                 val window: Window = requireActivity().window
-                // clear FLAG_TRANSLUCENT_STATUS flag:
                 window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
-                // add FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS flag to the window
                 window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-                // finally change the color
                 context?.let {
 
 
                     val frameLayout: FrameLayout? = view?.findViewById(R.id.topLayout)
 
-                    // Set the background color programmatically
                     frameLayout?.setBackgroundColor(ContextCompat.getColor(it, color!!))
                 }
             }
@@ -574,17 +565,13 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //Setting the statusBar Color from the resources
     private fun setStatusBarColor() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.statusBarColor
             if (color != -1) {
                 val window: Window = requireActivity().window
-                // clear FLAG_TRANSLUCENT_STATUS flag:
                 window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
-                // add FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS flag to the window
                 window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-                // finally change the color
                 context?.let {
                     window.statusBarColor = ContextCompat.getColor(it, color!!)
                 }
@@ -625,7 +612,6 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //Setting the Close Button Color from the resources
     private fun setCloseButtonColor() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.closeButtonColor
@@ -640,7 +626,6 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //Setting the Close Button Color Code From Hex Color Code
     private fun setCloseButtonColorFromHex() {
         try {
             val color = ConfigService.getInstance()?.getConfig()?.closeButtonColorFromHex
@@ -680,7 +665,6 @@ class ChatFragment : Fragment() {
         builder.show()
     }
 
-    //while uploading the file it'll show the bottom-sheet layout
     private fun showBottomSheet() {
         if (context != null) {
             val bottomSheetDialog = BottomSheetDialog(requireContext())
@@ -715,7 +699,6 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //Checking if User Has Given the Storage Permission
     private fun checkForStoragePermission(context: Context): Boolean {
         return if (ContextCompat.checkSelfPermission(
                 context, Manifest.permission.READ_EXTERNAL_STORAGE
@@ -729,7 +712,6 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //Checking the permission is true and launching the file intent to choose the file from storage
     private fun checkAndLaunchFilePicker() {
         if (context != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -745,7 +727,6 @@ class ChatFragment : Fragment() {
     @Throws(IOException::class)
     private fun createAudioFile(): File? {
 
-        // Create an image file name
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val imageFileName = "Chat360WAV_" + timeStamp + "_"
         val storageDir = requireContext().externalCacheDir
@@ -754,45 +735,39 @@ class ChatFragment : Fragment() {
         )
     }
 
-    //Will create the image_file
     @Throws(IOException::class)
     private fun createImageFile(): File? {
-        // Create an image file name
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val imageFileName = "Chat360JPEG_" + timeStamp + "_"
         val storageDir = requireContext().externalCacheDir
         return File.createTempFile(
-            imageFileName,  /* prefix */
-            ".jpg",  /* suffix */
-            storageDir /* directory */
+            imageFileName,
+            ".jpg",
+            storageDir
         )
     }
 
     @Throws(IOException::class)
     private fun createVideoFile(): File? {
-        // Create a video file name
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val videoFileName = "Chat360Video_" + timeStamp + "_"
         val storageDir = requireContext().externalCacheDir
         return File.createTempFile(
-            videoFileName,  /* prefix */
-            ".mp4",  /* suffix */
-            storageDir /* directory */
+            videoFileName,
+            ".mp4",
+            storageDir
         )
     }
 
     private fun launchAudioIntent() {
         val takeAudioIntent = Intent(MediaStore.Audio.Media.RECORD_SOUND_ACTION)
         if (activity != null && takeAudioIntent.resolveActivity(requireActivity().packageManager) != null) {
-            // Create the File where the photo should go
             var audioFile: File? = null
             try {
                 audioFile = createAudioFile()
                 takeAudioIntent.putExtra("AudioPaths", mAudioPath)
             } catch (ex: IOException) {
-                //IO exception occurred
             }
-            // Continue only if the File was successfully created
             if (audioFile != null) {
                 mAudioPath = "file:" + audioFile.absolutePath
                 val audioURI: Uri = if (context != null) {
@@ -814,10 +789,8 @@ class ChatFragment : Fragment() {
     private val startAudioActivity =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             if (it.resultCode == Activity.RESULT_OK) {
-                // do whatever with the data in the callback
                 val data = it.data
                 var results: Array<Uri?>? = null
-                // Check that the response is a good one
                 if (data != null && data.dataString != null) {
                     val dataString = data.dataString
                     results = arrayOf(Uri.parse(dataString))
@@ -854,19 +827,15 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //Will Start Camera
     private fun launchCameraIntent() {
         val takePictureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
         if (activity != null && takePictureIntent.resolveActivity(requireActivity().packageManager) != null) {
-            // Create the File where the photo should go
             var photoFile: File? = null
             try {
                 photoFile = createImageFile()
                 takePictureIntent.putExtra("PhotoPaths", mCameraPhotoPath)
             } catch (ex: IOException) {
-                //IO exception occurred
             }
-            // Continue only if the File was successfully created
             if (photoFile != null) {
                 mCameraPhotoPath = "file:" + photoFile.absolutePath
                 val photoURI: Uri = if (context != null) {
@@ -894,16 +863,13 @@ class ChatFragment : Fragment() {
         val takeVideoIntent = Intent(MediaStore.ACTION_VIDEO_CAPTURE)
 
         if (activity != null && takeVideoIntent.resolveActivity(requireActivity().packageManager) != null) {
-            // Create the File where the video should go
             var videoFile: File? = null
             try {
 
                 videoFile = createVideoFile()
             } catch (ex: IOException) {
-                // Handle IOException if necessary
             }
 
-            // Continue only if the File was successfully created
             if (videoFile != null) {
                 mCameraVideoPath = "file:" + videoFile.absolutePath
                 val videoURI: Uri = if (context != null) {
@@ -914,7 +880,7 @@ class ChatFragment : Fragment() {
                     Uri.fromFile(videoFile)
                 }
                 takeVideoIntent.putExtra(MediaStore.EXTRA_OUTPUT, videoURI)
-                takeVideoIntent.putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 0.7) // 0 = lowest quality
+                takeVideoIntent.putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 0.7)
                 takeVideoIntent.putExtra(MediaStore.EXTRA_SIZE_LIMIT, 10 * 1024 * 1024)
                 disableShouldKeepApplicationInBackground()
                 startVideoActivity.launch(takeVideoIntent)
@@ -930,10 +896,8 @@ class ChatFragment : Fragment() {
     private val startVideoActivity =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
-                // Handle the video capture result here
                 val data = result.data
                 var results: Array<Uri?>? = null
-                // Check that the response is a good one
                 if (data != null && data.dataString != null) {
                     val dataString = data.dataString
                     results = arrayOf(Uri.parse(dataString))
@@ -954,15 +918,12 @@ class ChatFragment : Fragment() {
         }
 
 
-    //result variable for the external intent of chat-bot
     private val startCameraActivity =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             if (it.resultCode == Activity.RESULT_OK) {
 
-                // do whatever with the data in the callback
                 val data = it.data
                 var results: Array<Uri?>? = null
-                // Check that the response is a good one
                 if (data != null && data.dataString != null) {
                     val dataString = data.dataString
                     results = arrayOf(Uri.parse(dataString))
@@ -991,7 +952,6 @@ class ChatFragment : Fragment() {
             }
         }
 
-    //Will verify if using camera is allowed by user
     private fun checkForCameraPermission(context: Context): Boolean {
         return if (ContextCompat.checkSelfPermission(
                 context, Manifest.permission.CAMERA
@@ -1005,7 +965,6 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //If permission is given camera will be started
     private fun checkAndLaunchCamera() {
 
         if (context != null) {
@@ -1032,7 +991,6 @@ class ChatFragment : Fragment() {
         }
     }
 
-    //Checking if Permissions are added in AndroidManifest File
     private fun hasCameraPermissionInManifest(context: Context): Boolean {
         val packageInfo: PackageInfo?
         try {
@@ -1047,23 +1005,19 @@ class ChatFragment : Fragment() {
                 if (perm == Manifest.permission.CAMERA) return true
             }
         } catch (e: PackageManager.NameNotFoundException) {
-            //Exception occurred
             return false
         }
         return false
     }
 
-    //Upload multiple files
     private fun isMultiFileUpload(): Boolean {
         return isMultiFileUpload
     }
 
-    //Keeping application in background is stopped
     private fun disableShouldKeepApplicationInBackground() {
         shouldKeepApplicationInBackground = false
     }
 
-    //Launching file intent to upload any file
     private fun launchFileIntent() {
         val contentSelectionIntent = Intent(Intent.ACTION_GET_CONTENT)
         contentSelectionIntent.addCategory(Intent.CATEGORY_OPENABLE)

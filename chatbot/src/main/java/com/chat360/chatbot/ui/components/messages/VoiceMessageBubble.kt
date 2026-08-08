@@ -23,7 +23,6 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 import com.chat360.chatbot.ui.util.rememberVoicePlaybackController
 import java.util.Locale
 
-/** The sent-bubble player - mirrors VoiceMessage/index.tsx (Audio + transcript text underneath). */
 @Composable
 fun VoiceMessageBubble(voiceMessage: VoiceMessageInfo) {
     val colors = LocalChat360Colors.current

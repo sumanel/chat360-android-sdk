@@ -6,10 +6,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Mirrors WSService.ts's ping/pong cycle: `pingWaitingTimer` (2s, `constants.pingCheckTime` in
- * the widget) is used as both the idle-before-ping delay AND the wait-for-pong delay. Any
- * incoming frame (not just a pong) reschedules the next ping - only a pong cancels the
- * currently-pending "waiting for pong" timer.
+ * Ping/pong keepalive cycle: [pingWaitingTimerMs] (2s) is used as both the idle-before-ping
+ * delay AND the wait-for-pong delay. Any incoming frame (not just a pong) reschedules the next
+ * ping - only a pong cancels the currently-pending "waiting for pong" timer.
  */
 class HeartbeatManager(
     private val scope: CoroutineScope,
@@ -25,7 +24,7 @@ class HeartbeatManager(
         scheduleSendPing()
     }
 
-    /** Call for every inbound frame, pong or not - matches `_checkPong` always calling `_sendPing()`. */
+    /** Call for every inbound frame, pong or not - any frame counts as proof of a live connection. */
     fun onMessageReceived(isPong: Boolean) {
         if (isPong) {
             waitJob?.cancel()

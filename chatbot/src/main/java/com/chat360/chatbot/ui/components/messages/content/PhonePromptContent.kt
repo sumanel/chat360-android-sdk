@@ -30,9 +30,9 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 private val ErrorColor = Color(0xFFDC2626)
 
 /**
- * Ports Phone/index.tsx's international variant only - a plain (non-international) PHONE node
- * has no dedicated widget or validation in the source either, so [BotContentBody] never routes
- * here for it; the always-visible bottom input bar answers it as free text.
+ * Renders the international-phone variant only - a plain (non-international) PHONE node has no
+ * dedicated renderer or validation, so [BotContentBody] never routes here for it; the
+ * always-visible bottom input bar answers it as free text.
  */
 @Composable
 fun PhonePromptContent(

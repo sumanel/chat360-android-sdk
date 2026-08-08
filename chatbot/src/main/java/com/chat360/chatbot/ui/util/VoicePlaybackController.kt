@@ -14,9 +14,9 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * Ensures only one voice bubble plays at a time - mirrors ComponentsContext's shared
- * `currentlyPlayingAudio` id in Audio/index.tsx (a new onPlay() there pauses whichever bubble
- * currently holds that id). Player instances register themselves here on play and stop.
+ * Ensures only one voice bubble plays at a time - starting playback on one controller pauses
+ * whichever other controller is currently playing. Player instances register themselves here
+ * on play and stop.
  */
 private object VoicePlaybackCoordinator {
     private var current: VoicePlaybackController? = null

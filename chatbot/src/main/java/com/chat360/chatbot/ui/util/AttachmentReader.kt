@@ -16,7 +16,7 @@ import java.io.File
 
 data class AttachmentPayload(val bytes: ByteArray, val fileName: String, val mimeType: String)
 
-/** Matches the widget's 10MB cap (maxSize in FileUpload/index.tsx). */
+/** Maximum size accepted for an uploaded attachment. */
 const val MAX_ATTACHMENT_BYTES = 10_000_000
 
 fun readAttachment(context: Context, uri: Uri): AttachmentPayload? {
@@ -43,11 +43,10 @@ fun rememberAttachmentPicker(onPicked: (AttachmentPayload) -> Unit): () -> Unit 
 }
 
 /**
- * Ports CameraCapture/index.tsx's role (a FILE_UPLOAD node with `enableCameraInput` offering a
- * camera option alongside the file picker) via the platform's own Camera app instead of a custom
- * live-preview UI - browsers have no system camera picker to defer to, but Android does, so this
- * skips reimplementing a getUserMedia-style preview/flip-camera screen entirely. Returns a launch
- * function; call it to open the system camera app for a single photo.
+ * Offers a camera option alongside the file picker for a FILE_UPLOAD node with
+ * `enableCameraInput`, using the platform's own Camera app instead of a custom live-preview UI -
+ * this skips reimplementing a preview/flip-camera screen entirely. Returns a launch function;
+ * call it to open the system camera app for a single photo.
  */
 @Composable
 fun rememberCameraCapture(onPicked: (AttachmentPayload) -> Unit): () -> Unit {

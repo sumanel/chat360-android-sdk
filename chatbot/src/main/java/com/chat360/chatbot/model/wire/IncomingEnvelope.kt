@@ -24,18 +24,17 @@ data class RawSocketEnvelope(
     val status: String? = null,
     val targetId: String? = null,
     val error: String? = null,
-    // chatgpt_message streaming fields - confirmed (parser/index.ts:628-637, _extractStreamedMessageData
-    // is called with the top-level `messageData`, not the nested `data` object) to live at this
-    // level, sibling to `type`/`user`, not nested inside `data`.
+    // chatgpt_message streaming fields live at this level, sibling to `type`/`user`, not
+    // nested inside `data`.
     val stream_id: String? = null,
     val end_stream: Boolean? = null,
-    /** The live-chat "end" signal (handleStatusUpdate in MessageHandlers.ts) - a boolean flag on any incoming frame. */
+    /** The live-chat "end" signal - a boolean flag on any incoming frame. */
     val update_status: Boolean? = null,
-    /** Sibling to `type`/`data` on a `chat_inactivity_message` frame (_extractInactivityMessageData reads `data?.auto_archival` off the whole frame, not the nested `data` object). */
+    /** Sibling to `type`/`data` on a `chat_inactivity_message` frame, not nested inside `data`. */
     val auto_archival: Boolean? = null,
 )
 
-/** Typed result of dispatching a [RawSocketEnvelope] through the POC-subset dispatch chain. */
+/** Typed result of dispatching a [RawSocketEnvelope] through the dispatch chain. */
 sealed interface IncomingSocketEvent {
     data object Pong : IncomingSocketEvent
     data class CloseConnection(val suppressReconnect: Boolean) : IncomingSocketEvent
@@ -56,12 +55,10 @@ sealed interface IncomingSocketEvent {
 }
 
 /**
- * Mirrors MessageProcessor.ts's handler chain order exactly - order matters, since e.g. a
- * close_connection or ack frame must never fall through and get misread as bot content:
- * close_connection -> ack -> echoed end_user -> typing_status -> update_status -> highlight
- * (assigned_user, which takes precedence over any other msgType the same frame carries, per
- * `if (messageData.highlights) msgType = 'highlight'` overriding whatever msgType would
- * otherwise apply) -> bot/agent content.
+ * Handler chain order matters here, since e.g. a close_connection or ack frame must never fall
+ * through and get misread as bot content: close_connection -> ack -> echoed end_user ->
+ * typing_status -> update_status -> highlight (assigned_user, which takes precedence over any
+ * other msgType the same frame carries) -> bot/agent content.
  */
 fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     if (type == "pong") return IncomingSocketEvent.Pong
@@ -95,9 +92,8 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
         return IncomingSocketEvent.InactivityNotice(text, auto_archival == true)
     }
 
-    // _extractValidationError() adds no widget of its own (no msgType branch renders it
-    // specially) - the frame's own top-level `message` is displayed as a plain bot bubble,
-    // same as any other text-only node.
+    // No dedicated content type renders a validation_error specially - the frame's own
+    // top-level `message` is displayed as a plain bot bubble, same as any other text-only node.
     if (type == "validation_error") {
         val text = (message as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
         return IncomingSocketEvent.BotMessage(
@@ -120,9 +116,8 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     if ((user == "bot" || user == "admin" || user == "operator") && data != null) {
         val node = data.toBotNode(fallbackTargetId = targetId)
         val authored = if (user == "bot") node else node.copy(author = BotNode.MessageAuthor.AGENT)
-        // msgType = data.nodeType || type || 'message' (parser/index.ts:1404): data.nodeType wins
-        // when present, so only treat this as a streaming chunk when the node has no nodeType of
-        // its own - matches the source's own precedence instead of always trusting `type`.
+        // data.nodeType wins over the envelope's own `type` when present, so only treat this as
+        // a streaming chunk when the node has no nodeType of its own.
         // chatgpt_message streaming is bot-origin only, so this never applies to admin/operator.
         return IncomingSocketEvent.BotMessage(
             if (user == "bot" && authored.nodeType.isNullOrBlank() && type == "chatgpt_message") {
@@ -158,7 +153,7 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     return IncomingSocketEvent.Unhandled(this)
 }
 
-/** Ports _extraceHighlightMessageData(): assigned_user -> {avatar, user_designation, operator_name}. */
+/** assigned_user -> {avatar, user_designation, operator_name}. */
 private fun JsonObject.toAssignedAgent(): AssignedAgent = AssignedAgent(
     name = string("operator_name")?.takeIf { it.isNotBlank() },
     designation = string("user_designation")?.takeIf { it.isNotBlank() },
@@ -170,8 +165,8 @@ fun JsonObject.toBotNode(fallbackTargetId: String? = null): BotNode {
     val nodeTargetId = string("targetId") ?: fallbackTargetId
     val variables = variablesMap()
     // Buttons whose text is an @variable reference are kept only when every referenced
-    // variable has a non-blank value (mirrors isChoiceTextPopulated in the widget's parser) -
-    // an LLM/webhook node's placeholder buttons stay hidden until the populated frame arrives.
+    // variable has a non-blank value - an LLM/webhook node's placeholder buttons stay hidden
+    // until the populated frame arrives.
     val options = (this["buttons"] as? JsonArray)?.mapIndexedNotNull { index, element ->
         val button = element as? JsonObject ?: return@mapIndexedNotNull null
         val rawText = button.string("text") ?: return@mapIndexedNotNull null
@@ -247,7 +242,7 @@ private fun JsonObject.variablesMap(): Map<String, String> =
         key to ((value as? JsonPrimitive)?.contentOrNull ?: "")
     }?.toMap().orEmpty()
 
-/** Ports updateContent(): replace each known variable name (word-bounded) with its value. */
+/** Replace each known variable name (word-bounded) with its value. */
 private fun resolveVariables(text: String, variables: Map<String, String>): String {
     if (!text.contains('@') || variables.isEmpty()) return text
     val pattern = variables.keys.joinToString("|") { Regex.escape(it) + "\\b" }
@@ -258,7 +253,7 @@ private fun resolveVariables(text: String, variables: Map<String, String>): Stri
 
 private val variableReferenceRegex = Regex("@[A-Za-z0-9_]+")
 
-/** Ports isChoiceTextPopulated(): hide choices whose @variables are empty/unresolved. */
+/** Hide choices whose @variables are empty/unresolved. */
 private fun isTextPopulated(text: String, variables: Map<String, String>): Boolean {
     if (text.stripHtml().isBlank()) return false
     if (text.contains('@')) {
@@ -272,7 +267,7 @@ private fun isTextPopulated(text: String, variables: Map<String, String>): Boole
     return resolveVariables(text, variables).stripHtml().isNotBlank()
 }
 
-/** Ports _parseMedia(): a single media item, media_url + optional title/download flag. */
+/** A single media item, media_url + optional title/download flag. */
 private fun JsonObject.mediaContent(variables: Map<String, String>): BotContent.Media? {
     val rawUrl = string("media_url") ?: return null
     val url = resolveVariables(rawUrl, variables)
@@ -294,7 +289,7 @@ private fun JsonObject.mediaContent(variables: Map<String, String>): BotContent.
     )
 }
 
-/** Ports _extractCarouselData(): parallel arrays (carousel_url/links/captions/headings) -> cards. */
+/** Parallel arrays (carousel_url/links/captions/headings) -> cards. */
 private fun JsonObject.carouselContent(variables: Map<String, String>): BotContent.Carousel? {
     val urlEntries = this["carousel_url"] as? JsonArray ?: return null
     val links = (this["link_carousel"] as? JsonArray)?.stringsOrNull()
@@ -302,7 +297,7 @@ private fun JsonObject.carouselContent(variables: Map<String, String>): BotConte
     val headings = (this["heading_carousel"] as? JsonArray)?.stringsOrNull()
 
     val cards = urlEntries.mapIndexedNotNull { index, entry ->
-        // Each carousel_url entry is itself an array; the widget takes element [0].
+        // Each carousel_url entry is itself an array; only element [0] is used.
         val rawUrl = (entry as? JsonArray)?.firstOrNull()?.let { (it as? JsonPrimitive)?.contentOrNull }
             ?: return@mapIndexedNotNull null
         BotContent.Carousel.Card(
@@ -317,7 +312,7 @@ private fun JsonObject.carouselContent(variables: Map<String, String>): BotConte
 
 private fun JsonArray.stringsOrNull(): List<String?> = map { (it as? JsonPrimitive)?.contentOrNull }
 
-/** Ports _parseFileUpload(): which extensions the node accepts, keyed off its fileType toggles. */
+/** Which extensions the node accepts, keyed off its fileType toggles. */
 private fun JsonObject.fileUploadContent(variables: Map<String, String>): BotContent.FileUploadPrompt {
     val extensionsByKey = mapOf(
         "image" to listOf("jpg", "jpeg", "png", "webp", "gif", "tif", "tiff", "bmp", "jfif"),
@@ -332,13 +327,13 @@ private fun JsonObject.fileUploadContent(variables: Map<String, String>): BotCon
         val key = obj.string("key")?.lowercase()
         if (enabled && key != null) extensionsByKey[key].orEmpty() else emptyList()
     }?.distinct().orEmpty()
-    // No type toggles enabled at all -> the widget defaults to accepting everything.
+    // No type toggles enabled at all -> default to accepting everything.
     val allowed = extensions.ifEmpty { extensionsByKey.values.flatten().distinct() }
     val prompt = string("questionText")?.let { resolveVariables(it, variables) }?.stripHtml()
     return BotContent.FileUploadPrompt(promptText = prompt, allowedExtensions = allowed, allowCamera = boolean("enableCameraInput"))
 }
 
-/** Ports _extractFileName(): a downloadable link, named either explicitly or from the URL. */
+/** A downloadable link, named either explicitly or from the URL. */
 private fun JsonObject.downloadMediaContent(variables: Map<String, String>): BotContent.DownloadMedia? {
     val rawUrl = string("media_url") ?: return null
     val url = resolveVariables(rawUrl, variables)
@@ -346,7 +341,7 @@ private fun JsonObject.downloadMediaContent(variables: Map<String, String>): Bot
     return BotContent.DownloadMedia(fileUrl = url, fileName = name)
 }
 
-/** Ports _extractRatingData(): star_custom -> star (scale = rating_max, default 5), else emoji (fixed scale of 5). */
+/** star_custom -> star (scale = rating_max, default 5), else emoji (fixed scale of 5). */
 private fun JsonObject.ratingContent(): BotContent.Rating {
     val style = if (string("rating_type") == "star_custom") "star" else "emoji"
     val scale = if (style == "star") {
@@ -358,9 +353,9 @@ private fun JsonObject.ratingContent(): BotContent.Rating {
 }
 
 /**
- * Ports _extractFormData(): one Field per `elements[]` entry. Field types beyond
- * TEXT/NUMBER/EMAIL/PHONE/SELECT/DATE/MEDIA (e.g. RCS-specific ones) fall through to OTHER so
- * the form still renders and can be extended field-by-field later.
+ * One Field per `elements[]` entry. Field types beyond TEXT/NUMBER/EMAIL/PHONE/SELECT/DATE/MEDIA
+ * (e.g. RCS-specific ones) fall through to OTHER so the form still renders and can be extended
+ * field-by-field later.
  */
 private fun JsonObject.formContent(variables: Map<String, String>): BotContent.Form? {
     val elements = this["elements"] as? JsonArray ?: return null
@@ -386,9 +381,9 @@ private fun JsonObject.formContent(variables: Map<String, String>): BotContent.F
             type = fieldType,
             label = obj.string("label")?.let { resolveVariables(it, variables) }?.stripHtml()?.takeIf { it.isNotBlank() },
             placeholder = obj.string("placeholder")?.let { resolveVariables(it, variables) },
-            // The widget's own validate() only ever reads validation.isRequired, but the parser
-            // separately reads a flat isRequired for its "is this form skippable" check - honor
-            // either spelling so a backend using only the flat form still enforces required-ness.
+            // A backend can mark a field required either via validation.isRequired or a flat
+            // isRequired - honor either spelling so a backend using only the flat form still
+            // enforces required-ness.
             isRequired = validation?.isRequired == true || obj.boolean("isRequired"),
             options = options,
             variable = obj.string("variable")?.takeIf { it.isNotBlank() },
@@ -400,7 +395,7 @@ private fun JsonObject.formContent(variables: Map<String, String>): BotContent.F
     return BotContent.Form(fields = fields, submitButtonText = submitText)
 }
 
-/** Ports the widget's per-element `validation` object (Form/index.tsx's validate() matrix). */
+/** Decodes a form element's `validation` object. */
 private fun JsonObject.fieldValidation(dateFormat: String?): BotContent.Form.FieldValidation? {
     val v = this["validation"] as? JsonObject ?: return null
     val dateRules = if (v.containsAnyDateKey()) {
@@ -408,8 +403,8 @@ private fun JsonObject.fieldValidation(dateFormat: String?): BotContent.Form.Fie
             isScheduledDate = v.boolean("isScheduledDate"),
             disabledDays = (v["disabledDays"] as? JsonArray)?.map { (it as? JsonPrimitive)?.booleanOrNull == true },
             disabledDates = (v["disableDates"] as? JsonArray)?.stringsOrNull()?.filterNotNull(),
-            // FORM's own field names for these two flags (isFutureDisabled/isPrevDisabled) differ
-            // from the standalone DATE node's (isFutureDate/isPrevDate) - ported as-is per source.
+            // FORM's own field names for these two flags (isFutureDisabled/isPrevDisabled)
+            // deliberately differ from the standalone DATE node's (isFutureDate/isPrevDate).
             disableFuture = v.boolean("isFutureDisabled"),
             disablePrevious = v.boolean("isPrevDisabled"),
             dateFormat = dateFormat?.takeIf { it.isNotBlank() } ?: "DD MMM YYYY",
@@ -436,7 +431,7 @@ private fun JsonObject.fieldValidation(dateFormat: String?): BotContent.Form.Fie
 private fun JsonObject.containsAnyDateKey(): Boolean =
     containsKey("isScheduledDate") || containsKey("disableDates") || containsKey("isFutureDisabled") || containsKey("isPrevDisabled")
 
-/** Ports _extractDateData()'s core rules for a standalone DATE node (see [DateRules]'s doc for the two gaps). */
+/** Core rules for a standalone DATE node (see [DateRules]'s doc for the two gaps). */
 private fun JsonObject.standaloneDateRules(): DateRules = DateRules(
     isScheduledDate = boolean("isScheduledDate"),
     disabledDays = (this["disabledDays"] as? JsonArray)?.map { (it as? JsonPrimitive)?.booleanOrNull == true },
@@ -450,7 +445,7 @@ private fun JsonObject.standaloneDateRules(): DateRules = DateRules(
     dateFormat = string("dateFormat")?.takeIf { it.isNotBlank() } ?: "DD MMM YYYY",
 )
 
-/** Ports _extractTimeData(): disabledSlots is "hh:mm-hh:mm" range strings, expanded to hour->minutes. */
+/** disabledSlots is "hh:mm-hh:mm" range strings, expanded to hour->minutes. */
 private fun JsonObject.timeContent(): BotContent.TimePrompt {
     val slots = (this["disabledSlots"] as? JsonArray)?.stringsOrNull()?.filterNotNull().orEmpty()
     val disabled = mutableMapOf<Int, MutableList<Int>>()
@@ -477,9 +472,8 @@ private fun JsonObject.timeContent(): BotContent.TimePrompt {
 }
 
 /**
- * Ports _extractWindowEventData(): should_send_data defaults true (matches `|| true` in the
- * widget), send_data is an object whose string values go through the same @variable
- * substitution as everything else.
+ * should_send_data defaults true; send_data is an object whose string values go through the
+ * same @variable substitution as everything else.
  */
 private fun JsonObject.windowEventContent(variables: Map<String, String>): BotContent.WindowEvent {
     val shouldSend = (this["should_send_data"] as? JsonPrimitive)?.booleanOrNull ?: true
@@ -491,14 +485,14 @@ private fun JsonObject.windowEventContent(variables: Map<String, String>): BotCo
     return BotContent.WindowEvent(shouldSend = shouldSend, sendData = sendData, shouldReceive = shouldReceive)
 }
 
-/** Ports _extractPhoneData(): international mode is the only variant with a dedicated widget/validation. */
+/** International mode is the only variant with dedicated client-side validation. */
 private fun JsonObject.phoneContent(): BotContent.PhonePrompt = BotContent.PhonePrompt(
     allowInternational = boolean("allowInternationalNumber"),
     splitVariable = boolean("split_variable"),
     countryCodeVar = string("country_code_var")?.takeIf { it.isNotBlank() },
 )
 
-/** Ports _extractMultiOptionData(): choices is a plain string array, filtered like MULTI_CHOICE's buttons. */
+/** choices is a plain string array, filtered like MULTI_CHOICE's buttons. */
 private fun JsonObject.multiOptionContent(variables: Map<String, String>): BotContent.MultiOption? {
     val choices = this["choices"] as? JsonArray ?: return null
     val options = choices.mapIndexedNotNull { index, element ->
@@ -515,10 +509,9 @@ private fun JsonObject.multiOptionContent(variables: Map<String, String>): BotCo
 }
 
 /**
- * Ports _extractImageButtonData(): per-slide buttons come from `img_buttons` (falling back to
- * the legacy `link_carousel_text`, one reply button per slide); each button's targetId is
- * resolved from the flat `buttons` array by cumulative position across all slides, matching
- * Carousel/index.tsx's handleSubmit().
+ * Per-slide buttons come from `img_buttons` (falling back to the legacy `link_carousel_text`,
+ * one reply button per slide); each button's targetId is resolved from the flat `buttons` array
+ * by cumulative position across all slides.
  */
 private fun JsonObject.imageButtonContent(variables: Map<String, String>): BotContent.ImageButtons? {
     val urlEntries = this["carousel_url"] as? JsonArray ?: return null
@@ -566,8 +559,8 @@ private fun JsonObject.imageButtonContent(variables: Map<String, String>): BotCo
 private data class RawImageButton(val text: String, val type: String, val value: String?, val url: String?)
 
 /**
- * Ports _extractTextCarouselData(): both `type1`/`type2` wire generations map onto one card
- * shape here (see [BotContent.TextCarousel]'s doc for the ported-simplification note).
+ * Both `type1`/`type2` wire generations map onto one card shape here (see
+ * [BotContent.TextCarousel]'s doc for the simplification note).
  */
 private fun JsonObject.textCarouselContent(variables: Map<String, String>): BotContent.TextCarousel? {
     val rawCards = this["text_cards"] as? JsonArray ?: return null
@@ -617,7 +610,7 @@ private fun JsonObject.textCarouselContent(variables: Map<String, String>): BotC
     return BotContent.TextCarousel(cards = cards, dynamicButtons = dynamicButtons)
 }
 
-/** Ports _extractIFrameData(): plain embedded WebView, no postMessage bridge (see Batch D scope note). */
+/** A plain embedded WebView, no postMessage bridge. */
 private fun JsonObject.iframeContent(nodeTargetId: String?): BotContent.IframeContent? {
     val src = string("src")?.takeIf { it.isNotBlank() } ?: return null
     return BotContent.IframeContent(
@@ -628,7 +621,7 @@ private fun JsonObject.iframeContent(nodeTargetId: String?): BotContent.IframeCo
     )
 }
 
-/** Ports _extractWelcomeScreenData() with exact field names confirmed against WelcomeScreen/index.tsx. */
+/** Decodes a WELCOME_SCREEN node's cards, title, and description. */
 private fun JsonObject.welcomeScreenContent(variables: Map<String, String>): BotContent.WelcomeScreen? {
     val cards = (this["text_cards"] as? JsonArray)?.mapNotNull { entry ->
         val obj = entry as? JsonObject ?: return@mapNotNull null
@@ -653,7 +646,7 @@ private fun JsonObject.welcomeScreenContent(variables: Map<String, String>): Bot
     )
 }
 
-/** Ports the AUTOSUGGESTION sub-case of CUSTOMINPUT: options are a "{&}"-delimited string. */
+/** The AUTOSUGGESTION sub-case of CUSTOMINPUT: options are a "{&}"-delimited string. */
 private fun JsonObject.autoSuggestionContent(variables: Map<String, String>): BotContent.AutoSuggestion? {
     val type = (this["dataType"] as? JsonObject)?.string("type")
     if (type != "AUTOSUGGESTION") return null
@@ -713,6 +706,6 @@ private fun String.stripHtml(): String =
         .replace(Regex("<[^>]+>"), "")
         .trim()
 
-/** Ports normalizeMessageNewlines(): LLM nodes send literal "\n" escape sequences in text. */
+/** LLM nodes send literal "\n" escape sequences in text. */
 private fun String.normalizeNewlines(): String =
     replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")

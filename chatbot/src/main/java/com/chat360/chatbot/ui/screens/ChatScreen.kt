@@ -135,9 +135,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
             lastTailMessageId = newTailId
         }
 
-        // Mirrors Messages/index.tsx's handleScroll: scrolling within THRESH_HOLD of the top
-        // requests the next older page, gated by hasMoreHistory/isLoadingMoreHistory exactly
-        // like the widget's `hasMoreMessages`/`gettingMessages`.
+        // Scrolling near the top requests the next older page, gated by
+        // hasMoreHistory/isLoadingMoreHistory to avoid firing overlapping requests.
         LaunchedEffect(listState, state.hasMoreHistory, state.isLoadingMoreHistory) {
             if (!state.hasMoreHistory || state.isLoadingMoreHistory) return@LaunchedEffect
             snapshotFlow { listState.firstVisibleItemIndex }
@@ -152,9 +151,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
             }
         }
 
-        // Ports Messages/index.tsx's pinnedWelcomeMessage: while a WELCOME_SCREEN message is the
-        // most-recent one, it renders fixed above the scroll list instead of inside it: it stops
-        // being pinned automatically once anything else arrives after it.
+        // While a WELCOME_SCREEN message is the most-recent one, it renders fixed above the
+        // scroll list instead of inside it: it stops being pinned automatically once anything
+        // else arrives after it.
         val pinnedWelcomeMessage = state.messages.lastOrNull()?.takeIf { !it.fromUser && it.content is BotContent.WelcomeScreen }
         val listMessages = if (pinnedWelcomeMessage != null) state.messages.dropLast(1) else state.messages
 

@@ -18,7 +18,6 @@ import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
-/** Ports Media/LinkUrl.tsx: a small clickable card for a LINK node that also has its own question text. */
 @Composable
 fun LinkCardContent(caption: String, content: BotContent.LinkCard) {
     val colors = LocalChat360Colors.current

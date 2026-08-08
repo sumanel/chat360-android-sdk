@@ -23,9 +23,9 @@ import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
 /**
- * The compact "Listening…"/Stop indicator shown while dictating - mirrors SpeechToText/index.tsx's
- * own small status row (no waveform of its own; that's [VoiceRecorderBar]'s domain for actual
- * voice-message capture, a deliberately separate concern from text dictation).
+ * The compact "Listening…"/Stop indicator shown while dictating. Has no waveform of its own -
+ * that's [VoiceRecorderBar]'s domain for actual voice-message capture, a deliberately separate
+ * concern from text dictation.
  */
 @Composable
 fun SpeechToTextBar(

@@ -4,8 +4,8 @@ import com.chat360.chatbot.model.wire.BotContent
 
 /**
  * All user-interaction callbacks a bot content renderer might need, bundled so adding a new
- * content type's interaction (e.g. a future POC) means adding one field here with a default -
- * never touching every call site's parameter list.
+ * content type's interaction means adding one field here with a default - never touching every
+ * call site's parameter list.
  */
 data class BotContentActions(
     val onQuickReply: (BotContent.MultiChoice.Option) -> Unit = {},

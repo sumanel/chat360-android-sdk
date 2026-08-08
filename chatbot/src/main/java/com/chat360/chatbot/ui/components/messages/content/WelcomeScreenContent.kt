@@ -31,10 +31,9 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 import com.chat360.chatbot.ui.theme.toColorOrNull
 
 /**
- * Ports the WELCOME_SCREEN node's card content + `onCardClick` exactly (see
- * [BotContent.WelcomeScreen]'s doc); the widget's "pinned outside the scroll list" placement for
- * whichever WELCOME_SCREEN message is currently the latest is handled by the caller
- * (`ChatScreen.kt`), not here.
+ * Renders the WELCOME_SCREEN node's card content and card-tap handling (see
+ * [BotContent.WelcomeScreen]'s doc). Pinning whichever WELCOME_SCREEN message is currently the
+ * latest outside the scroll list is handled by the caller, not here.
  */
 @Composable
 fun WelcomeScreenContent(
@@ -74,8 +73,8 @@ fun WelcomeScreenContent(
                             .border(1.dp, colors.cardBorder, RoundedCornerShape(10.dp))
                             .background(card.bgColor?.toColorOrNull() ?: colors.cardBackground)
                             .clickable(enabled = enabled) {
-                                // external_link cards open externally AND still submit a reply
-                                // (onCardClick in WelcomeScreen/index.tsx never skips onUserSubmit).
+                                // external_link cards open externally AND still submit a reply -
+                                // opening the link never skips the selection callback.
                                 if (card.ctaEnabled && card.ctaType == "external_link" && !card.ctaLink.isNullOrBlank()) {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(card.ctaLink)))
                                 }

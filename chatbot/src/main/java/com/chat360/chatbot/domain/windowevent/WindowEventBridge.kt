@@ -1,10 +1,9 @@
 package com.chat360.chatbot.domain.windowevent
 
 /**
- * Replaces Chat360JSBridge.kt: the same two-way seam (a bot-authored WINDOW_EVENT node talking
- * to the host app), but as direct in-process Kotlin calls instead of `WebView.evaluateJavascript`
- * / `addJavascriptInterface`. There is no JSON stringify/parse anywhere in this path since both
- * sides are already native.
+ * A two-way seam between a bot-authored WINDOW_EVENT node and the host app, as direct
+ * in-process Kotlin calls with no JSON stringify/parse anywhere in this path since both sides
+ * are already native.
  *
  * Outbound (bot -> host): a WINDOW_EVENT node with shouldSend=true calls [dispatchToHost], which
  * invokes the host's `Chat360.setHandleWindowEvent` callback (via ConfigService.WebEventHandler)

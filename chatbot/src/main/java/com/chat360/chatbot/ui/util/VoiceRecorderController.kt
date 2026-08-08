@@ -32,10 +32,9 @@ private const val MAX_SAMPLES = 60
 /**
  * Records a voice note via [MediaRecorder] (AAC/m4a - Android has no built-in WAV encoder, but
  * the backend's upload endpoint is format-agnostic and MediaPlayer plays m4a back natively, so
- * this is a deliberate format swap vs. the widget's recorder-js WAV output, not a feature gap).
- * Mirrors VoiceInput/index.tsx's onStart/onStop/onClear; [amplitudes]/[isRecording]/[elapsedMs]
- * are Compose state so a live waveform can observe them directly, matching LiveWaveform's
- * real-time bars without a second state-holder.
+ * this is a deliberate format choice, not a feature gap).
+ * [amplitudes]/[isRecording]/[elapsedMs] are Compose state so a live waveform can observe them
+ * directly without a second state-holder.
  */
 class VoiceRecorderController(private val context: Context) {
     var isRecording by mutableStateOf(false)
@@ -60,7 +59,7 @@ class VoiceRecorderController(private val context: Context) {
     fun hasPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
-    /** Starts recording immediately if permission is already granted, otherwise prompts first (getUserMedia's on-demand prompt). */
+    /** Starts recording immediately if permission is already granted, otherwise prompts first. */
     fun requestStart() {
         if (isRecording) return
         if (!hasPermission()) {
@@ -138,7 +137,7 @@ class VoiceRecorderController(private val context: Context) {
         }
     }
 
-    /** Stops (if needed) and discards the file entirely - mirrors onClear. */
+    /** Stops (if needed) and discards the file entirely. */
     fun cancel() {
         tickerJob?.cancel()
         tickerJob = null

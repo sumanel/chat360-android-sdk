@@ -1,10 +1,8 @@
 package com.chat360.chatbot.network.rest
 
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
-import com.chat360.chatbot.network.rest.dto.AgentRoomsResponse
 import com.chat360.chatbot.network.rest.dto.BotAppearanceResponse
 import com.chat360.chatbot.network.rest.dto.HistoryResponse
-import com.chat360.chatbot.network.rest.dto.RenameRoomRequest
 import com.chat360.chatbot.network.rest.dto.SessionInitResponse
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.builtins.ListSerializer
@@ -24,35 +22,14 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * Minimal native REST client for the Chat360 backend, used in place of the WebView.
- * POC 1 only needs session-init; later POCs add history/appearance/media endpoints here.
+ * Native REST client for the Chat360 backend: session-init, history, appearance, and media
+ * upload endpoints.
  */
 class Chat360ApiService(
     private val baseUrl: String,
     private val client: OkHttpClient = OkHttpClient(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-
-    /** [clientExternalName] is the single identifier the backend uses to route this call to
-     * the right external integration (e.g. "hyundai") - the SDK never owns per-client request
-     * logic beyond substituting this one parameter into the URL. */
-    suspend fun getAgentRooms(clientExternalName: String, agentCode: String): AgentRoomsResponse {
-        val url = "${baseUrl.trimEnd('/')}/agentic-ai/api/$clientExternalName/rooms/".toHttpUrl()
-            .newBuilder()
-            .addQueryParameter("employee_code", agentCode)
-            .build()
-        val body = execute(Request.Builder().url(url).get().build())
-        return json.decodeFromString(AgentRoomsResponse.serializer(), body)
-    }
-
-    suspend fun renameRoom(clientExternalName: String, roomId: String, newRoomName: String) {
-        val url = "${baseUrl.trimEnd('/')}/agentic-ai/api/$clientExternalName/rooms/rename/"
-        val requestBody = json.encodeToString(
-            RenameRoomRequest.serializer(),
-            RenameRoomRequest(roomId = roomId, newRoomName = newRoomName),
-        ).toRequestBody("application/json".toMediaTypeOrNull())
-        execute(Request.Builder().url(url).patch(requestBody).build())
-    }
 
     suspend fun getSession(
         botId: String,
@@ -76,10 +53,9 @@ class Chat360ApiService(
     }
 
     /**
-     * Mirrors getFirstMessages()/apiUrls.conversationStarter(): a bare JSON array of frames (not
-     * wrapped like [HistoryResponse]), each decodable the same way history/live frames are
-     * (see [HistoryResponse]'s own note) - the ConversationStarter widget feeds every item
-     * through the identical parseMessage() used for socket frames.
+     * A bare JSON array of frames (not wrapped like [HistoryResponse]), each decodable the same
+     * way history/live frames are (see [HistoryResponse]'s own note) - every item is fed through
+     * the identical parsing path used for socket frames.
      */
     suspend fun getFirstMessages(botId: String): List<RawSocketEnvelope> {
         val url = "${baseUrl.trimEnd('/')}/api/chatbox/short-data/$botId"
@@ -87,9 +63,8 @@ class Chat360ApiService(
         return json.decodeFromString(ListSerializer(RawSocketEnvelope.serializer()), body)
     }
 
-    /** [taskType]/[taskValue] mirror getMessages()'s cursor params (fetchServices.ts) - pass
-     * both to page backwards via a prior response's `previous_cursor`; omit both for the first
-     * (most recent) page, exactly like the widget's own initial fetch. */
+    /** Pass both [taskType] and [taskValue] to page backwards via a prior response's
+     * `previous_cursor`; omit both for the first (most recent) page. */
     suspend fun getHistory(roomId: String, limit: Int = 10, taskType: String? = null, taskValue: Int? = null): HistoryResponse {
         val url = "${baseUrl.trimEnd('/')}/api/clientwidget_updated/chatbox/messages/$roomId".toHttpUrl()
             .newBuilder()
@@ -101,7 +76,7 @@ class Chat360ApiService(
         return json.decodeFromString(HistoryResponse.serializer(), body)
     }
 
-    /** Mirrors uploadFile() in fetchServices.ts: multipart POST, response is a JSON array of URLs. */
+    /** Multipart POST; response is a JSON array of URLs. */
     suspend fun uploadMedia(
         roomId: String,
         botId: String,

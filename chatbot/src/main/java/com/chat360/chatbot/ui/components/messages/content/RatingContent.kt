@@ -14,7 +14,7 @@ import com.chat360.chatbot.ui.ChatMessage
 import com.chat360.chatbot.ui.components.icons.StarIcon
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 
-/** Ports Ratings/index.tsx: a row of stars, or a row of 5 fixed emoji, each index sends (i+1). */
+/** Renders a row of stars, or a row of 5 fixed emoji; selecting index `i` sends `i + 1`. */
 @Composable
 fun RatingContent(message: ChatMessage, content: BotContent.Rating, isLiveChat: Boolean, onRatingSelected: (Int) -> Unit) {
     val colors = LocalChat360Colors.current

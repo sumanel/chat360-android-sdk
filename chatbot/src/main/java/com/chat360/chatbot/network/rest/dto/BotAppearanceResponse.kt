@@ -15,7 +15,7 @@ data class BotAppearanceResponse(
     val json_info: String? = null,
 )
 
-/** Only the subset of json_info's ~30 tokens this rewrite currently maps to Chat360 colors/branding. */
+/** Only the subset of json_info's ~30 tokens currently mapped to Chat360 colors/branding. */
 @Serializable
 data class BotAppearanceDetails(
     val botBackgroundColor: String? = null,

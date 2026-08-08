@@ -28,7 +28,6 @@ import com.chat360.chatbot.ui.components.icons.DownloadIcon
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
-/** Mirrors the DOWNLOAD_MEDIA node: a tappable chip that saves the file via DownloadManager. */
 @Composable
 fun DownloadMediaContent(content: BotContent.DownloadMedia) {
     val colors = LocalChat360Colors.current

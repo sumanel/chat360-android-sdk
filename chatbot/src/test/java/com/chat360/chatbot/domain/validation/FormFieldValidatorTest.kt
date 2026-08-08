@@ -101,8 +101,8 @@ class FormFieldValidatorTest {
 
     @Test
     fun `maxCount and minCount ignore non-numeric values rather than failing on them`() {
-        // Ports JS's `+value > maxCount` being false for NaN - a non-numeric value must not trip
-        // maxCount/minCount on its own (it still fails separately via the NUMBER type-check).
+        // A non-numeric value must not trip maxCount/minCount on its own (it still fails
+        // separately via the NUMBER type-check).
         val f = field(BotContent.Form.FieldType.TEXT, BotContent.Form.FieldValidation(isRequired = true, maxCount = 10.0))
         assertNull(FormFieldValidator.validate(f, "not-a-number"))
     }

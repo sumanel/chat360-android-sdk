@@ -33,13 +33,27 @@ public class CoreConfigs(botId: String, applicationContext: Context, flutter: Bo
     var customTypography: Chat360Typography? = null
     var customBranding: Chat360Branding? = null
     var historyEnabled: Boolean = true
-    /** Identifies which external integration the backend should route agent-rooms calls to
-     * (e.g. "hyundai") - the SDK substitutes this single value into the rooms endpoint and
-     * never owns any other per-client request logic. Only used when both this and [agentCode]
-     * are set. */
-    var clientExternalName: String? = null
-    /** Agent identifier used to load the rooms assigned to this agent from [clientExternalName]'s backend. */
-    var agentCode: String? = null
+    /** Enables the SDK's rooms/history list (`ChatDrawer`'s "conversations" section), backed by
+     * the `third-party-tasks` backend API family (rooms list, rename, soft-delete). This and
+     * [apiKey], [endUserId] must **all three** be set together (in addition to [botId], which is
+     * already required for everything else) - if only some are set, the SDK logs a loud warning
+     * and leaves history disabled; leaving all three unset is a valid choice and simply means the
+     * host app isn't using history. Identifies this host app/integration to the backend - ask
+     * Chat360 for this value, it is not the same as [botId]. */
+    var clientId: String? = null
+    /** `x-api-key` header used once to exchange [clientId] for a short-lived bearer token (see
+     * [clientId] for the all-or-nothing rule with [endUserId]). Sent from the device on every
+     * token refresh - treat it like any other client-side API key (fine for a mobile client
+     * calling a backend you control, not a substitute for a server-side secret). */
+    var apiKey: String? = null
+    /** Identifies the current end user - the identity the `third-party-tasks` backend scopes
+     * `rooms/list` results to, so only this user's rooms come back. Sent on the wire as the
+     * `agent_id` query parameter (matching the `agent_id` field the backend returns per room) -
+     * that's the backend's own naming for this identity, not a claim that it's a *support* agent;
+     * it is **not** the same "agent" as [Chat360UIConfig]'s live-chat handoff/assigned-agent
+     * concept elsewhere in this SDK. Use whatever identifier your backend integration already
+     * uses to key a user's rooms. See [clientId] for the all-or-nothing rule. */
+    var endUserId: String? = null
     /** Optional modern, immutable Compose UI configuration. Legacy fields remain supported. */
     var Chat360UIConfig: Chat360UIConfig? = null
 }

@@ -19,7 +19,7 @@ import com.chat360.chatbot.ui.ChatMessage
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
-/** Ports MultiOption/index.tsx: a checkbox list (unlike MultiChoice, more than one can be checked). */
+/** A checkbox list (unlike MultiChoice, more than one option can be checked). */
 @Composable
 fun MultiOptionContent(
     message: ChatMessage,

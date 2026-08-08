@@ -7,7 +7,7 @@ import okio.BufferedSink
 import okio.ForwardingSink
 import okio.buffer
 
-/** Wraps a request body to report write progress - used for upload percentage in POC 6. */
+/** Wraps a request body to report write progress as an upload percentage. */
 class ProgressRequestBody(
     private val bytes: ByteArray,
     private val mediaType: MediaType?,

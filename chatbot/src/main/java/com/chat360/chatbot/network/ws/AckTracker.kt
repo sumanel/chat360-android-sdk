@@ -6,10 +6,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Per-message delivery tracking: mirrors `pendingSendTimers`/`messageAckTimeout` (10s) in
- * layout/index.tsx. OkHttp's WebSocket already queues writes made before the handshake
- * completes, so unlike WSService.ts's `_stackData` there is nothing to buffer here - only the
- * ack-timeout half of that logic applies.
+ * Per-message delivery tracking with a 10s ack timeout. OkHttp's WebSocket already queues
+ * writes made before the handshake completes, so there is nothing to buffer here - only the
+ * ack-timeout logic applies.
  */
 class AckTracker(
     private val scope: CoroutineScope,

@@ -16,9 +16,9 @@ import kotlin.math.min
 
 /**
  * Bucket-resamples [amplitudes] (raw 0-32767 MediaRecorder samples) into [barCount] bars and
- * draws them - the live-recording equivalent of LiveWaveform's canvas bars, and (with [progress]
- * set) the sent-bubble equivalent of Audio/index.tsx's wavesurfer waveform, unified into one
- * component since both just need "bars + how much of them is 'played/elapsed'".
+ * draws them. Used both for live-recording bars and, with [progress] set, for the sent-bubble
+ * playback waveform - unified into one component since both just need "bars + how much of them
+ * is 'played/elapsed'".
  *
  * @param progress 0f (nothing played/elapsed yet - all bars dim) to 1f (all bars in [color]); null
  *   while live-recording, where every bar is already "live" and drawn at full [color].

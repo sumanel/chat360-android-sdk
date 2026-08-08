@@ -26,7 +26,7 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
 private val ErrorColor = Color(0xFFDC2626)
 
-/** Ports Email/index.tsx: required + validateTest ("Test" word) + validateEmail format check. */
+/** Required field with a "Test" word check plus an email format check. */
 @Composable
 fun EmailPromptContent(
     message: ChatMessage,

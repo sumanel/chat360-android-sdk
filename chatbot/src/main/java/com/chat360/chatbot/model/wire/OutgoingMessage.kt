@@ -8,8 +8,7 @@ import java.util.UUID
 /**
  * Wire shape for a client -> server chat message. `message` is a JsonElement because the
  * backend accepts either a plain string (free text) or a typed object (quick-reply selection,
- * file upload, location, etc.) depending on `replyType`/`msgType` - only free-text is used in
- * POC 1, later POCs add more `message` shapes without changing this envelope.
+ * file upload, location, etc.) depending on `replyType`/`msgType`.
  */
 @Serializable
 data class OutgoingMessage(
@@ -32,8 +31,8 @@ data class OutgoingMessage(
     val shouldValidate: Boolean? = null,
     val doNotUpdateVariable: Boolean? = null,
     val multiple_vars: Boolean? = null,
-    /** Ports createUserMessage()'s `if (componentSpecificData) msg.componentSpecificData = ...` -
-     * an opaque per-message-type payload (e.g. VOICE_MESSAGE's {voiceUrl, transcript, msgType}). */
+    /** An opaque per-message-type payload, only included when non-null (e.g. VOICE_MESSAGE's
+     * {voiceUrl, transcript, msgType}). */
     val componentSpecificData: JsonElement? = null,
 ) {
     companion object {

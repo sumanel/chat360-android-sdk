@@ -35,8 +35,8 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 /**
  * Row chrome (avatar, name label, card, timestamp) shared by every bot content type. When
  * [message] is agent-authored and [assignedAgent] is known, the name/avatar swap to the human
- * agent's instead of the bot's - mirrors `BotMessageBox.tsx`'s `useAgentAvatar` swap, adapted to
- * per-message since this app has no persistent header identity to swap instead.
+ * agent's instead of the bot's, applied per-message since this app has no persistent header
+ * identity to swap instead.
  */
 @Composable
 fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: Boolean = false, assignedAgent: AssignedAgent? = null) {

@@ -1,8 +1,7 @@
 package com.chat360.chatbot.domain.validation
 
-/** Ports the exact regexes/checks from the widget's `src/utils/common.ts` - the server-side
- * contract for what counts as a valid email/phone/name doesn't change just because the client
- * is native now. */
+/** These regexes/checks mirror the server-side contract for what counts as a valid
+ * email/phone/name - the client must match it exactly regardless of platform. */
 object InputValidators {
 
     private val emailRegex = Regex(
@@ -17,7 +16,7 @@ object InputValidators {
 
     fun validateEmail(email: String): Boolean = emailRegex.matches(email.lowercase())
 
-    /** Blocks the literal word "test" as an email local-part/domain - a widget-specific guard, not a real format rule. */
+    /** Blocks the literal word "test" as an email local-part/domain - a deliberate guard, not a real format rule. */
     fun validateTest(value: String): Boolean = testEmailRegex.containsMatchIn(value.lowercase())
 
     /** Blocks the standalone word "test" anywhere in a name field. */
@@ -33,7 +32,7 @@ object InputValidators {
 
     fun hasOnlyCharacter(value: String): Boolean = alphaOnlyRegex.matches(value)
 
-    /** HTML-entity-escapes a value before it goes out over the wire (ports sanitizeInput()). */
+    /** HTML-entity-escapes a value before it goes out over the wire. */
     fun sanitizeInput(input: String): String = input
         .replace("&", "&amp;")
         .replace("<", "&lt;")

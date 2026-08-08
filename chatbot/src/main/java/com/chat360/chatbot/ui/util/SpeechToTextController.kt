@@ -21,11 +21,10 @@ import androidx.core.content.ContextCompat
 import java.util.Locale
 
 /**
- * Continuous dictation via Android's on-device [SpeechRecognizer] - mirrors SpeechToText/index.tsx's
- * Web Speech API usage: interim + final results merge into one running [transcript] as the user
- * talks. Android's recognizer completes after each utterance (unlike the browser's `continuous`
- * mode), so [onResults] immediately starts a fresh session while still [isListening] - the same
- * role as the widget's `recognition.onend { if (listening) recognition.start() }`.
+ * Continuous dictation via Android's on-device [SpeechRecognizer]: interim + final results
+ * merge into one running [transcript] as the user talks. Android's recognizer completes after
+ * each utterance rather than listening continuously, so [onResults] immediately starts a fresh
+ * session while still [isListening] to keep the dictation going.
  */
 class SpeechToTextController(private val context: Context) {
     var isListening by mutableStateOf(false)
@@ -84,8 +83,8 @@ class SpeechToTextController(private val context: Context) {
             }
 
             override fun onError(errorCode: Int) {
-                // NO_MATCH/SPEECH_TIMEOUT just mean a silent pause between utterances - the
-                // browser API doesn't surface these as errors during continuous listening either.
+                // NO_MATCH/SPEECH_TIMEOUT just mean a silent pause between utterances, not a
+                // real failure, so listening restarts instead of surfacing an error.
                 if (isListening && (errorCode == SpeechRecognizer.ERROR_NO_MATCH || errorCode == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)) {
                     restart()
                 } else if (isListening) {
@@ -115,7 +114,7 @@ class SpeechToTextController(private val context: Context) {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
     }
 
-    /** Ends dictation - mirrors SpeechToText's Stop button: the accumulated [transcript] is left for the caller to keep or discard. */
+    /** Ends dictation - the accumulated [transcript] is left for the caller to keep or discard. */
     fun stop() {
         isListening = false
         try { recognizer?.stopListening() } catch (_: Exception) { /* no-op */ }

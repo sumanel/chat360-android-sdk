@@ -7,8 +7,8 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
 /**
- * Bare-bones OkHttp WebSocket wrapper for POC 1: connect, send, receive raw text frames.
- * No heartbeat, reconnect, or ack-tracking yet - those land in POC 2.
+ * Thin OkHttp WebSocket wrapper: connect, send, and receive raw text frames. Heartbeat,
+ * reconnect, and ack-tracking are handled by separate collaborators, not this class.
  */
 class Chat360WebSocketClient(
     private val client: OkHttpClient = OkHttpClient(),

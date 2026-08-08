@@ -38,12 +38,11 @@ import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
 /**
- * Renders a MEDIA node. Images load inline via Coil; video/audio (no ExoPlayer dependency yet)
- * show a thumbnail-less play chip that opens the file in an external player - full inline
- * playback is a later refinement, not blocking on for this POC. [content.dynamicButtons] (ported
- * from BotMessageBox.tsx's ShortcutPills row) render as quick-reply pills below, reusing the same
- * `carousel-text-reply` wire path and index convention as TextCarouselContent's own dynamic
- * buttons - see that file's onCardTap for the shared -(i+1) encoding.
+ * Renders a MEDIA node. Images load inline via Coil; video/audio (no ExoPlayer dependency) show
+ * a thumbnail-less play chip that opens the file in an external player. [content.dynamicButtons]
+ * render as quick-reply pills below, reusing the same `carousel-text-reply` wire path and index
+ * convention as TextCarouselContent's own dynamic buttons - see that file's onCardTap for the
+ * shared -(i+1) encoding.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

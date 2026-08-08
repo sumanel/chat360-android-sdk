@@ -27,7 +27,6 @@ import com.chat360.chatbot.ui.ChatMessage
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
-/** Ports the IMAGE_BUTTON node - a Carousel-shaped card per slide, each with its own buttons. */
 @Composable
 fun ImageButtonsContent(
     message: ChatMessage,

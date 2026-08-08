@@ -18,7 +18,6 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
 private val LiveDotColor = Color(0xFF22C55E)
 
-/** Ports AgentTransferMessage/index.tsx: a small pill announcing the handoff to a human agent. */
 @Composable
 fun AgentTransferNoticeContent(text: String) {
     val typography = LocalChat360Typography.current

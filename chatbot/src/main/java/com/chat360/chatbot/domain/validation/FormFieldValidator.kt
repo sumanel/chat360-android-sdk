@@ -3,12 +3,11 @@ package com.chat360.chatbot.domain.validation
 import com.chat360.chatbot.model.wire.BotContent
 
 /**
- * Ports the exact `validate(values)` matrix from the widget's `Form/index.tsx:215-308` -
- * per-field-type checks first (each with its own message), then the generic required check,
- * then a single OR-chain whose failures all share one generic message. Order matches the
- * source exactly, including the quirk that the EMAIL/TEXT "Test"-word and alpha-only checks run
- * *before* the required check (so, as in the source, they can fire on values that also happen
- * to be blank) - faithfulness to the reference behavior matters more than smoothing that over.
+ * Validates a form field value: per-field-type checks first (each with its own message), then
+ * the generic required check, then a single OR-chain whose failures all share one generic
+ * message. Order is deliberate, including the quirk that the EMAIL/TEXT "Test"-word and
+ * alpha-only checks run *before* the required check, so they can fire on values that also
+ * happen to be blank.
  */
 object FormFieldValidator {
 
@@ -19,9 +18,9 @@ object FormFieldValidator {
     fun validate(field: BotContent.Form.Field, value: String): String? {
         val v = field.validation ?: BotContent.Form.FieldValidation()
 
-        // Ports `if (value instanceof File) continue` - MEDIA fields skip every format/length
-        // check in this matrix (they don't apply to a file), but a required upload still can't
-        // be left blank; [value] here is the uploaded URL, set once the picker finishes.
+        // MEDIA fields skip every format/length check in this matrix (they don't apply to a
+        // file), but a required upload still can't be left blank; [value] here is the uploaded
+        // URL, set once the picker finishes.
         if (field.type == BotContent.Form.FieldType.MEDIA) {
             return if (v.isRequired && value.isBlank()) v.errorMessage ?: "This field is required" else null
         }
@@ -52,8 +51,8 @@ object FormFieldValidator {
         val invalid = (v.maxCharacters != null && value.length > v.maxCharacters) ||
             (v.minCharacters != null && value.length < v.minCharacters) ||
             (v.email && !InputValidators.validateEmail(value)) ||
-            // JS's `+value > maxCount` is false when value isn't numeric (NaN comparisons are
-            // always false) - a non-numeric value does NOT fail these two checks on its own.
+            // A non-numeric value does NOT fail these two checks on its own - the comparison
+            // only applies once the value successfully parses as a number.
             (v.maxCount != null && numeric != null && numeric > v.maxCount) ||
             (v.minCount != null && numeric != null && numeric < v.minCount) ||
             (v.phone && !InputValidators.validatePhoneNumber(value, v.allowInternationalNumber)) ||

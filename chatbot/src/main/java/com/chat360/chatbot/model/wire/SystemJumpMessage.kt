@@ -3,9 +3,8 @@ package com.chat360.chatbot.model.wire
 import kotlinx.serialization.Serializable
 
 /**
- * Advances the bot flow to a target node without user input - the widget sends this right
- * after connecting when session-init returns an INIT node, which is what makes the bot emit
- * its first message.
+ * Advances the bot flow to a target node without user input - sent right after connecting
+ * when session-init returns an INIT node, which is what makes the bot emit its first message.
  */
 @Serializable
 data class SystemJumpMessage(

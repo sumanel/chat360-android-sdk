@@ -9,9 +9,9 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Ports types/feedbackConfig.ts - the bot-owner-authored, config-driven post-chat survey (rating
- * plus a form whose exact fields depend on which [TriggerRule] the rating matched). Arrives as
- * part of the same appearance json_info blob [BotAppearanceDetails] already decodes.
+ * The bot-owner-authored, config-driven post-chat survey (rating plus a form whose exact fields
+ * depend on which [TriggerRule] the rating matched). Arrives as part of the same appearance
+ * json_info blob [BotAppearanceDetails] already decodes.
  */
 @Serializable
 data class FeedbackConfig(
@@ -35,8 +35,8 @@ data class FeedbackConfig(
     /**
      * [options]/[rows]/[columns] are heterogeneous on the wire (a bare `string[]` or an
      * `{id,label}[]`) - kept as raw [JsonElement] and normalized at the call site via
-     * [normalizeFeedbackOptions]/[normalizeFeedbackMatrixItems], mirroring normalizeOptions()/
-     * normalizeMatrixItems() in utils/feedbackConfig.ts rather than two parallel wire shapes here.
+     * [normalizeFeedbackOptions]/[normalizeFeedbackMatrixItems] rather than modeling two
+     * parallel wire shapes here.
      */
     @Serializable
     data class FeedbackField(
@@ -72,7 +72,7 @@ data class FeedbackConfig(
 
 data class FeedbackOption(val value: String, val label: String)
 
-/** Ports normalizeFieldType(): aliases/underscore-vs-hyphen variants collapse onto one canonical id. */
+/** Aliases/underscore-vs-hyphen variants collapse onto one canonical id. */
 private val FIELD_TYPE_ALIASES = mapOf(
     "text" to "textbox",
     "input" to "textbox",
@@ -92,7 +92,7 @@ fun normalizeFeedbackFieldType(type: String): String {
     return FIELD_TYPE_ALIASES[key] ?: key
 }
 
-/** Ports normalizeOptions() for a field's flat choice list (dropdown/radio/checkbox). */
+/** Normalizes a field's flat choice list (dropdown/radio/checkbox). */
 fun normalizeFeedbackOptions(options: JsonElement?): List<FeedbackOption> {
     val array = options as? JsonArray ?: return emptyList()
     return array.mapIndexedNotNull { index, element ->
@@ -108,7 +108,7 @@ fun normalizeFeedbackOptions(options: JsonElement?): List<FeedbackOption> {
     }
 }
 
-/** Ports normalizeMatrixItems() for a matrix field's rows/columns. */
+/** Normalizes a matrix field's rows/columns. */
 fun normalizeFeedbackMatrixItems(items: JsonElement?): List<FeedbackOption> {
     val array = items as? JsonArray ?: return emptyList()
     return array.mapIndexed { index, element ->
@@ -124,7 +124,7 @@ fun normalizeFeedbackMatrixItems(items: JsonElement?): List<FeedbackOption> {
     }
 }
 
-/** Ports resolveFormId(): first matching rule by ascending priority, or null (no form) if none match. */
+/** Returns the first matching rule by ascending priority, or null (no form) if none match. */
 fun resolveFeedbackFormId(rating: Int, rules: List<FeedbackConfig.TriggerRule>): String? {
     return rules.sortedBy { it.priority }.firstOrNull { rule ->
         val condition = rule.condition
@@ -139,7 +139,7 @@ fun resolveFeedbackFormId(rating: Int, rules: List<FeedbackConfig.TriggerRule>):
     }?.formId
 }
 
-/** Ports getActiveForm(): 'none' resolves to an explicit empty form even if `forms.none` is absent, so a matched-but-form-less rule renders nothing rather than falling back to the default form. */
+/** 'none' resolves to an explicit empty form even if `forms.none` is absent, so a matched-but-form-less rule renders nothing rather than falling back to the default form. */
 fun FeedbackConfig.activeForm(formId: String?): FeedbackConfig.FeedbackFormDefinition? {
     if (formId == null) return null
     if (formId == "none") return forms["none"] ?: FeedbackConfig.FeedbackFormDefinition(id = "none")

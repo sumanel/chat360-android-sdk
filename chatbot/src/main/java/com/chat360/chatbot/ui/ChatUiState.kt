@@ -27,8 +27,8 @@ data class Attachment(
 
 /**
  * Local draft state for a BotContent.Form message: field index -> typed value, plus submitted
- * flag. [attemptedSubmit] gates inline error text - like the widget's Mantine form, errors only
- * show after the user has tried to submit once, not while a field is merely empty/untouched.
+ * flag. [attemptedSubmit] gates inline error text - errors only show after the user has tried
+ * to submit once, not while a field is merely empty/untouched.
  */
 data class FormState(
     val values: Map<Int, String> = emptyMap(),
@@ -48,7 +48,7 @@ data class PromptState(
 )
 
 /**
- * A recorded-but-not-yet-sent voice note - mirrors UserInput/index.tsx's `voiceMessage` state.
+ * A recorded-but-not-yet-sent voice note.
  * [amplitudes] are the raw 0-32767 samples captured while recording, reused to draw the static
  * waveform in both the review chip and (once sent) the sent bubble, since decoding an m4a's real
  * waveform client-side has no cheap equivalent here.
@@ -110,7 +110,7 @@ data class ChatUiState(
      * True while the session is being handled by a human agent rather than the bot flow - set on
      * any admin/operator-authored message (not just an AGENT_TRANSFER/TEAM_TRANSFER notice), and
      * cleared on the next bot-authored message or an `update_status` end signal. See
-     * ChatViewModel's authorship-flip logic and its documented simplification vs. source.
+     * ChatViewModel's authorship-flip logic and its documented simplification.
      */
     val isLiveChat: Boolean = false,
     /** The human agent currently assigned, from a `highlight` node - re-updatable for agent-to-agent transfer. */
@@ -121,10 +121,20 @@ data class ChatUiState(
     val feedbackConfig: FeedbackConfig? = null,
     /** True once `shouldAskFeedback` held the session open pending a submitted (or skipped) survey. */
     val showFeedbackPrompt: Boolean = false,
-    /** A `chat_inactivity_message` with `auto_archival` - mirrors innerNotification?.autoArchive gating showInputBox()/showVoiceInput() in the widget: the session is closing for inactivity, so the input bar disables. */
+    /** A `chat_inactivity_message` with `auto_archival` - the session is closing for
+     * inactivity, so the input bar disables. */
     val isArchived: Boolean = false,
-    /** True once a fetched page's `previous_cursor` was null - mirrors `hasMoreMessages={!!previousCursor}` (Chatbox/index.tsx): gates whether scrolling to the top requests another page at all. */
+    /** True once a fetched page's `previous_cursor` was null - gates whether scrolling to the
+     * top requests another page at all. */
     val hasMoreHistory: Boolean = false,
-    /** True while a scroll-to-top page fetch is in flight - mirrors `gettingMessages` (Messages/index.tsx), guards against firing another fetch mid-request. */
+    /** True while a scroll-to-top page fetch is in flight - guards against firing another
+     * fetch mid-request. */
     val isLoadingMoreHistory: Boolean = false,
+    /** True when the third-party-tasks `rooms/list` fetch most recently failed (network error,
+     * bad credentials, etc.) - distinguishes "history unavailable right now" from "this user
+     * genuinely has no past conversations yet" (the latter is just an empty conversations list).
+     * Never set when history isn't configured at all (`clientId`/`apiKey`/`endUserId` unset on
+     * `CoreConfigs`) - that case simply isn't using history. Cleared on the next successful
+     * refresh. */
+    val isHistoryUnavailable: Boolean = false,
 )

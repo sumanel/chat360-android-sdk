@@ -19,7 +19,6 @@ class ChatBotDemoActivity : AppCompatActivity() {
     }
 
     private fun initialiseBot(): Chat360 {
-        //Get Chat360 instance
         val chat360 = Chat360().getInstance()
         chat360.coreConfig = CoreConfigs(botId, applicationContext,flutter,meta,false, false)
 
@@ -32,13 +31,11 @@ class ChatBotDemoActivity : AppCompatActivity() {
         /* Note: if color is set from both setStatusBarColor and statusBarColorFromHex,
          * statusBarColorFromHex will take priority
          * */
-        // To set statusBarColor from hexadecimal color code
         chat360.coreConfig!!.statusBarColorFromHex = "#49c656"
 
         /* Note: if color is set from both closeButtonColor and closeButtonColorHex,
          * closeButtonColorHex will take priority
          * */
-        // To set closeButtonColor from hexadecimal color code
         chat360.coreConfig!!.closeButtonColorFromHex = "#ffffff"
         return chat360
     }

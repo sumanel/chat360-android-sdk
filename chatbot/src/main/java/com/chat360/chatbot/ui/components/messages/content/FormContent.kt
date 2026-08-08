@@ -45,11 +45,11 @@ import java.time.ZoneOffset
 private val ErrorColor = Color(0xFFDC2626)
 
 /**
- * Ports Form/index.tsx's field set (TEXT/NUMBER/EMAIL/PHONE/SELECT/DATE/MEDIA), with the exact
- * per-field validation matrix from FormFieldValidator (mirrors the widget's validate() - required,
- * format, length/count bounds, "Test"-word blocks, phone blocklist, alpha-only). Field types
- * without a dedicated renderer (RCS-specific, etc.) fall back to FieldType.OTHER and render as a
- * disabled placeholder row rather than blocking the whole form.
+ * Renders the form's field set (TEXT/NUMBER/EMAIL/PHONE/SELECT/DATE/MEDIA), with the per-field
+ * validation matrix from FormFieldValidator (required, format, length/count bounds, "Test"-word
+ * blocks, phone blocklist, alpha-only). Field types without a dedicated renderer (RCS-specific,
+ * etc.) fall back to FieldType.OTHER and render as a disabled placeholder row rather than
+ * blocking the whole form.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,9 +65,8 @@ fun FormContent(
     val typography = LocalChat360Typography.current
     val formState = message.formState ?: FormState()
     val submitted = formState.submitted
-    // Fields/submit disable (not hide) once live chat takes over too, matching every
-    // `disabled={isFlowCompleted || isLiveChat}` in RenderRequiredMessage.tsx - kept separate
-    // from `submitted` itself so the button still reads the real submit-state label.
+    // Fields/submit disable (not hide) once live chat takes over too - kept separate from
+    // `submitted` itself so the button still reads the real submit-state label.
     val fieldsEnabled = !submitted && !isLiveChat
     val canSubmit = fieldsEnabled && formState.uploadingFields.isEmpty()
 

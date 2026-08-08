@@ -4,9 +4,8 @@ import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import kotlinx.serialization.Serializable
 
 /**
- * `history` items are decoded as [RawSocketEnvelope] because the widget's own initSession.ts
- * feeds each history item through the exact same `parseMessage` used for live socket frames -
- * history entries and live messages share one wire shape.
+ * `history` items are decoded as [RawSocketEnvelope] because history entries and live messages
+ * share one wire shape and are parsed through the same path.
  */
 @Serializable
 data class HistoryResponse(

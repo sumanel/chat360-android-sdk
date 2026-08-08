@@ -15,8 +15,9 @@ const val EXTRA_BOT_ID = "extra_bot_id"
 const val EXTRA_BASE_URL = "extra_base_url"
 const val EXTRA_THEME_PRESET = "extra_theme_preset"
 const val EXTRA_HISTORY_ENABLED = "extra_history_enabled"
-const val EXTRA_CLIENT_EXTERNAL_NAME = "extra_client_external_name"
-const val EXTRA_AGENT_CODE = "extra_agent_code"
+const val EXTRA_CLIENT_ID = "extra_client_id"
+const val EXTRA_API_KEY = "extra_api_key"
+const val EXTRA_END_USER_ID = "extra_end_user_id"
 
 data class ResolvedChatConfig(
     val botId: String,
@@ -27,16 +28,17 @@ data class ResolvedChatConfig(
     val customTypography: Chat360Typography?,
     val customBranding: Chat360Branding?,
     val historyEnabled: Boolean,
-    val clientExternalName: String?,
-    val agentCode: String?,
+    val clientId: String?,
+    val apiKey: String?,
+    val endUserId: String?,
     val Chat360UIConfig: Chat360UIConfig,
 )
 
 /**
  * Two ways a screen ends up here: through the public API (`Chat360.startBot`/`getChatBotView`,
- * which populate [ConfigService] via `setConfigData` the same way the old WebView screens read
- * it), or launched directly with Intent extras (our own demo buttons / test harness, which never
- * touch CoreConfigs). The former takes priority whenever a real botId has actually been set.
+ * which populate [ConfigService] via `setConfigData`), or launched directly with Intent extras
+ * (which never touch [ConfigService]). The former takes priority whenever a real botId has
+ * actually been set.
  */
 fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
     val config = ConfigService.getInstance()?.getConfig()
@@ -51,8 +53,9 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
             customTypography = config.customTypography,
             customBranding = config.customBranding,
             historyEnabled = config.historyEnabled,
-            clientExternalName = config.clientExternalName?.trim()?.takeIf { it.isNotEmpty() },
-            agentCode = config.agentCode?.trim()?.takeIf { it.isNotEmpty() },
+            clientId = config.clientId?.trim()?.takeIf { it.isNotEmpty() },
+            apiKey = config.apiKey?.trim()?.takeIf { it.isNotEmpty() },
+            endUserId = config.endUserId?.trim()?.takeIf { it.isNotEmpty() },
             Chat360UIConfig = config.Chat360UIConfig ?: Chat360UIConfig(),
         )
     }
@@ -66,8 +69,9 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
         customTypography = null,
         customBranding = null,
         historyEnabled = extras?.getBoolean(EXTRA_HISTORY_ENABLED, true) ?: true,
-        clientExternalName = extras?.getString(EXTRA_CLIENT_EXTERNAL_NAME)?.trim()?.takeIf { it.isNotEmpty() },
-        agentCode = extras?.getString(EXTRA_AGENT_CODE)?.trim()?.takeIf { it.isNotEmpty() },
+        clientId = extras?.getString(EXTRA_CLIENT_ID)?.trim()?.takeIf { it.isNotEmpty() },
+        apiKey = extras?.getString(EXTRA_API_KEY)?.trim()?.takeIf { it.isNotEmpty() },
+        endUserId = extras?.getString(EXTRA_END_USER_ID)?.trim()?.takeIf { it.isNotEmpty() },
         Chat360UIConfig = Chat360UIConfig(),
     )
 }

@@ -26,11 +26,9 @@ import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
 /**
- * Mirrors FileUpload.tsx's dropzone prompt: a tappable "upload" row inside the bot bubble, plus
- * (when `enableCameraInput` is set and the allowed types include an image extension, matching
- * the source's own `isImageAllowed` gate) a second row to capture a photo directly instead of
- * picking one. Source collapses these into a single popover; this always shows both rows when
- * both are available - simpler, same two choices.
+ * A tappable "upload" row inside the bot bubble, plus (when `enableCameraInput` is set and the
+ * allowed types include an image extension) a second row to capture a photo directly instead of
+ * picking one. Both rows are shown together whenever both are available.
  */
 @Composable
 fun FileUploadPromptContent(

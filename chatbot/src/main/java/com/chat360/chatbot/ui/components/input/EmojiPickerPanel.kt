@@ -17,10 +17,9 @@ import androidx.compose.ui.unit.sp
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 
 /**
- * Ports Emojis/index.tsx's picker - restricted to the same single category the source config's
- * (`categories: [{category: Categories.SMILEYS_PEOPLE}]`), search/skin-tones disabled. A curated
- * representative subset stands in for emoji-picker-react's full bundled dataset for that
- * category (~500 glyphs) - same practical scope, not a byte-for-byte data port.
+ * Emoji picker restricted to a single category (smileys/people), with search and skin-tone
+ * variants disabled. Uses a curated representative subset rather than the full ~500-glyph set
+ * for that category.
  */
 private val SMILEYS_AND_PEOPLE = listOf(
     "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇",

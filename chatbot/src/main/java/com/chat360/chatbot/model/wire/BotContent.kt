@@ -22,7 +22,7 @@ data class BotNode(
 
 /**
  * Renderable content variants. Node types without a dedicated variant fall through to
- * [Unsupported] so the UI's `when` stays exhaustive and later POCs add variants without
+ * [Unsupported] so the UI's `when` stays exhaustive and new variants can be added without
  * breaking existing code.
  */
 sealed interface BotContent {
@@ -42,10 +42,9 @@ sealed interface BotContent {
         val kind: MediaKind,
         val title: String?,
         val downloadDisabled: Boolean,
-        /** Ports BotMessageBox.tsx's ShortcutPills row: quick-reply pills rendered below the
-         * media bubble, each answering with the same `carousel-text-reply` wire shape as a
-         * TextCarousel card tap - reuses that variant's [TextCarousel.DynamicButton] shape
-         * rather than a second copy of the same three fields. */
+        /** Quick-reply pills rendered below the media bubble, each answering with the same
+         * `carousel-text-reply` wire shape as a TextCarousel card tap - reuses that variant's
+         * [TextCarousel.DynamicButton] shape rather than a second copy of the same three fields. */
         val dynamicButtons: List<TextCarousel.DynamicButton> = emptyList(),
     ) : BotContent
 
@@ -57,7 +56,7 @@ sealed interface BotContent {
 
     data class DownloadMedia(val fileUrl: String, val fileName: String) : BotContent
 
-    /** style: "star" | "emoji" (mirrors Ratings/index.tsx's IRatingTypes); scale is the star count. */
+    /** style: "star" | "emoji"; scale is the star count. */
     data class Rating(val style: String, val scale: Int) : BotContent
 
     data class Form(
@@ -78,9 +77,9 @@ sealed interface BotContent {
         )
 
         /**
-         * Ports the widget's per-element `validation` object (`Form/index.tsx:215-308`) - the
-         * exact rule set `domain/validation/FormFieldValidator` enforces. All-nullable/false
-         * defaults so a field with no `validation` key at all behaves exactly like before.
+         * A form element's `validation` object - the exact rule set
+         * `domain/validation/FormFieldValidator` enforces. All-nullable/false defaults so a
+         * field with no `validation` key at all simply has no constraints.
          */
         data class FieldValidation(
             val isRequired: Boolean = false,
@@ -99,8 +98,8 @@ sealed interface BotContent {
     }
 
     /**
-     * A WINDOW_EVENT node - renders nothing visually (the widget marks it `isWithoutMessage`),
-     * it only triggers the host-app bridge. See domain/windowevent/WindowEventBridge.kt.
+     * A WINDOW_EVENT node - renders nothing visually, it only triggers the host-app bridge.
+     * See domain/windowevent/WindowEventBridge.kt.
      */
     data class WindowEvent(
         val shouldSend: Boolean,
@@ -112,9 +111,9 @@ sealed interface BotContent {
     data object EmailPrompt : BotContent
 
     /**
-     * A PHONE node. [allowInternational] false (the common case) means no dedicated widget or
-     * validation at all in the source - answered through the plain free-text input, same as the
-     * widget. [splitVariable]/[countryCodeVar] only matter when international.
+     * A PHONE node. [allowInternational] false (the common case) means no dedicated input or
+     * validation at all - answered through the plain free-text input.
+     * [splitVariable]/[countryCodeVar] only matter when international.
      */
     data class PhonePrompt(
         val allowInternational: Boolean,
@@ -146,10 +145,9 @@ sealed interface BotContent {
     }
 
     /**
-     * A TEXT_CAROUSEL node. Ports both wire generations (`type1`/`type2` from
-     * `_extractTextCarouselData`) into one card shape rather than two distinct layouts - a
-     * deliberate simplification; per-button custom styling (`ctaButtons[].style`) is not ported,
-     * cards use the theme's own button styling instead.
+     * A TEXT_CAROUSEL node. Both wire generations (`type1`/`type2`) map onto one card shape
+     * rather than two distinct layouts - a deliberate simplification; per-button custom styling
+     * (`ctaButtons[].style`) is not modeled, cards use the theme's own button styling instead.
      */
     data class TextCarousel(val cards: List<Card>, val dynamicButtons: List<DynamicButton>) : BotContent {
         data class Card(
@@ -180,11 +178,10 @@ sealed interface BotContent {
     data object AgentTransferNotice : BotContent
 
     /**
-     * A WELCOME_SCREEN node. Ports `_extractWelcomeScreenData`/`WelcomeScreen/index.tsx`'s
-     * `onCardClick` exactly: [Card.ctaEnabled] + `ctaType=="external_link"` opens [Card.ctaLink]
-     * externally (and still submits); `ctaType=="component"` submits with [Card.ctaLink] as the
-     * targetId instead of the node's own; the outgoing text is [Card.name] trimmed, falling back
-     * to "Card {n}" (1-based).
+     * A WELCOME_SCREEN node. On a card tap: [Card.ctaEnabled] + `ctaType=="external_link"`
+     * opens [Card.ctaLink] externally (and still submits); `ctaType=="component"` submits with
+     * [Card.ctaLink] as the targetId instead of the node's own; the outgoing text is
+     * [Card.name] trimmed, falling back to "Card {n}" (1-based).
      */
     data class WelcomeScreen(
         val iconUrl: String?,
@@ -204,10 +201,9 @@ sealed interface BotContent {
     }
 
     /**
-     * An IFRAME node. Ports Iframe/index.tsx's `postMessage` auto-advance: when [moveForEvent]
-     * is set, a `message` event from the embedded page whose `data.type === moveForEvent`
-     * (origin-checked against [url]) jumps the bot flow to [targetId] - a native
-     * WebView+JavascriptInterface bridge stands in for the widget's `window.postMessage` one.
+     * An IFRAME node. `postMessage` auto-advance: when [moveForEvent] is set, a `message` event
+     * from the embedded page whose `data.type === moveForEvent` (origin-checked against [url])
+     * jumps the bot flow to [targetId], via a native WebView+JavascriptInterface bridge.
      */
     data class IframeContent(
         val url: String,

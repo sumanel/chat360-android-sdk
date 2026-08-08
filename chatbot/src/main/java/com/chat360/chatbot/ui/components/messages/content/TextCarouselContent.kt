@@ -38,8 +38,8 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 import com.chat360.chatbot.ui.theme.toColorOrNull
 
 /**
- * Ports the TEXT_CAROUSEL node - both wire generations (`type1`/`type2`) render through this one
- * card shape (see [BotContent.TextCarousel]'s doc for the ported-simplification note).
+ * Renders the TEXT_CAROUSEL node - both wire generations (`type1`/`type2`) render through this
+ * one card shape (see [BotContent.TextCarousel]'s doc).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

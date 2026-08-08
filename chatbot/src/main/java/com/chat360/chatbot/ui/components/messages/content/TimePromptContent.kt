@@ -26,7 +26,6 @@ import com.chat360.chatbot.ui.components.common.QuickReplyButton
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import java.time.LocalTime
 
-/** Ports Time/index.tsx: hour/minute spinners (12-hour) + AM/PM, blocked by disabledSlots. */
 @Composable
 fun TimePromptContent(
     message: ChatMessage,

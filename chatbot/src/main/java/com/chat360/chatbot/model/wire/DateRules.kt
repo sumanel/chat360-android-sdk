@@ -1,9 +1,8 @@
 package com.chat360.chatbot.model.wire
 
 /**
- * The disabled-date rule set shared by standalone DATE prompts and FORM DATE fields - ports the
- * core of `_extractDateData` (`parser/index.ts:416-469`). Two rarer source rules are
- * intentionally not ported here (flagged as a known gap, not silently dropped): the
+ * The disabled-date rule set shared by standalone DATE prompts and FORM DATE fields. Two rarer
+ * rules are intentionally not implemented here (flagged as a known gap, not silently dropped):
  * "referredDate" fencing relative to another variable's date, and the
  * disabledDaysFromCd/onlyEnableDaysFromCd rolling-window-from-today variants.
  */

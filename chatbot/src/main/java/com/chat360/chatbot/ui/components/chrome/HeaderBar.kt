@@ -31,7 +31,6 @@ import com.chat360.chatbot.ui.components.icons.ShortcutIcon
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
-/** Minimal utility bar matching the embedded-widget chrome. */
 @Composable
 fun HeaderBar(
     connected: Boolean,
@@ -63,8 +62,8 @@ fun HeaderBar(
                 .size(24.dp)
                 .clickable(onClick = onMenuClick),
         )
-        // Mirrors onRefresh() (layout/index.tsx) - most useful once the socket has actually
-        // dropped, but left tappable regardless so a host app always has a manual escape hatch.
+        // Most useful once the socket has actually dropped, but left tappable regardless so a
+        // host app always has a manual escape hatch.
         Spacer(modifier = Modifier.width(16.dp))
         Icon(
             imageVector = RefreshIcon,

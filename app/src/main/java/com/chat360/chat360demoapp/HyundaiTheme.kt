@@ -43,41 +43,31 @@ val HyundaiLightColors = Chat360Colors(
 )
 
 val HyundaiDarkColors = Chat360Colors(
-
-    // Hyundai Signature Blue
     accent = Color(0xFF002C5F),
     accentContrast = Color.White,
 
-    // Backgrounds
-    background = Color(0xFF0B0F14),           // Main screen
-    backgroundElevated = Color(0xFF12171E),   // Cards / Input
-    backgroundSunken = Color(0xFF070A0E),     // Bottom areas
+    background = Color(0xFF0B0F14),
+    backgroundElevated = Color(0xFF12171E),
+    backgroundSunken = Color(0xFF070A0E),
 
-    // Borders
     line = Color(0xFF252B34),
 
-    // Text
     textPrimary = Color(0xFFF8F9FB),
     textSecondary = Color(0xFF8E98A6),
     textDisabled = Color(0xFF5F6772),
 
-    // User bubble
     bubbleUserBackground = Color(0xFF002C5F),
     bubbleUserText = Color.White,
 
-    // AI bubble
     bubbleAiBackground = Color(0xFF171C24),
     bubbleAiText = Color(0xFFF8F9FB),
 
-    // Cards
     cardBackground = Color(0xFF12171E),
     cardBorder = Color(0xFF252B34),
 
-    // Input
     inputBackground = Color(0xFF141A22),
     inputBorder = Color(0xFF303844),
 
-    // Status Bar
     statusBar = Color(0xFF050608),
 )
 private val HyundaiSansHead = FontFamily(
