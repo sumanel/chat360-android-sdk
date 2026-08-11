@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val httpClient = OkHttpClient()
-    private val nativePocBotId = "2e97deac-2877-495f-a568-8e0e5438fec1"
+    private val nativePocBotId = "fca6b5ec-390f-4b50-a772-d1f972799138"
     private val botId = nativePocBotId
     private val flutter = false
     private val meta = mapOf(
@@ -56,7 +56,7 @@ class MainActivity : AppCompatActivity() {
         val chat360 = Chat360().getInstance()
         chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,true)
 
-        chat360.setBaseUrl("https://app.chat360.io");
+        chat360.setBaseUrl("https://staging.chat360.io");
         chat360.setHandleWindowEvent { eventData ->
             var metaMap: Map<String, String> = mapOf(
                 "dealer_code" to HYUNDAI_DEALER_CODE,

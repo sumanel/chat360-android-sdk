@@ -57,6 +57,9 @@ data class FeatureConfig(
     val showAppearanceSwitcher: Boolean = false,
     val showTypingIndicator: Boolean = true,
     val enableVoicePreview: Boolean = false,
+    /** Bot avatar shown next to each message row and the typing indicator - the welcome splash's
+     * centered logo is unaffected, this only covers the active-conversation chrome. */
+    val showBotAvatar: Boolean = true,
 )
 
 data class BehaviorConfig(

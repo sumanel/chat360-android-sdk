@@ -31,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
 import com.chat360.chatbot.model.wire.AssignedAgent
 import com.chat360.chatbot.model.wire.BotContent
@@ -117,6 +119,8 @@ fun ChatScreen(viewModel: ChatViewModel) {
         val themeController = LocalChat360ThemeController.current
         val sdkConfig = LocalChat360UIConfig.current
         val features = sdkConfig.features
+        val focusManager = LocalFocusManager.current
+        val keyboardController = LocalSoftwareKeyboardController.current
 
         LaunchedEffect(speechToText.transcript) {
             if (speechToText.isListening) viewModel.onInputChange(speechToText.transcript)
@@ -167,6 +171,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             showMenu = features.showMenu && features.showHistorySidebar,
                             showNewChat = features.showNewChat,
                             onMenuClick = {
+                                // Dismiss the IME first - otherwise it stays open behind the
+                                // sidebar and keeps the window resized around it, squeezing the
+                                // sidebar's height instead of letting it take the full screen.
+                                keyboardController?.hide()
+                                focusManager.clearFocus(force = true)
                                 sdkConfig.callbacks.onMenuClicked()
                                 showHistorySidebar = true
                             },

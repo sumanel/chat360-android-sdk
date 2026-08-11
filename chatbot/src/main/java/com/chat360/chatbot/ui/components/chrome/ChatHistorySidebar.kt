@@ -146,7 +146,7 @@ fun ChatHistorySidebar(
                 )
             } else {
                 HistoryGroup(
-                    title = "CONVERSATIONS",
+                    title = "Conversations",
                     items = conversations,
                     onConversationSelected = onConversationSelected,
                     onConversationRenamed = onConversationRenamed,
@@ -165,7 +165,7 @@ fun ChatHistorySidebar(
         ) {
             if (showAssistantMode) {
                 Text(
-                    "ASSISTANT MODE",
+                    "Assistant Mode",
                     fontFamily = typography.textFamily,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -180,7 +180,7 @@ fun ChatHistorySidebar(
             Spacer(Modifier.height(18.dp))
             if (showAppearanceSwitcher) {
                 Text(
-                    "APPEARANCE",
+                    "Appearance",
                     fontFamily = typography.textFamily,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -293,7 +293,14 @@ private fun ConversationItem(
     var showActions by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var title by remember(conversation.id, conversation.title) { mutableStateOf(conversation.title) }
+    // A conversation keeps its "New conversation" placeholder until the first message is sent;
+    // show its date/time instead of that placeholder so the list never displays the literal text.
+    val displayTitle = if (conversation.title == "New conversation") {
+        SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(conversation.createdAt))
+    } else {
+        conversation.title
+    }
+    var title by remember(conversation.id, displayTitle) { mutableStateOf(displayTitle) }
 
     Row(
         modifier = Modifier
@@ -305,7 +312,7 @@ private fun ConversationItem(
         Icon(HistoryIcon, contentDescription = null, tint = colors.textSecondary)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(conversation.title, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(displayTitle, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(conversation.updatedAt)), fontFamily = typography.textFamily, fontSize = 13.sp, color = colors.textSecondary)
         }
         Column {
@@ -333,7 +340,7 @@ private fun ConversationItem(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete conversation") },
-            text = { Text("This can't be undone. Delete \"${conversation.title}\"?") },
+            text = { Text("This can't be undone. Delete \"$displayTitle\"?") },
             confirmButton = { TextButton(onClick = { onDeleted(); showDeleteDialog = false }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } },
         )

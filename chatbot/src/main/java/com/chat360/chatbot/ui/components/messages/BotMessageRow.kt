@@ -46,10 +46,12 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
     val agent = assignedAgent.takeIf { message.author == BotNode.MessageAuthor.AGENT }
     val clipboard = LocalClipboardManager.current
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            LogoBadge(size = 28.dp, overrideName = agent?.name, overrideAvatarUrl = agent?.avatarUrl)
+        if (config.features.showBotAvatar) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LogoBadge(size = 28.dp, overrideName = agent?.name, overrideAvatarUrl = agent?.avatarUrl)
+            }
+            Spacer(modifier = Modifier.height(6.dp))
         }
-        Spacer(modifier = Modifier.height(6.dp))
         Column(
             modifier = Modifier
                 .fillMaxWidth()

@@ -43,8 +43,13 @@ val HyundaiLightColors = Chat360Colors(
 )
 
 val HyundaiDarkColors = Chat360Colors(
-    accent = Color(0xFF002C5F),
-    accentContrast = Color.White,
+    // Same Hyundai navy hue as the light theme, lifted to a brighter shade - the light theme's
+    // 0xFF002C5F is used directly as text/icon/border/link color throughout the UI (not just as
+    // a button fill), and that near-black navy is essentially invisible against the near-black
+    // dark background below. accentContrast flips to dark to match, so accent-filled buttons
+    // (which use accent as background + accentContrast as content color) stay legible.
+    accent = Color(0xFF5599E7),
+    accentContrast = Color(0xFF0B0F14),
 
     background = Color(0xFF0B0F14),
     backgroundElevated = Color(0xFF12171E),
@@ -56,7 +61,9 @@ val HyundaiDarkColors = Chat360Colors(
     textSecondary = Color(0xFF8E98A6),
     textDisabled = Color(0xFF5F6772),
 
-    bubbleUserBackground = Color(0xFF002C5F),
+    // A lighter shade of the same navy so the bubble reads clearly against the near-black
+    // background instead of blending into it; white bubble text keeps solid contrast on it.
+    bubbleUserBackground = Color(0xFF2F6FB0),
     bubbleUserText = Color.White,
 
     bubbleAiBackground = Color(0xFF171C24),
@@ -115,6 +122,11 @@ val HyundaiConfig = Chat360UIConfig(
         showEmoji = false, showAttachment = false,
         showVoiceInput = false, showSpeechToText = true,
         showAssistantMode = true, showAppearanceSwitcher = true,
+        // No Hyundai logo in the active conversation (message rows / typing indicator) - only
+        // the pre-chat welcome splash still shows it.
+        showBotAvatar = false,
     ),
-    behavior = BehaviorConfig(suppressInitialBotMessages = false),
+    // The bot must not speak first - the conversation should open empty/blank, with the user's
+    // own message as the first bubble, instead of an unsolicited greeting like "How can I help you".
+    behavior = BehaviorConfig(suppressInitialBotMessages = true),
 )
