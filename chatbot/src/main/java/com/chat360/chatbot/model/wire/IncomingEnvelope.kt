@@ -32,6 +32,17 @@ data class RawSocketEnvelope(
     val update_status: Boolean? = null,
     /** Sibling to `type`/`data` on a `chat_inactivity_message` frame, not nested inside `data`. */
     val auto_archival: Boolean? = null,
+    /** Server-assigned send time, "dd/MM/yyyy HH:mm:ss" UTC - present on session-init,
+     * short-data, and (confirmed directly against a live `/chatbox/messages/{roomId}` response)
+     * history and live message frames alike. [timestamp_int] is preferred when present (exact,
+     * no string parsing); this is the fallback. Used so a replayed conversation shows each
+     * message's real send time instead of "now" (the moment it happened to be replayed) - see
+     * [toIncomingEvent]. */
+    val time: String? = null,
+    /** Unix epoch seconds (fractional), as a JSON string - e.g. "1786565354.987089". Sent
+     * alongside [time] on history/live frames; preferred over it since it needs no date-format
+     * parsing. */
+    val timestamp_int: String? = null,
 )
 
 /** Typed result of dispatching a [RawSocketEnvelope] through the dispatch chain. */
@@ -42,7 +53,7 @@ sealed interface IncomingSocketEvent {
     /** [text] is only meaningful when replaying history (see toIncomingEvent()) - live echoes
      * only ever drive ack-tracking, since the user's own bubble was already appended
      * optimistically the moment they hit send. */
-    data class EchoedUserMessage(val chatMsgId: String?, val text: String?) : IncomingSocketEvent
+    data class EchoedUserMessage(val chatMsgId: String?, val text: String?, val timestampMs: Long? = null) : IncomingSocketEvent
     data class TypingStatus(val isTyping: Boolean) : IncomingSocketEvent
     data class BotMessage(val node: BotNode) : IncomingSocketEvent
     /** A `highlight` frame's `assigned_user` - takes precedence over any other msgType the same frame might carry. */
@@ -61,6 +72,7 @@ sealed interface IncomingSocketEvent {
  * other msgType the same frame carries) -> bot/agent content.
  */
 fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
+    val timestampMs = timestamp_int?.toDoubleOrNull()?.let { (it * 1000).toLong() } ?: time.parseServerTimestamp()
     if (type == "pong") return IncomingSocketEvent.Pong
 
     if (type == "close_connection") {
@@ -75,7 +87,7 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     }
 
     if (user == "end_user") {
-        return IncomingSocketEvent.EchoedUserMessage(chat_msg_id, (message as? JsonPrimitive)?.contentOrNull)
+        return IncomingSocketEvent.EchoedUserMessage(chat_msg_id, (message as? JsonPrimitive)?.contentOrNull, timestampMs)
     }
 
     if (type == "typing_status") {
@@ -104,6 +116,7 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
                 variable = null,
                 text = text,
                 content = if (text != null) BotContent.PlainText else BotContent.Unsupported("validation_error"),
+                timestampMs = timestampMs,
             ),
         )
     }
@@ -114,7 +127,7 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     }
 
     if ((user == "bot" || user == "admin" || user == "operator") && data != null) {
-        val node = data.toBotNode(fallbackTargetId = targetId)
+        val node = data.toBotNode(fallbackTargetId = targetId).copy(timestampMs = timestampMs)
         val authored = if (user == "bot") node else node.copy(author = BotNode.MessageAuthor.AGENT)
         // data.nodeType wins over the envelope's own `type` when present, so only treat this as
         // a streaming chunk when the node has no nodeType of its own.
@@ -146,11 +159,25 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
                 content = if (chunkText != null) BotContent.PlainText else BotContent.Unsupported("chatgpt_message"),
                 streamId = stream_id,
                 streamEnded = end_stream ?: true,
+                timestampMs = timestampMs,
             ),
         )
     }
 
     return IncomingSocketEvent.Unhandled(this)
+}
+
+/** The backend sends `time` as "dd/MM/yyyy HH:mm:ss" in UTC (confirmed against the same field
+ * on session-init/short-data responses); converted to epoch ms here so downstream formatting
+ * with the device's default timezone renders it correctly as local time. Absent or unparseable
+ * just yields null, which callers fall back to "now" for. */
+private fun String?.parseServerTimestamp(): Long? {
+    this ?: return null
+    return runCatching {
+        val format = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.US)
+        format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        format.parse(this)?.time
+    }.getOrNull()
 }
 
 /** assigned_user -> {avatar, user_designation, operator_name}. */

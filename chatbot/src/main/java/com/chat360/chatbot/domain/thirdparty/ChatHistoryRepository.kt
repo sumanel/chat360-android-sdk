@@ -13,7 +13,8 @@ import com.chat360.chatbot.network.rest.thirdparty.ThirdPartyTasksApiService
  * chat/bot flow.
  *
  * [clientId], [botId], and [endUserId] must all be non-blank - there is intentionally no
- * partially-configured mode: history is either fully identified or fully off.
+ * partially-configured mode: history is either fully identified or fully off. [botId] itself is
+ * only used to key the local cache, never sent to `rooms/list` - see [ThirdPartyTasksApiService].
  */
 class ChatHistoryRepository(
     private val apiService: ThirdPartyTasksApiService,
@@ -30,7 +31,7 @@ class ChatHistoryRepository(
      * list on success, or null on any failure (caller should keep showing whatever it already has). */
     suspend fun refreshRooms(): List<CachedConversationEntity>? {
         val response = runCatching {
-            withAuthRetry { token -> apiService.fetchRoomsList(clientId, token, botId = botId, agentId = endUserId) }
+            withAuthRetry { token -> apiService.fetchRoomsList(clientId, token, agentId = endUserId) }
         }.onFailure { error -> Log.e("Chat360", "third-party-tasks rooms/list failed: ${error.message}", error) }
             .getOrNull() ?: return null
         val conversations = cache.thirdPartyRoomConversations(botId, response.rooms)

@@ -42,6 +42,7 @@ fun ChatInputBar(
     showEmoji: Boolean = true,
     showVoiceInput: Boolean = true,
     showSend: Boolean = true,
+    sendEnabled: Boolean = true,
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -125,10 +126,11 @@ fun ChatInputBar(
         if (showSend) Spacer(modifier = Modifier.size(12.dp))
         if (showSend) IconButton(
             onClick = onSend,
+            enabled = sendEnabled,
             modifier = Modifier
                 .size(55.dp)
                 .background(
-                    if (value.isBlank()) colors.textDisabled else colors.accent,
+                    if (!sendEnabled || value.isBlank()) colors.textDisabled else colors.accent,
                     RoundedCornerShape(0.dp),
                 ),
         ) {

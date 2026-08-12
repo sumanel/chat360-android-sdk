@@ -16,6 +16,9 @@ data class BotNode(
     val streamEnded: Boolean = true,
     /** BOT for a `user:'bot'` frame, AGENT for `user:'admin'|'operator'` - same content shapes either way. */
     val author: MessageAuthor = MessageAuthor.BOT,
+    /** The frame's real server send time (epoch ms), from [RawSocketEnvelope.time] - null only
+     * when that field was absent/unparseable, in which case the UI falls back to "now". */
+    val timestampMs: Long? = null,
 ) {
     enum class MessageAuthor { BOT, AGENT }
 }

@@ -191,6 +191,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 }
 
             if (state.isSlowConnection) StatusBanner(text = "Slow connection…", emphasized = false)
+            // Chat state is always live now (no local cache fallback - see ChatCacheRepository),
+            // so a connection failure has nothing to silently fall back to and must be surfaced.
+            if (!state.isConnected) state.error?.let { StatusBanner(text = it, emphasized = true) }
 
             pinnedWelcomeMessage?.let { pinned ->
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -279,6 +282,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     showEmoji = features.showEmoji,
                     showVoiceInput = features.showVoiceInput,
                     showSend = features.showSend,
+                    sendEnabled = !state.isAgentTyping,
                 )
             }
             }

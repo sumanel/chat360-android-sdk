@@ -121,7 +121,7 @@ val HyundaiConfig = Chat360UIConfig(
         showCopyMessage = true, showRegenerate = true, showLike = true, showDislike = true,
         showEmoji = false, showAttachment = false,
         showVoiceInput = false, showSpeechToText = true,
-        showAssistantMode = true, showAppearanceSwitcher = true,
+        showAssistantMode = false, showAppearanceSwitcher = true,
         // No Hyundai logo in the active conversation (message rows / typing indicator) - only
         // the pre-chat welcome splash still shows it.
         showBotAvatar = false,

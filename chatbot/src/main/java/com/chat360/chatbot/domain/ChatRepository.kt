@@ -50,6 +50,11 @@ class ChatRepository(
     private val historyEnabled: Boolean = true,
     private val apiService: Chat360ApiService = Chat360ApiService(baseUrl),
     private val wsClient: Chat360WebSocketClient = Chat360WebSocketClient(),
+    /** Resumes the same room/session on the next [connect] (cold app launch) instead of always
+     * allocating a new one - null disables this and every connect starts fresh, same as before.
+     * Deliberately never consulted by [startNewSession] (see its own doc) - that's a real
+     * user-initiated "start over". */
+    private val sessionStore: SessionStore? = null,
 ) {
     // encodeDefaults is essential: most wire fields (type/user/replyType/chat_msg_id/...) are
     // Kotlin default values, and kotlinx.serialization omits defaults unless told otherwise -
@@ -75,6 +80,10 @@ class ChatRepository(
      * legitimately reuses the same nodeId turn after turn with different generated text, and
      * keying on nodeId alone would silently swallow every one of those later replies. */
     private var lastDispatchedNode: BotNode? = null
+    /** When [lastDispatchedNode] was set, so the dedup below only catches a same-node frame
+     * arriving right on top of the last one (a redelivery artifact) rather than a genuine later
+     * reply that just happens to fall back to identical wording/node - see [DUPLICATE_NODE_WINDOW_MS]. */
+    private var lastDispatchedAt: Long = 0L
 
     private var onEvent: (IncomingSocketEvent) -> Unit = {}
     private var onConnected: () -> Unit = {}
@@ -139,7 +148,7 @@ class ChatRepository(
         this.onSessionResumed = onSessionResumed
         this.onBotSettingsLoaded = onBotSettingsLoaded
 
-        establishSession(onConversationStarted)
+        establishSession(onConversationStarted, resume = true)
     }
 
     /**
@@ -170,26 +179,37 @@ class ChatRepository(
         pendingInitJumpTargetId = null
         shouldAskFeedback = false
 
-        establishSession(onConversationStarted)
+        establishSession(onConversationStarted, resume = false)
     }
 
-    private suspend fun establishSession(onConversationStarted: suspend (roomId: String) -> Boolean) {
+    /** [resume] controls whether a prior session (see [sessionStore]) is offered to the backend
+     * to continue - true from [connect] (a cold app launch legitimately wants its last
+     * conversation back), false from [startNewSession] (an explicit "start over" must never
+     * resume the room it's tearing down). */
+    private suspend fun establishSession(onConversationStarted: suspend (roomId: String) -> Boolean, resume: Boolean) {
         try {
             // website_url/current_url must be URL-shaped - the backend 400s on non-URL-shaped
             // values like a bare app identifier, so the bot host itself is sent here.
             val host = baseUrl.substringAfter("://")
+            val persisted = if (resume) sessionStore?.load(botId) else null
             val session = apiService.getSession(
                 botId = botId,
                 websiteUrl = host,
                 currentUrl = "$baseUrl/web_bot/?h=$botId",
+                roomId = persisted?.roomId,
+                sessionId = persisted?.sessionToken,
             )
             ownerId = session.owner_id
             roomId = session.room_id
             currentTargetId = session.targetId
             Log.i(TAG, "Session established: owner=${session.owner_id} room=${session.room_id}")
+            sessionStore?.save(botId, PersistedSession(session.room_id, session.session_token, session.owner_id))
             shouldAskFeedback = session.configs?.should_ask_feedback ?: false
             // An INIT node means the flow hasn't started: after the socket opens, jump to the
-            // session's targetId so the bot emits its first message.
+            // session's targetId so the bot emits its first message. Confirmed against the live
+            // API that `nodeType` stays "INIT" even when resuming a room that already has real
+            // history - so this alone can't tell a genuinely fresh room from a resumed one; the
+            // hadHistory check below is what actually suppresses the jump on resume.
             if (session.nodeType == "INIT") pendingInitJumpTargetId = session.targetId
 
             val resumedAgent = session.assigned_user?.let {
@@ -212,12 +232,19 @@ class ChatRepository(
 
             fetchAppearance(host, onAppearanceLoaded)
             val hadHistory = onConversationStarted(session.room_id)
-            // Conversation-starter teaser content applies when a room has no history yet: show
-            // it as the opening bubbles instead of an empty WelcomeSplash, using the exact same
-            // wire parsing as any other frame. Suppressing the pending INIT jump while starter
-            // content is shown avoids re-requesting (and re-rendering) the exact same first
-            // node the starter fetch just displayed.
-            if (!hadHistory && loadConversationStarter(onRawIncoming)) pendingInitJumpTargetId = null
+            if (hadHistory) {
+                // A resumed room already has its opening message(s) - re-jumping to targetId
+                // would re-request (and duplicate-render) the same first node on every app
+                // reopen, on top of the real history just replayed above.
+                pendingInitJumpTargetId = null
+            } else if (loadConversationStarter(onRawIncoming)) {
+                // Conversation-starter teaser content applies when a room has no history yet:
+                // show it as the opening bubbles instead of an empty WelcomeSplash, using the
+                // exact same wire parsing as any other frame. Suppressing the pending INIT jump
+                // while starter content is shown avoids re-requesting (and re-rendering) the
+                // exact same first node the starter fetch just displayed.
+                pendingInitJumpTargetId = null
+            }
             openSocket()
         } catch (e: Exception) {
             onError(e)
@@ -364,10 +391,17 @@ class ChatRepository(
         // node-id-per-flow-step guarantee bot nodes do. Full node equality (not just nodeId) so a
         // looping flow node that lands on the same nodeId with genuinely new text/content still
         // gets through - only a byte-identical redelivered frame is treated as a duplicate.
+        // Gated by [DUPLICATE_NODE_WINDOW_MS] too: a real conversational turn (e.g. the bot's
+        // own unrecognized-input fallback landing back on the same node the welcome message
+        // used) must never be silently dropped just because it matches byte-for-byte - only a
+        // frame arriving right on top of the last one (a redelivery artifact, not a fresh reply)
+        // is treated as a duplicate.
+        val now = System.currentTimeMillis()
         if (event is IncomingSocketEvent.BotMessage &&
             event.node.author != BotNode.MessageAuthor.AGENT &&
             event.node.nodeId != null &&
-            event.node == lastDispatchedNode
+            event.node == lastDispatchedNode &&
+            (now - lastDispatchedAt) < DUPLICATE_NODE_WINDOW_MS
         ) {
             Log.d(TAG, "Duplicate bot frame dropped (redelivered): nodeId=${event.node.nodeId}")
             return
@@ -381,6 +415,7 @@ class ChatRepository(
                         "author=${event.node.author} text=${event.node.text}",
                 )
                 lastDispatchedNode = event.node
+                lastDispatchedAt = now
                 lastBotNode = event.node
                 currentTargetId = event.node.targetId ?: currentTargetId
                 handleWindowEventNode(event.node.content)
@@ -863,8 +898,9 @@ class ChatRepository(
             "User message sent: chat_msg_id=${outgoing.chat_msg_id} nodeType=${outgoing.nodeType} " +
                 "targetId=${outgoing.targetId} message=${outgoing.message}",
         )
-        wsClient.send(json.encodeToString(outgoing))
-        ackTracker.trackSend(outgoing.chat_msg_id)
+        val payload = json.encodeToString(outgoing)
+        wsClient.send(payload)
+        ackTracker.trackSend(outgoing.chat_msg_id) { wsClient.send(payload) }
         return outgoing.chat_msg_id
     }
 
@@ -881,5 +917,8 @@ class ChatRepository(
 
     private companion object {
         const val TAG = "Chat360WS"
+        /** How soon a byte-identical bot node has to arrive after the last one to be treated as
+         * a redelivery artifact rather than a genuine new reply - see [lastDispatchedAt]. */
+        const val DUPLICATE_NODE_WINDOW_MS = 2_000L
     }
 }

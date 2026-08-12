@@ -106,6 +106,16 @@ interface ChatCacheDao {
     @Query("UPDATE chat_conversations SET title = :title, updatedAt = :updatedAt WHERE id = :conversationId")
     suspend fun updateTitle(conversationId: String, title: String, updatedAt: Long)
 
+    /** Sets the title only if it hasn't been derived from a message yet (still the placeholder),
+     * so the room name is fixed by the first user message and later ones only bump updatedAt. */
+    @Query(
+        "UPDATE chat_conversations SET " +
+            "title = CASE WHEN title = 'New conversation' THEN :title ELSE title END, " +
+            "updatedAt = :updatedAt " +
+            "WHERE id = :conversationId",
+    )
+    suspend fun touchAndSetTitleIfUnset(conversationId: String, title: String, updatedAt: Long)
+
     @Query("DELETE FROM chat_conversations WHERE id = :conversationId")
     suspend fun deleteConversation(conversationId: String)
 

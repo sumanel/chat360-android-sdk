@@ -93,6 +93,13 @@ data class ChatMessage(
     val voiceMessage: VoiceMessageInfo? = null,
 )
 
+/** [timestampMs] is the frame's real server send time (see BotNode.timestampMs/
+ * IncomingSocketEvent.EchoedUserMessage.timestampMs) - null falls back to "now", which is
+ * correct for a message just sent/received live and is the only option history replay had
+ * before the server started supplying `time`. */
+fun formatMessageTime(timestampMs: Long? = null): String =
+    SimpleDateFormat("h:mm a", Locale.getDefault()).format(timestampMs?.let(::Date) ?: Date())
+
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val isConnected: Boolean = false,

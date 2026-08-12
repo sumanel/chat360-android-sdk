@@ -47,12 +47,13 @@ class ThirdPartyTasksApiService(
             ?: throw ThirdPartyMalformedResponseException("auth/token")
     }
 
-    /** [clientId], [botId], and [agentId] must all be non-blank - there is no partial/best-effort
-     * mode for identifying who the rooms belong to. */
+    /** [clientId] and [agentId] must both be non-blank - there is no partial/best-effort mode
+     * for identifying who the rooms belong to. `bot_id` is deliberately never sent: the backend
+     * rejects the request outright (400) whenever it's present, regardless of its value -
+     * omitting it returns all of this client+agent's rooms across bots instead. */
     suspend fun fetchRoomsList(
         clientId: String,
         bearerToken: String,
-        botId: String,
         agentId: String,
         limit: Int? = null,
         offset: Int? = null,
@@ -60,7 +61,6 @@ class ThirdPartyTasksApiService(
         val url = "${baseUrl.trimEnd('/')}/api/third-party-tasks/rooms/list".toHttpUrl()
             .newBuilder()
             .addQueryParameter("client_id", clientId)
-            .addQueryParameter("bot_id", botId)
             .addQueryParameter("agent_id", agentId)
             .apply { limit?.let { addQueryParameter("limit", it.toString()) } }
             .apply { offset?.let { addQueryParameter("offset", it.toString()) } }

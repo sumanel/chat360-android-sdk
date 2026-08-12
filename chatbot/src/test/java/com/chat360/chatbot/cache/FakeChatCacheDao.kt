@@ -66,6 +66,13 @@ class FakeChatCacheDao : ChatCacheDao {
         publish(existing.botId)
     }
 
+    override suspend fun touchAndSetTitleIfUnset(conversationId: String, title: String, updatedAt: Long) {
+        val existing = conversations[conversationId] ?: return
+        val newTitle = if (existing.title == "New conversation") title else existing.title
+        conversations[conversationId] = existing.copy(title = newTitle, updatedAt = updatedAt)
+        publish(existing.botId)
+    }
+
     override suspend fun deleteConversation(conversationId: String) {
         val botId = conversations.remove(conversationId)?.botId ?: return
         publish(botId)

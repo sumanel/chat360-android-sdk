@@ -31,11 +31,16 @@ class Chat360ApiService(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** [roomId]/[sessionId] resume a prior session (returned as-is by the backend, no error,
+     * when they're missing/stale/unknown - so it's always safe to pass whatever was last
+     * persisted, see ChatRepository/SessionStore) instead of allocating a brand-new room. */
     suspend fun getSession(
         botId: String,
         websiteUrl: String,
         currentUrl: String,
         standalone: Boolean = true,
+        roomId: String? = null,
+        sessionId: String? = null,
     ): SessionInitResponse {
         val url = "${baseUrl.trimEnd('/')}/api/clientwidget_updated/session/$botId".toHttpUrl()
             .newBuilder()
@@ -45,6 +50,8 @@ class Chat360ApiService(
             .addQueryParameter("country_code", "")
             .addQueryParameter("current_url", currentUrl)
             .apply { if (standalone) addQueryParameter("standalone", "true") }
+            .apply { roomId?.let { addQueryParameter("room_id", it) } }
+            .apply { sessionId?.let { addQueryParameter("session_id", it) } }
             .build()
 
         val request = Request.Builder().url(url).get().build()

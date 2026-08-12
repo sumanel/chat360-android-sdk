@@ -162,4 +162,57 @@ class IncomingEnvelopeTest {
             .joinToString("") { it.text }
         assertTrue(joinedText.contains("<strong>"))
     }
+
+    // --- `time` (server send time) parsing - see RawSocketEnvelope.time's doc ---------------
+
+    @Test
+    fun `bot message's time field parses into the node's timestampMs, UTC`() {
+        val data = buildJsonObject { put("nodeType", "TEXT"); put("questionText", "Hi") }
+        val envelope = RawSocketEnvelope(user = "bot", data = data, time = "12/08/2026 20:04:53")
+        val event = envelope.toIncomingEvent()
+        assertTrue(event is IncomingSocketEvent.BotMessage)
+        val node = (event as IncomingSocketEvent.BotMessage).node
+        val calendar = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
+            timeInMillis = requireNotNull(node.timestampMs)
+        }
+        assertEquals(2026, calendar.get(java.util.Calendar.YEAR))
+        assertEquals(java.util.Calendar.AUGUST, calendar.get(java.util.Calendar.MONTH))
+        assertEquals(12, calendar.get(java.util.Calendar.DAY_OF_MONTH))
+        assertEquals(20, calendar.get(java.util.Calendar.HOUR_OF_DAY))
+        assertEquals(4, calendar.get(java.util.Calendar.MINUTE))
+        assertEquals(53, calendar.get(java.util.Calendar.SECOND))
+    }
+
+    @Test
+    fun `echoed user message's time field parses into timestampMs`() {
+        val envelope = RawSocketEnvelope(user = "end_user", message = kotlinx.serialization.json.JsonPrimitive("hi"), time = "12/08/2026 20:04:40")
+        val event = envelope.toIncomingEvent()
+        assertTrue(event is IncomingSocketEvent.EchoedUserMessage)
+        assertTrue((event as IncomingSocketEvent.EchoedUserMessage).timestampMs != null)
+    }
+
+    @Test
+    fun `missing time field leaves timestampMs null rather than throwing`() {
+        val data = buildJsonObject { put("nodeType", "TEXT"); put("questionText", "Hi") }
+        val envelope = RawSocketEnvelope(user = "bot", data = data)
+        val event = envelope.toIncomingEvent()
+        assertEquals(null, (event as IncomingSocketEvent.BotMessage).node.timestampMs)
+    }
+
+    @Test
+    fun `timestamp_int wins over time when both present`() {
+        val data = buildJsonObject { put("nodeType", "TEXT"); put("questionText", "Hi") }
+        // Deliberately mismatched from `time` so the assertion proves timestamp_int, not time, won.
+        val envelope = RawSocketEnvelope(user = "bot", data = data, time = "01/01/2000 00:00:00", timestamp_int = "1786565354.987089")
+        val event = envelope.toIncomingEvent()
+        assertEquals(1786565354987L, (event as IncomingSocketEvent.BotMessage).node.timestampMs)
+    }
+
+    @Test
+    fun `unparseable time field leaves timestampMs null rather than throwing`() {
+        val data = buildJsonObject { put("nodeType", "TEXT"); put("questionText", "Hi") }
+        val envelope = RawSocketEnvelope(user = "bot", data = data, time = "not-a-date")
+        val event = envelope.toIncomingEvent()
+        assertEquals(null, (event as IncomingSocketEvent.BotMessage).node.timestampMs)
+    }
 }

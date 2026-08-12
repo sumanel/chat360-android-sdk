@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val httpClient = OkHttpClient()
-    private val nativePocBotId = "2e97deac-2877-495f-a568-8e0e5438fec1"
+    private val nativePocBotId = "0f22919b-fa77-4ddf-a26e-2dace99e3f83"
     private val botId = nativePocBotId
     private val flutter = false
     private val meta = mapOf(
@@ -56,7 +56,7 @@ class MainActivity : AppCompatActivity() {
         val chat360 = Chat360().getInstance()
         chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,true)
 
-        chat360.setBaseUrl("https://app.chat360.io");
+        chat360.setBaseUrl("https://staging.chat360.io");
         chat360.setHandleWindowEvent { eventData ->
             var metaMap: Map<String, String> = mapOf(
                 "dealer_id" to HYUNDAI_DEALER_CODE,
@@ -111,7 +111,15 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, ChatBotDemoActivity::class.java))
         }
         findViewById<MaterialButton>(R.id.buttonOpenNativePoc).setOnClickListener {
-            ChatComposeActivity.launch(this, botId = nativePocBotId, themePreset = Chat360ThemePreset.DEFAULT)
+            ChatComposeActivity.launch(
+                this,
+                botId = nativePocBotId,
+                baseUrl = "https://staging.chat360.io",
+                themePreset = Chat360ThemePreset.DEFAULT,
+                clientId = "6344bb99-7cd7-4985-b86f-3da0a0ee1647",
+                apiKey = "sPZq65Op.oabnSyIyxWDWI5XzgjWwPx7bfXfLpW4N", 
+                endUserId = HYUNDAI_EMPLOYEE_CODE
+            )
         }
         val hyundaiButton = findViewById<MaterialButton>(R.id.buttonOpenNativePocHyundai)
         hyundaiButton.setOnClickListener {
@@ -125,6 +133,9 @@ class MainActivity : AppCompatActivity() {
                         customTypography = HyundaiTypography
                         customBranding = HyundaiBranding
                         Chat360UIConfig = HyundaiConfig
+                        apiKey = "sPZq65Op.oabnSyIyxWDWI5XzgjWwPx7bfXfLpW4N"
+                        clientId = "6344bb99-7cd7-4985-b86f-3da0a0ee1647"
+                        endUserId = HYUNDAI_EMPLOYEE_CODE
             }
             chat360.startBot(this)
 
