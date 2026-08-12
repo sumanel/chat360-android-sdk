@@ -28,10 +28,18 @@ class AckTracker(
         timers[chatMsgId]?.cancel()
         timers[chatMsgId] = scope.launch {
             delay(retryDelaysMs[attempt])
+            // Every tick resends, including the last - each send now also actively tries to
+            // reconnect a dead socket (see ChatRepository.ensureReconnecting), so the last
+            // scheduled resend is exactly the one most likely to land right as connectivity
+            // recovers. A bare timeout on that final tick (the old behavior) would silently
+            // drop a message that a working connection was only moments away from delivering.
+            resend()
             if (attempt < retryDelaysMs.lastIndex) {
-                resend()
                 scheduleAttempt(chatMsgId, attempt + 1, resend)
             } else {
+                // One last grace window, equal to the final interval, for that last resend's
+                // ack to actually arrive before giving up.
+                delay(retryDelaysMs.last())
                 timers.remove(chatMsgId)
                 onTimeout(chatMsgId)
             }

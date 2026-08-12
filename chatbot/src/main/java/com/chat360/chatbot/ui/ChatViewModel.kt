@@ -579,6 +579,15 @@ class ChatViewModel(
         repository.reconnectNow()
     }
 
+    /** Called when the host screen returns to the foreground (see ChatScreen's own doc for why).
+     * Reuses the connected room - the same reconnect a user could trigger manually via
+     * [refreshConnection] - never a brand-new chat; only fires when there's actually a dead
+     * connection to recover, so this is a no-op on a completely normal resume. */
+    fun onAppForegrounded() {
+        if (_uiState.value.isConnected) return
+        repository.reconnectNow()
+    }
+
     fun updateFormField(messageId: String, fieldIndex: Int, value: String) {
         _uiState.update { state ->
             state.copy(
@@ -1017,16 +1026,49 @@ class ChatViewModel(
         if (text.isEmpty() && !_uiState.value.isLiveChat) return
         hasStartedConversation = true
         _uiState.update { it.copy(inputText = "") }
-        // Even with no connectivity right now, still hand this to the repository rather than
-        // failing it immediately - AckTracker retries the send for a couple of minutes, which
-        // covers the common case of a blip that clears before the retries run out. The bubble
-        // only ever flips to "Not delivered" once every retry has genuinely failed.
-        val chatMsgId = repository.sendFreeText(text)
-        appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
-        // Show the typing/loading indicator right away instead of waiting on a server
-        // typing_status event, which the bot flow (unlike a live human agent) doesn't reliably
-        // send. Skipped in live chat, where an idle agent shouldn't appear to be typing yet.
-        _uiState.update { if (it.isLiveChat) it else it.copy(isAgentTyping = true) }
+        viewModelScope.launch {
+            // Browsing a different, older conversation and sending here must continue *that*
+            // room, not whatever's still connected - switchToActiveRoomIfResumable reconnects
+            // the live socket to it first when this device can (see its own doc); appendMessage's
+            // snap-back only remains as the fallback for a room it can't resume this way.
+            switchToActiveRoomIfResumable()
+            // Even with no connectivity right now, still hand this to the repository rather than
+            // failing it immediately - AckTracker retries the send for a couple of minutes, which
+            // covers the common case of a blip that clears before the retries run out. The bubble
+            // only ever flips to "Not delivered" once every retry has genuinely failed.
+            val chatMsgId = repository.sendFreeText(text)
+            appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
+            // Show the typing/loading indicator right away instead of waiting on a server
+            // typing_status event, which the bot flow (unlike a live human agent) doesn't
+            // reliably send. Skipped in live chat, where an idle agent shouldn't appear typing.
+            _uiState.update { if (it.isLiveChat) it else it.copy(isAgentTyping = true) }
+        }
+    }
+
+    /** If the user is browsing a conversation other than the one actually connected, and this
+     * device has a persisted session for that browsed room (i.e. it connected to it itself at
+     * some point - see SessionStore.loadForRoom), reconnects the live socket to resume it. A
+     * room this device never itself connected to (e.g. one only seen in another device's
+     * history) can't be resumed this way - there is no way to rejoin a room without its session
+     * token, confirmed against the live API - so this is a no-op for it, same as before this
+     * existed. */
+    private suspend fun switchToActiveRoomIfResumable() {
+        val active = activeConversationId ?: return
+        if (active == connectedConversationId) return
+        val targetRoomId = _conversations.value.firstOrNull { it.id == active }?.roomId ?: return
+        // Mirrors startNewChat()'s own isConnected=false - the input bar is wired to it
+        // (see ChatScreen's ChatInputBar `enabled`) so nothing can be typed/sent into a room
+        // mid-switch. onConnected() flips it back true once the new socket is actually up;
+        // if switchToRoom turns out to be a no-op (no persisted session for this room, see its
+        // own doc) there's no reconnect coming to do that, so it's restored here instead.
+        _uiState.update { it.copy(isConnected = false) }
+        val switched = repository.switchToRoom(targetRoomId) { resumedRoomId ->
+            connectedConversationId = active
+            connectedRoomId = resumedRoomId
+            conversationPersisted = true
+            true
+        }
+        if (!switched) _uiState.update { it.copy(isConnected = true) }
     }
 
     override fun onCleared() {

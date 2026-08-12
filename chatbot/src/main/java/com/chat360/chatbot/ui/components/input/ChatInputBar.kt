@@ -43,6 +43,11 @@ fun ChatInputBar(
     showVoiceInput: Boolean = true,
     showSend: Boolean = true,
     sendEnabled: Boolean = true,
+    /** False while the socket is disconnected/reconnecting (e.g. mid room-switch) - disables
+     * the whole bar (typing, attach, mic, emoji, send), not just the send button, so nothing
+     * can be composed or fired off into a room that isn't actually connected yet. Re-enables
+     * itself the moment the socket reports connected again. */
+    enabled: Boolean = true,
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -57,9 +62,9 @@ fun ChatInputBar(
         if (showAttachment) Icon(
             painter = painterResource(R.drawable.ic_outline_insert_file_24),
             contentDescription = "Attach file",
-            tint = colors.textSecondary,
+            tint = if (enabled) colors.textSecondary else colors.textDisabled,
             modifier = Modifier
-                .clickable(onClick = onAttachmentClick)
+                .clickable(enabled = enabled, onClick = onAttachmentClick)
                 .padding(8.dp)
                 .size(24.dp),
         )
@@ -67,9 +72,9 @@ fun ChatInputBar(
             Icon(
                 imageVector = com.chat360.chatbot.ui.components.icons.DictateIcon,
                 contentDescription = "Dictate message",
-                tint = colors.textSecondary,
+                tint = if (enabled) colors.textSecondary else colors.textDisabled,
                 modifier = Modifier
-                    .clickable(onClick = onDictateClick)
+                    .clickable(enabled = enabled, onClick = onDictateClick)
                     .padding(8.dp)
                     .size(22.dp),
             )
@@ -85,6 +90,7 @@ fun ChatInputBar(
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
+                enabled = enabled,
                 textStyle = TextStyle(
                     fontFamily = typography.textFamily,
                     fontSize = 15.sp,
@@ -110,15 +116,15 @@ fun ChatInputBar(
                 text = "🙂",
                 fontSize = 18.sp,
                 modifier = Modifier
-                    .clickable(onClick = onEmojiClick)
+                    .clickable(enabled = enabled, onClick = onEmojiClick)
                     .padding(6.dp),
             )
             if (showVoiceInput) Icon(
                 painter = painterResource(R.drawable.chat360_ic_mic),
                 contentDescription = "Record voice message",
-                tint = colors.textSecondary,
+                tint = if (enabled) colors.textSecondary else colors.textDisabled,
                 modifier = Modifier
-                                    .clickable(onClick = onMicClick)
+                                    .clickable(enabled = enabled, onClick = onMicClick)
                                     .padding(8.dp)
                                     .size(20.dp),
             )
@@ -126,11 +132,11 @@ fun ChatInputBar(
         if (showSend) Spacer(modifier = Modifier.size(12.dp))
         if (showSend) IconButton(
             onClick = onSend,
-            enabled = sendEnabled,
+            enabled = enabled && sendEnabled,
             modifier = Modifier
                 .size(55.dp)
                 .background(
-                    if (!sendEnabled || value.isBlank()) colors.textDisabled else colors.accent,
+                    if (!enabled || !sendEnabled || value.isBlank()) colors.textDisabled else colors.accent,
                     RoundedCornerShape(0.dp),
                 ),
         ) {

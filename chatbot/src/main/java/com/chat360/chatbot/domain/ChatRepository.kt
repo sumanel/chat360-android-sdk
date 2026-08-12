@@ -74,6 +74,10 @@ class ChatRepository(
     private var pendingInitJumpTargetId: String? = null
     private var suppressReconnect = false
     private var manuallyDisconnected = false
+    /** Tracked independently of ReconnectManager's own state - see [ensureReconnecting], which
+     * needs to know "is there any point trying right now" without reaching into its internals. */
+    private var isSocketOpen = false
+    private var reconnectPending = false
     /** The last bot node actually dispatched - a dropped/flaky connection can redeliver the
      * exact same frame, which would otherwise render as a second identical bubble. Compared by
      * full node equality (not just nodeId): a looping flow node (e.g. an LLM/CUSTOMINPUT fallback)
@@ -148,7 +152,7 @@ class ChatRepository(
         this.onSessionResumed = onSessionResumed
         this.onBotSettingsLoaded = onBotSettingsLoaded
 
-        establishSession(onConversationStarted, resume = true)
+        establishSession(onConversationStarted, sessionStore?.load(botId))
     }
 
     /**
@@ -161,6 +165,33 @@ class ChatRepository(
      */
     suspend fun startNewSession(onConversationStarted: suspend (roomId: String) -> Boolean = { false }) {
         Log.i(TAG, "Starting new session (user-initiated) - tearing down room=$roomId")
+        teardownForResession()
+        establishSession(onConversationStarted, persisted = null)
+    }
+
+    /**
+     * Reconnects the live socket to a different, already-known room - one this device has
+     * connected to before and so has a persisted session for (see [SessionStore.loadForRoom]) -
+     * instead of the room [connect]/[startNewSession] last established. Unlike those, this
+     * *resumes* [targetRoomId]'s own history/session rather than allocating a new room.
+     *
+     * There is no way to resume a room without its session token - confirmed against the live
+     * API, `room_id` alone is silently ignored and a fresh room gets allocated instead - so this
+     * is a no-op (returns false) for any room this device never actually connected to itself
+     * (e.g. one only ever seen in another device's history). Callers should fall back to
+     * whatever they'd otherwise do when this returns false.
+     */
+    suspend fun switchToRoom(targetRoomId: String, onConversationStarted: suspend (roomId: String) -> Boolean = { false }): Boolean {
+        val persisted = sessionStore?.loadForRoom(botId, targetRoomId) ?: return false
+        Log.i(TAG, "Switching to room=$targetRoomId (tearing down room=$roomId)")
+        teardownForResession()
+        establishSession(onConversationStarted, persisted)
+        return true
+    }
+
+    /** Shared by [startNewSession] and [switchToRoom] - both tear down the current room's
+     * socket/session state before [establishSession] re-runs session-init for a different room. */
+    private fun teardownForResession() {
         // Suppresses handleClosed()'s auto-reconnect for this intentional close. Left set
         // until establishSession() is about to reopen the socket (not reset immediately
         // here) since wsClient.close() delivers its onClosed callback asynchronously - if it
@@ -178,20 +209,17 @@ class ChatRepository(
         lastBotNode = null
         pendingInitJumpTargetId = null
         shouldAskFeedback = false
-
-        establishSession(onConversationStarted, resume = false)
     }
 
-    /** [resume] controls whether a prior session (see [sessionStore]) is offered to the backend
-     * to continue - true from [connect] (a cold app launch legitimately wants its last
-     * conversation back), false from [startNewSession] (an explicit "start over" must never
-     * resume the room it's tearing down). */
-    private suspend fun establishSession(onConversationStarted: suspend (roomId: String) -> Boolean, resume: Boolean) {
+    /** [persisted] is the session offered to the backend to resume - the last-connected one from
+     * [connect] (a cold app launch legitimately wants its last conversation back), a specific
+     * older room from [switchToRoom], or null from [startNewSession] (an explicit "start over"
+     * must never resume the room it's tearing down). */
+    private suspend fun establishSession(onConversationStarted: suspend (roomId: String) -> Boolean, persisted: PersistedSession?) {
         try {
             // website_url/current_url must be URL-shaped - the backend 400s on non-URL-shaped
             // values like a bare app identifier, so the bot host itself is sent here.
             val host = baseUrl.substringAfter("://")
-            val persisted = if (resume) sessionStore?.load(botId) else null
             val session = apiService.getSession(
                 botId = botId,
                 websiteUrl = host,
@@ -354,6 +382,8 @@ class ChatRepository(
             wsUrl = wsUrl,
             onOpen = {
                 Log.i(TAG, "Connected (owner=$oId room=$rId)")
+                isSocketOpen = true
+                reconnectPending = false
                 heartbeat.start()
                 reconnectManager.onConnected()
                 onConnected()
@@ -372,6 +402,8 @@ class ChatRepository(
     }
 
     private fun handleClosed(code: Int?, reason: String?) {
+        isSocketOpen = false
+        reconnectPending = false
         heartbeat.stop()
         if (manuallyDisconnected) {
             Log.i(TAG, "Disconnected (manual, code=$code reason=$reason) - no reconnect")
@@ -381,8 +413,38 @@ class ChatRepository(
         }
     }
 
+    /** A send just found the socket closed - reconnect immediately instead of letting the
+     * retry (see [sendTracked]/AckTracker) just keep calling send() into a dead socket for
+     * minutes with nothing ever actually re-establishing the connection. Mirrors the web
+     * widget's WSService, which only ever completes a send once the socket is genuinely open
+     * (queuing otherwise - see its _send/_onOpen). Debounced against an already-open or
+     * already-reconnecting socket so repeated failed sends (including AckTracker's own retries
+     * of the same message) don't hammer the connection with redundant reopen attempts. */
+    private fun ensureReconnecting() {
+        if (isSocketOpen || reconnectPending) return
+        if (ownerId == null || roomId == null) return
+        reconnectPending = true
+        Log.i(TAG, "Send found the socket closed - reconnecting now (room=$roomId)")
+        manuallyDisconnected = true
+        reconnectManager.cancel()
+        wsClient.close()
+        openSocket()
+    }
+
     private fun handleIncoming(raw: String, onRawIncoming: (String) -> Unit) {
         val envelope = json.decodeFromString(RawSocketEnvelope.serializer(), raw)
+        // A slow reply (this bot's flow can take several seconds) can land after the user has
+        // already started a new chat or switched rooms, which tears down and replaces roomId -
+        // the frame is for a room nothing here is connected to anymore. Dropping it here, keyed
+        // off the frame's own room_id, is what actually prevents it from leaking into whatever
+        // room is connected by the time it arrives (ChatViewModel's activeConversationId check
+        // alone isn't enough - startNewChat sets both active and connected to the new room
+        // together, so a stale frame processed in between would pass that check too).
+        // ack/pong frames don't carry room_id at all and are unaffected by this.
+        if (envelope.room_id != null && envelope.room_id != roomId) {
+            Log.w(TAG, "Dropping frame for room=${envelope.room_id} - no longer connected (current room=$roomId)")
+            return
+        }
         heartbeat.onMessageReceived(isPong = envelope.type == "pong")
 
         val event = envelope.toIncomingEvent()
@@ -899,8 +961,10 @@ class ChatRepository(
                 "targetId=${outgoing.targetId} message=${outgoing.message}",
         )
         val payload = json.encodeToString(outgoing)
-        wsClient.send(payload)
-        ackTracker.trackSend(outgoing.chat_msg_id) { wsClient.send(payload) }
+        if (!wsClient.send(payload)) ensureReconnecting()
+        ackTracker.trackSend(outgoing.chat_msg_id) {
+            if (!wsClient.send(payload)) ensureReconnecting()
+        }
         return outgoing.chat_msg_id
     }
 

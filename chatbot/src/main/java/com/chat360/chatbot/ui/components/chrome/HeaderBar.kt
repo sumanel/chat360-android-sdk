@@ -37,6 +37,7 @@ fun HeaderBar(
     assignedAgent: AssignedAgent? = null,
     showMenu: Boolean = true,
     showNewChat: Boolean = true,
+    newChatEnabled: Boolean = true,
     onMenuClick: () -> Unit = {},
     onNewChatClick: () -> Unit = {},
     /** label -> targetId - the shortcuts button only shows when this is non-empty. */
@@ -101,10 +102,10 @@ fun HeaderBar(
         if (showNewChat) Icon(
             imageVector = AddIcon,
             contentDescription = "Start new chat",
-            tint = colors.textPrimary,
+            tint = if (newChatEnabled) colors.textPrimary else colors.textDisabled,
             modifier = Modifier
                 .size(24.dp)
-                .clickable(onClick = onNewChatClick),
+                .clickable(enabled = newChatEnabled, onClick = onNewChatClick),
         )
     }
 }

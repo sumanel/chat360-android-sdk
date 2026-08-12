@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,8 +33,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.chat360.chatbot.model.wire.AssignedAgent
 import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.ui.ChatMessage
@@ -147,6 +151,21 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 .collect { index -> if (index <= 2) viewModel.loadMoreHistory() }
         }
 
+        // A backgrounded app's socket can die silently (OS network suspension, doze, a dropped
+        // mobile connection) with no local signal until the next send just goes nowhere -
+        // reconnecting here means coming back to the app restores a live connection proactively
+        // instead of the user only finding out by typing into a dead one. See
+        // ChatViewModel.onAppForegrounded's own doc for why this reconnects rather than
+        // starting a brand-new chat.
+        val lifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) viewModel.onAppForegrounded()
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+
         val context = LocalContext.current
         LaunchedEffect(state.pendingUrlToOpen) {
             state.pendingUrlToOpen?.let { url ->
@@ -170,6 +189,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             assignedAgent = state.assignedAgent,
                             showMenu = features.showMenu && features.showHistorySidebar,
                             showNewChat = features.showNewChat,
+                            newChatEnabled = !state.isAgentTyping,
                             onMenuClick = {
                                 // Dismiss the IME first - otherwise it stays open behind the
                                 // sidebar and keeps the window resized around it, squeezing the
@@ -283,6 +303,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     showVoiceInput = features.showVoiceInput,
                     showSend = features.showSend,
                     sendEnabled = !state.isAgentTyping,
+                    enabled = state.isConnected,
                 )
             }
             }

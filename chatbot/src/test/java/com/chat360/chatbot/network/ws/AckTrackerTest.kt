@@ -9,7 +9,7 @@ import org.junit.Test
 class AckTrackerTest {
 
     @Test
-    fun `retries on the configured schedule before finally timing out`() = runTest {
+    fun `retries on the configured schedule, resending on every tick including the last, before finally timing out`() = runTest {
         var timedOutId: String? = null
         var resends = 0
         val tracker = AckTracker(scope = this, retryDelaysMs = listOf(1_000, 2_000), onTimeout = { timedOutId = it })
@@ -19,14 +19,18 @@ class AckTrackerTest {
         assertEquals(0, resends)
         assertNull(timedOutId)
 
-        advanceTimeBy(2) // first delay elapsed: resend, not yet timed out
+        advanceTimeBy(2) // first delay elapsed: resend
         assertEquals(1, resends)
+        assertNull(timedOutId)
+
+        advanceTimeBy(2_000) // second (final) delay elapsed: resend again, not yet timed out
+        assertEquals(2, resends)
         assertNull(timedOutId)
 
         advanceTimeBy(1_999)
         assertNull(timedOutId)
-        advanceTimeBy(2) // second (final) delay elapsed: give up, no further resend
-        assertEquals(1, resends)
+        advanceTimeBy(2) // grace window (equal to the final interval) elapsed: give up
+        assertEquals(2, resends)
         assertEquals("msg-1", timedOutId)
     }
 
@@ -54,10 +58,10 @@ class AckTrackerTest {
         tracker.trackSend("msg-2") {}
         tracker.acknowledge("msg-1")
 
-        advanceTimeBy(6_001) // msg-1 acked; msg-2 still short of its own 10s window
+        advanceTimeBy(6_001) // msg-1 acked; msg-2 still short of its own first (only) resend tick
         assertEquals(emptyList<String>(), timedOut)
 
-        advanceTimeBy(4_000) // msg-2 now past its 10s window
+        advanceTimeBy(14_000) // msg-2: resend at +10s, then a further 10s grace window elapses
         assertEquals(listOf("msg-2"), timedOut)
     }
 }

@@ -43,6 +43,12 @@ data class RawSocketEnvelope(
      * alongside [time] on history/live frames; preferred over it since it needs no date-format
      * parsing. */
     val timestamp_int: String? = null,
+    /** Which room this frame belongs to - present on echoed-user and bot-reply frames (absent on
+     * ack/pong, which aren't room-scoped). Lets ChatRepository drop a frame that arrives for a
+     * room it's no longer connected to (e.g. a slow reply landing just after the user starts a
+     * new chat/switches rooms) instead of it leaking into whatever room is connected by then -
+     * see ChatRepository.handleIncoming. */
+    val room_id: String? = null,
 )
 
 /** Typed result of dispatching a [RawSocketEnvelope] through the dispatch chain. */
