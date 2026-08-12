@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -46,6 +50,7 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
     val config = LocalChat360UIConfig.current
     val agent = assignedAgent.takeIf { message.author == BotNode.MessageAuthor.AGENT }
     val clipboard = LocalClipboardManager.current
+    var feedback by remember(message.id) { mutableStateOf<Boolean?>(null) }
     Column {
         if (config.features.showBotAvatar) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -87,6 +92,24 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
                 contentDescription = "Regenerate response",
                 tint = colors.textSecondary,
                 modifier = Modifier.size(20.dp).clickable { config.callbacks.onRegenerateClicked(message.id) },
+            )
+            }
+            if (config.features.showFeedback && config.features.showLike) {
+            Spacer(modifier = Modifier.size(18.dp))
+            androidx.compose.material3.Icon(
+                painter = painterResource(R.drawable.ic_outline_thumb_up_24),
+                contentDescription = "Helpful",
+                tint = if (feedback == true) colors.accent else colors.textSecondary,
+                modifier = Modifier.size(18.dp).clickable { feedback = if (feedback == true) null else true },
+            )
+            }
+            if (config.features.showFeedback && config.features.showDislike) {
+            Spacer(modifier = Modifier.size(18.dp))
+            androidx.compose.material3.Icon(
+                painter = painterResource(R.drawable.ic_outline_thumb_down_24),
+                contentDescription = "Not helpful",
+                tint = if (feedback == false) colors.accent else colors.textSecondary,
+                modifier = Modifier.size(18.dp).clickable { feedback = if (feedback == false) null else false },
             )
             }
         }
