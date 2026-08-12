@@ -22,7 +22,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
         resValue("string", "chat360_base_url", "\"https://app.chat360.io\"")
-        resValue("string", "chat360_staging_url", "\"https://staging.chat360.io\"")
+        resValue("string", "chat360_staging_url", "\"https://app.chat360.io\"")
     }
 
     buildTypes {

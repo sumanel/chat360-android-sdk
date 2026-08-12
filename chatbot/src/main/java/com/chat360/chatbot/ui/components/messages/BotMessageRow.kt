@@ -29,6 +29,7 @@ import com.chat360.chatbot.config.LocalChat360UIConfig
 import com.chat360.chatbot.ui.components.common.LogoBadge
 import com.chat360.chatbot.ui.components.messages.content.BotContentActions
 import com.chat360.chatbot.ui.components.messages.content.BotContentBody
+import com.chat360.chatbot.ui.components.messages.content.copyText
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
@@ -76,7 +77,7 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
                 painter = painterResource(R.drawable.ic_outline_content_copy_24),
                 contentDescription = "Copy response",
                 tint = colors.textSecondary,
-                modifier = Modifier.size(18.dp).clickable { clipboard.setText(AnnotatedString(message.text)) },
+                modifier = Modifier.size(18.dp).clickable { clipboard.setText(AnnotatedString(message.copyText())) },
             )
             }
             if (config.features.showRegenerate) {

@@ -3,9 +3,11 @@ package com.chat360.chatbot.ui.theme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.setValue
 import com.chat360.chatbot.config.Chat360UIConfig
@@ -21,8 +23,8 @@ enum class Chat360ThemePreset { DEFAULT, CUSTOM }
 
 val LocalChat360Colors = staticCompositionLocalOf { DefaultLightColors }
 
-class Chat360ThemeController internal constructor(initialDarkTheme: Boolean) {
-    var isDarkTheme by mutableStateOf(initialDarkTheme)
+class Chat360ThemeController internal constructor(state: MutableState<Boolean>) {
+    var isDarkTheme by state
         private set
 
     fun selectDarkTheme(isDark: Boolean) {
@@ -56,7 +58,8 @@ fun Chat360Theme(
         com.chat360.chatbot.config.DefaultTheme.DARK -> true
         com.chat360.chatbot.config.DefaultTheme.SYSTEM -> darkTheme
     }
-    val themeController = remember(config.theme) { Chat360ThemeController(initialDarkTheme) }
+    val darkThemeState = rememberSaveable(config.theme) { mutableStateOf(initialDarkTheme) }
+    val themeController = remember(darkThemeState) { Chat360ThemeController(darkThemeState) }
     val (lightColors, darkColors, typography, branding) = when (preset) {
         Chat360ThemePreset.CUSTOM ->
             Chat360ThemeBundle(

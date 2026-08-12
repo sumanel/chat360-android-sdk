@@ -51,7 +51,7 @@ class ChatComposeFragment : Fragment() {
         /** Standalone-testing entry point; the public API path (`Chat360.getChatBotView`) doesn't use this. */
         fun newInstance(
             botId: String,
-            baseUrl: String = "https://staging.chat360.io",
+            baseUrl: String = "https://app.chat360.io",
             themePreset: Chat360ThemePreset = Chat360ThemePreset.DEFAULT,
             historyEnabled: Boolean = true,
             clientId: String? = null,

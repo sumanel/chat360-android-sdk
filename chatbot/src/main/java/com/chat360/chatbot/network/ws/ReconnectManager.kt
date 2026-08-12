@@ -1,5 +1,6 @@
 package com.chat360.chatbot.network.ws
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -26,11 +27,16 @@ class ReconnectManager(
 
     /** [suppress] covers both "flow finished"/"chatbox hidden" and the superseded-session signal. */
     fun scheduleReconnect(suppress: Boolean) {
-        if (suppress) return
+        if (suppress) {
+            Log.d(TAG, "Reconnect suppressed")
+            return
+        }
         val delayMs = baseDelayMs * intervalCount
         intervalCount *= 2
+        Log.w(TAG, "Reconnect scheduled in ${delayMs}ms (nextBackoffMultiplier=$intervalCount)")
         job = scope.launch {
             delay(delayMs)
+            Log.i(TAG, "Reconnecting now")
             reconnect()
         }
     }
@@ -38,5 +44,9 @@ class ReconnectManager(
     fun cancel() {
         job?.cancel()
         job = null
+    }
+
+    private companion object {
+        const val TAG = "Chat360WS"
     }
 }

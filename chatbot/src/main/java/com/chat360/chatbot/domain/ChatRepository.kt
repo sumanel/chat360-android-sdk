@@ -1,5 +1,6 @@
 package com.chat360.chatbot.domain
 
+import android.util.Log
 import com.chat360.chatbot.common.models.ConfigService
 import com.chat360.chatbot.domain.validation.InputValidators
 import com.chat360.chatbot.domain.windowevent.WindowEventBridge
@@ -68,9 +69,12 @@ class ChatRepository(
     private var pendingInitJumpTargetId: String? = null
     private var suppressReconnect = false
     private var manuallyDisconnected = false
-    /** The last bot node id actually dispatched - a dropped/flaky connection can redeliver the
-     * exact same frame, which would otherwise render as a second identical bubble. */
-    private var lastDispatchedNodeId: String? = null
+    /** The last bot node actually dispatched - a dropped/flaky connection can redeliver the
+     * exact same frame, which would otherwise render as a second identical bubble. Compared by
+     * full node equality (not just nodeId): a looping flow node (e.g. an LLM/CUSTOMINPUT fallback)
+     * legitimately reuses the same nodeId turn after turn with different generated text, and
+     * keying on nodeId alone would silently swallow every one of those later replies. */
+    private var lastDispatchedNode: BotNode? = null
 
     private var onEvent: (IncomingSocketEvent) -> Unit = {}
     private var onConnected: () -> Unit = {}
@@ -147,6 +151,7 @@ class ChatRepository(
      * conversations together in the same room history.
      */
     suspend fun startNewSession(onConversationStarted: suspend (roomId: String) -> Boolean = { false }) {
+        Log.i(TAG, "Starting new session (user-initiated) - tearing down room=$roomId")
         // Suppresses handleClosed()'s auto-reconnect for this intentional close. Left set
         // until establishSession() is about to reopen the socket (not reset immediately
         // here) since wsClient.close() delivers its onClosed callback asynchronously - if it
@@ -181,6 +186,7 @@ class ChatRepository(
             ownerId = session.owner_id
             roomId = session.room_id
             currentTargetId = session.targetId
+            Log.i(TAG, "Session established: owner=${session.owner_id} room=${session.room_id}")
             shouldAskFeedback = session.configs?.should_ask_feedback ?: false
             // An INIT node means the flow hasn't started: after the socket opens, jump to the
             // session's targetId so the bot emits its first message.
@@ -294,6 +300,7 @@ class ChatRepository(
      * (nothing to reconnect to). */
     fun reconnectNow() {
         if (ownerId == null || roomId == null) return
+        Log.i(TAG, "Manual reconnect requested (room=$roomId)")
         // See startNewSession()'s doc: manuallyDisconnected stays set across the close so a
         // delayed async onClosed from the old socket can't slip through and schedule a
         // redundant backoff reconnect; openSocket() clears it right before reopening.
@@ -314,10 +321,12 @@ class ChatRepository(
         val wsScheme = if (baseUrl.startsWith("https")) "wss" else "ws"
         val host = baseUrl.substringAfter("://")
         val wsUrl = "$wsScheme://$host/ws/chat_updated/$oId/$rId"
+        Log.i(TAG, "Opening socket for owner=$oId room=$rId")
 
         wsClient.connect(
             wsUrl = wsUrl,
             onOpen = {
+                Log.i(TAG, "Connected (owner=$oId room=$rId)")
                 heartbeat.start()
                 reconnectManager.onConnected()
                 onConnected()
@@ -327,17 +336,20 @@ class ChatRepository(
                 }
             },
             onMessage = { raw -> handleIncoming(raw, onRawIncoming) },
-            onClosed = { _, _ -> handleClosed() },
+            onClosed = { code, reason -> handleClosed(code, reason) },
             onFailure = { t ->
-                handleClosed()
+                handleClosed(null, t.message)
                 onError(t)
             },
         )
     }
 
-    private fun handleClosed() {
+    private fun handleClosed(code: Int?, reason: String?) {
         heartbeat.stop()
-        if (!manuallyDisconnected) {
+        if (manuallyDisconnected) {
+            Log.i(TAG, "Disconnected (manual, code=$code reason=$reason) - no reconnect")
+        } else {
+            Log.w(TAG, "Disconnected unexpectedly (code=$code reason=$reason) - scheduling reconnect (suppressed=$suppressReconnect)")
             reconnectManager.scheduleReconnect(suppress = suppressReconnect)
         }
     }
@@ -349,18 +361,26 @@ class ChatRepository(
         val event = envelope.toIncomingEvent()
         // Agent-authored messages are excluded from this dedup: an agent legitimately repeating
         // themselves shouldn't be swallowed, and admin/operator frames don't carry the same
-        // node-id-per-flow-step guarantee bot nodes do.
+        // node-id-per-flow-step guarantee bot nodes do. Full node equality (not just nodeId) so a
+        // looping flow node that lands on the same nodeId with genuinely new text/content still
+        // gets through - only a byte-identical redelivered frame is treated as a duplicate.
         if (event is IncomingSocketEvent.BotMessage &&
             event.node.author != BotNode.MessageAuthor.AGENT &&
             event.node.nodeId != null &&
-            event.node.nodeId == lastDispatchedNodeId
+            event.node == lastDispatchedNode
         ) {
+            Log.d(TAG, "Duplicate bot frame dropped (redelivered): nodeId=${event.node.nodeId}")
             return
         }
         onRawIncoming(raw)
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
-                lastDispatchedNodeId = event.node.nodeId
+                Log.i(
+                    TAG,
+                    "Bot reply received: nodeId=${event.node.nodeId} nodeType=${event.node.nodeType} " +
+                        "author=${event.node.author} text=${event.node.text}",
+                )
+                lastDispatchedNode = event.node
                 lastBotNode = event.node
                 currentTargetId = event.node.targetId ?: currentTargetId
                 handleWindowEventNode(event.node.content)
@@ -370,17 +390,25 @@ class ChatRepository(
                 event.node.endUrlMessage?.let { onOpenUrl(it) }
                 if (event.node.endSessionRequested) disconnect()
             }
-            is IncomingSocketEvent.Ack -> ackTracker.acknowledge(event.chatMsgId)
+            is IncomingSocketEvent.Ack -> {
+                Log.d(TAG, "Ack received: chat_msg_id=${event.chatMsgId}")
+                ackTracker.acknowledge(event.chatMsgId)
+            }
             // The server also uses the echoed end_user message itself as a delivery ack,
             // not only the explicit `ack` type.
-            is IncomingSocketEvent.EchoedUserMessage -> ackTracker.acknowledge(event.chatMsgId)
+            is IncomingSocketEvent.EchoedUserMessage -> {
+                Log.d(TAG, "User message echoed/acked: chat_msg_id=${event.chatMsgId} text=${event.text}")
+                ackTracker.acknowledge(event.chatMsgId)
+            }
             is IncomingSocketEvent.CloseConnection -> {
+                Log.w(TAG, "Server requested close_connection (suppressReconnect=${event.suppressReconnect})")
                 if (event.suppressReconnect) suppressReconnect = true
             }
             // Closes the socket outright unless the session is configured to ask for
             // post-chat feedback afterward, in which case the prompt surfaces immediately
             // instead of waiting on an in-chrome close affordance.
             is IncomingSocketEvent.LiveChatEnded -> {
+                Log.i(TAG, "Live chat ended (shouldAskFeedback=$shouldAskFeedback)")
                 if (!shouldAskFeedback) disconnect() else onFeedbackRequested()
             }
             else -> Unit
@@ -830,12 +858,18 @@ class ChatRepository(
     }
 
     private fun sendTracked(outgoing: OutgoingMessage): String {
+        Log.i(
+            TAG,
+            "User message sent: chat_msg_id=${outgoing.chat_msg_id} nodeType=${outgoing.nodeType} " +
+                "targetId=${outgoing.targetId} message=${outgoing.message}",
+        )
         wsClient.send(json.encodeToString(outgoing))
         ackTracker.trackSend(outgoing.chat_msg_id)
         return outgoing.chat_msg_id
     }
 
     fun disconnect() {
+        Log.i(TAG, "Disconnecting (manual, final) - room=$roomId")
         manuallyDisconnected = true
         heartbeat.stop()
         reconnectManager.cancel()
@@ -843,5 +877,9 @@ class ChatRepository(
         wsClient.close()
         repoScope.cancel()
         WindowEventBridge.unregisterSession()
+    }
+
+    private companion object {
+        const val TAG = "Chat360WS"
     }
 }

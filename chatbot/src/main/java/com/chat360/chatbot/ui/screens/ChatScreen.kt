@@ -307,6 +307,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             showAssistantMode = features.showAssistantMode,
                             showAppearanceSwitcher = features.showAppearanceSwitcher && sdkConfig.theme.allowThemeSwitch,
                             conversations = conversations,
+                            activeConversationId = state.activeConversationId,
                             onConversationSelected = {
                                 viewModel.openConversation(it)
                                 showHistorySidebar = false

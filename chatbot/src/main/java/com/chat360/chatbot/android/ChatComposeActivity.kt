@@ -55,7 +55,7 @@ class ChatComposeActivity : ComponentActivity() {
         fun launch(
             context: Context,
             botId: String,
-            baseUrl: String = "https://staging.chat360.io",
+            baseUrl: String = "https://app.chat360.io",
             themePreset: Chat360ThemePreset = Chat360ThemePreset.DEFAULT,
             historyEnabled: Boolean = true,
             clientId: String? = null,

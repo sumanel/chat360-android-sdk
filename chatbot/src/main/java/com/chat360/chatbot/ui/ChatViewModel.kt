@@ -76,6 +76,13 @@ class ChatViewModel(
      * switch since a cursor is only ever meaningful within the room it came from. */
     private var previousHistoryCursor: Int? = null
 
+    /** Mirrors [activeConversationId] into [ChatUiState] so the history sidebar can highlight
+     * whichever conversation is currently open - the plain `var` above is read-only from the UI. */
+    private fun setActiveConversationId(id: String?) {
+        activeConversationId = id
+        _uiState.update { it.copy(activeConversationId = id) }
+    }
+
     init {
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
         if (chatHistoryRepository != null) {
@@ -98,7 +105,7 @@ class ChatViewModel(
                 onConnected = { _uiState.update { it.copy(isConnected = true, error = null) } },
                 onError = { e ->
                     Log.e("Chat360", "Chat connection failed: ${e.message}", e)
-                    _uiState.update { it.copy(isConnected = false) }
+                    _uiState.update { it.copy(isConnected = false, isAgentTyping = false) }
                 },
                 onSlowConnectionChanged = { slow -> _uiState.update { it.copy(isSlowConnection = slow) } },
                 onMessageTimedOut = ::handleMessageTimedOut,
@@ -154,6 +161,11 @@ class ChatViewModel(
                 // injected mid-live-session.
                 _uiState.update {
                     it.copy(
+                        // A real reply just arrived, so the "waiting for a response" loader set
+                        // optimistically in sendMessage() (or by a server typing_status) no
+                        // longer applies - clear it here as a safety net independent of whether
+                        // the server ever sent an explicit typing_status:false.
+                        isAgentTyping = false,
                         isLiveChat = when {
                             node.content is BotContent.AgentTransferNotice -> true
                             node.author == BotNode.MessageAuthor.AGENT -> true
@@ -252,7 +264,7 @@ class ChatViewModel(
     private fun appendMessage(message: ChatMessage, cacheUserMessage: Boolean = message.fromUser) {
         val target = connectedConversationId
         if (message.fromUser && !restoringFromCache && target != null && activeConversationId != target) {
-            activeConversationId = target
+            setActiveConversationId(target)
             viewModelScope.launch {
                 replayFromCache(target)
                 appendMessageNow(message, cacheUserMessage)
@@ -475,7 +487,7 @@ class ChatViewModel(
      * target with no user-authored bubble. */
     fun switchLanguage(targetId: String) {
         if (connectedConversationId != null && activeConversationId != connectedConversationId) {
-            activeConversationId = connectedConversationId
+            setActiveConversationId(connectedConversationId)
         }
         if (!_uiState.value.isConnected) repository.reconnectNow()
         streamRawText.clear()
@@ -677,6 +689,7 @@ class ChatViewModel(
                 messages = state.messages.map {
                     if (it.chatMsgId == chatMsgId) it.copy(failed = true) else it
                 },
+                isAgentTyping = false,
             )
         }
     }
@@ -694,7 +707,7 @@ class ChatViewModel(
     fun startNewChat() {
         val conversationId = java.util.UUID.randomUUID().toString()
         connectedConversationId = conversationId
-        activeConversationId = conversationId
+        setActiveConversationId(conversationId)
         streamRawText.clear()
         hasStartedConversation = false
         _uiState.update {
@@ -766,7 +779,7 @@ class ChatViewModel(
     private suspend fun activateConversation(roomId: String): Boolean {
         val (conversationId, hasCachedMessages) = cache.activateForRoom(botId, roomId, connectedConversationId)
         connectedConversationId = conversationId
-        activeConversationId = conversationId
+        setActiveConversationId(conversationId)
         previousHistoryCursor = null
         if (hasCachedMessages) {
             replayFromCache(conversationId)
@@ -877,7 +890,7 @@ class ChatViewModel(
     fun openConversation(conversationId: String) {
         if (conversationId == activeConversationId) return
         viewModelScope.launch {
-            activeConversationId = conversationId
+            setActiveConversationId(conversationId)
             previousHistoryCursor = null
             _uiState.update { it.copy(isArchived = false, isLiveChat = false, assignedAgent = null) }
             val hasCachedMessages = replayFromCache(conversationId)
@@ -906,6 +919,10 @@ class ChatViewModel(
         }
         val chatMsgId = repository.sendFreeText(text)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
+        // Show the typing/loading indicator right away instead of waiting on a server
+        // typing_status event, which the bot flow (unlike a live human agent) doesn't reliably
+        // send. Skipped in live chat, where an idle agent shouldn't appear to be typing yet.
+        _uiState.update { if (it.isLiveChat) it else it.copy(isAgentTyping = true) }
     }
 
     /** Best-effort connectivity check. Returns true (i.e. "don't block the send") when there's

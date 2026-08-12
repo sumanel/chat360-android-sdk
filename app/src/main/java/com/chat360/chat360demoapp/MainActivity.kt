@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
         // Hyundai's own dealer-validation gate, unrelated to Chat360's rooms/history API -
         // this app owns the URL, the request shape, and the identifiers entirely.
         private const val HYUNDAI_EMPLOYEE_AUTH_URL =
-            "https://staging.chat360.io/api/client_hyundai_lms/sales-executive/validate/"
+            "https://app.chat360.io/api/client_hyundai_lms/sales-executive/validate/"
         private const val HYUNDAI_DEALER_CODE = "DLR001"
         private const val HYUNDAI_EMPLOYEE_CODE = "EMP1001"
         private const val HYUNDAI_EMPLOYEE_NAME = "Rahul Sharma"
@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val httpClient = OkHttpClient()
-    private val nativePocBotId = "fca6b5ec-390f-4b50-a772-d1f972799138"
+    private val nativePocBotId = "2e97deac-2877-495f-a568-8e0e5438fec1"
     private val botId = nativePocBotId
     private val flutter = false
     private val meta = mapOf(
@@ -56,11 +56,11 @@ class MainActivity : AppCompatActivity() {
         val chat360 = Chat360().getInstance()
         chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,true)
 
-        chat360.setBaseUrl("https://staging.chat360.io");
+        chat360.setBaseUrl("https://app.chat360.io");
         chat360.setHandleWindowEvent { eventData ->
             var metaMap: Map<String, String> = mapOf(
-                "dealer_code" to HYUNDAI_DEALER_CODE,
-                "emp_code" to HYUNDAI_EMPLOYEE_CODE,
+                "dealer_id" to HYUNDAI_DEALER_CODE,
+                "emp_id" to HYUNDAI_EMPLOYEE_CODE,
             )
             if(eventData["type"] == "get_auth_chat360") {
                  metaMap = metaMap + mapOf(
@@ -72,14 +72,14 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            Handler(Looper.getMainLooper()).postDelayed({
-                chat360.sendEventToBot(mapOf(
-                    "type" to "initiate_payment_chat360",
-                    "payment_status" to "0",
-                    "message" to "not able to payment"))
-
-            }, 10_000)
-            chat360.sendEventToBot(mapOf("status" to "pending"))
+//            Handler(Looper.getMainLooper()).postDelayed({
+//                chat360.sendEventToBot(mapOf(
+//                    "type" to "initiate_payment_chat360",
+//                    "payment_status" to "0",
+//                    "message" to "not able to payment"))
+//
+//            }, 10_000)
+            chat360.sendEventToBot(metaMap)
 
             metaMap
         }

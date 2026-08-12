@@ -64,15 +64,15 @@ fun HeaderBar(
         )
         // Most useful once the socket has actually dropped, but left tappable regardless so a
         // host app always has a manual escape hatch.
-        Spacer(modifier = Modifier.width(16.dp))
-        Icon(
-            imageVector = RefreshIcon,
-            contentDescription = "Refresh chat",
-            tint = if (connected) colors.textSecondary else colors.textPrimary,
-            modifier = Modifier
-                .size(22.dp)
-                .clickable(onClick = onRefreshClick),
-        )
+        // Spacer(modifier = Modifier.width(16.dp))
+        // Icon(
+        //     imageVector = RefreshIcon,
+        //     contentDescription = "Refresh chat",
+        //     tint = if (connected) colors.textSecondary else colors.textPrimary,
+        //     modifier = Modifier
+        //         .size(22.dp)
+        //         .clickable(onClick = onRefreshClick),
+        // )
         if (shortcuts.isNotEmpty()) {
             Spacer(modifier = Modifier.width(16.dp))
             Box {

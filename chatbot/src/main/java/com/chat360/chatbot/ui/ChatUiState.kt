@@ -137,4 +137,7 @@ data class ChatUiState(
      * `CoreConfigs`) - that case simply isn't using history. Cleared on the next successful
      * refresh. */
     val isHistoryUnavailable: Boolean = false,
+    /** The conversation currently displayed, mirroring [com.chat360.chatbot.ui.ChatViewModel]'s
+     * internal `activeConversationId` - drives which row the history sidebar highlights. */
+    val activeConversationId: String? = null,
 )

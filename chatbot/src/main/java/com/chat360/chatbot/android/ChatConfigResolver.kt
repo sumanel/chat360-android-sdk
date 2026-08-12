@@ -9,7 +9,7 @@ import com.chat360.chatbot.ui.theme.Chat360Colors
 import com.chat360.chatbot.ui.theme.Chat360ThemePreset
 import com.chat360.chatbot.ui.theme.Chat360Typography
 
-private const val DEFAULT_BASE_URL = "https://staging.chat360.io"
+private const val DEFAULT_BASE_URL = "https://app.chat360.io"
 
 const val EXTRA_BOT_ID = "extra_bot_id"
 const val EXTRA_BASE_URL = "extra_base_url"

@@ -66,6 +66,7 @@ fun ChatHistorySidebar(
     showAssistantMode: Boolean,
     showAppearanceSwitcher: Boolean,
     conversations: List<CachedConversationEntity>,
+    activeConversationId: String? = null,
     onConversationSelected: (String) -> Unit,
     onConversationRenamed: (String, String) -> Unit,
     onConversationDeleted: (String) -> Unit = {},
@@ -148,6 +149,7 @@ fun ChatHistorySidebar(
                 HistoryGroup(
                     title = "Conversations",
                     items = conversations,
+                    activeConversationId = activeConversationId,
                     onConversationSelected = onConversationSelected,
                     onConversationRenamed = onConversationRenamed,
                     onConversationDeleted = onConversationDeleted,
@@ -244,6 +246,7 @@ private fun LanguageChip(label: String, selected: Boolean, onClick: () -> Unit) 
 private fun HistoryGroup(
     title: String,
     items: List<CachedConversationEntity>,
+    activeConversationId: String?,
     onConversationSelected: (String) -> Unit,
     onConversationRenamed: (String, String) -> Unit,
     onConversationDeleted: (String) -> Unit,
@@ -271,6 +274,7 @@ private fun HistoryGroup(
             ) { conversation ->
                 ConversationItem(
                     conversation = conversation,
+                    isActive = conversation.id == activeConversationId,
                     onSelected = { onConversationSelected(conversation.id) },
                     onRenamed = { onConversationRenamed(conversation.id, it) },
                     onDeleted = { onConversationDeleted(conversation.id) },
@@ -284,6 +288,7 @@ private fun HistoryGroup(
 @Composable
 private fun ConversationItem(
     conversation: CachedConversationEntity,
+    isActive: Boolean,
     onSelected: () -> Unit,
     onRenamed: (String) -> Unit,
     onDeleted: () -> Unit,
@@ -301,27 +306,31 @@ private fun ConversationItem(
         conversation.title
     }
     var title by remember(conversation.id, displayTitle) { mutableStateOf(displayTitle) }
+    val itemColor = if (isActive) colors.accent else colors.textPrimary
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(onClick = onSelected, onLongClick = { showActions = true })
-            .padding(bottom = 22.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Icon(HistoryIcon, contentDescription = null, tint = colors.textSecondary)
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(displayTitle, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(conversation.updatedAt)), fontFamily = typography.textFamily, fontSize = 13.sp, color = colors.textSecondary)
-        }
-        Column {
-            IconButton(onClick = { showActions = true }) {
-                Icon(MoreIcon, contentDescription = "Conversation options", tint = colors.textSecondary)
+    Column(modifier = Modifier.padding(bottom = 10.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(if (isActive) colors.backgroundSunken else colors.backgroundElevated, RoundedCornerShape(8.dp))
+                .combinedClickable(onClick = onSelected, onLongClick = { showActions = true })
+                .padding(horizontal = 10.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(HistoryIcon, contentDescription = null, tint = if (isActive) colors.accent else colors.textSecondary)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(displayTitle, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = itemColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(conversation.updatedAt)), fontFamily = typography.textFamily, fontSize = 13.sp, color = colors.textSecondary)
             }
-            DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
-                DropdownMenuItem(text = { Text("Rename") }, onClick = { showActions = false; showRenameDialog = true })
-                DropdownMenuItem(text = { Text("Delete") }, onClick = { showActions = false; showDeleteDialog = true })
+            Column {
+                IconButton(onClick = { showActions = true }) {
+                    Icon(MoreIcon, contentDescription = "Conversation options", tint = colors.textSecondary)
+                }
+                DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
+                    DropdownMenuItem(text = { Text("Rename") }, onClick = { showActions = false; showRenameDialog = true })
+                    DropdownMenuItem(text = { Text("Delete") }, onClick = { showActions = false; showDeleteDialog = true })
+                }
             }
         }
     }

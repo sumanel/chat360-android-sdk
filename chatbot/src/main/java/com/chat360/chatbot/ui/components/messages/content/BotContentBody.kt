@@ -1,6 +1,7 @@
 package com.chat360.chatbot.ui.components.messages.content
 
 import androidx.compose.runtime.Composable
+import com.chat360.chatbot.model.richtext.toPlainText
 import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.ui.ChatMessage
 
@@ -43,4 +44,25 @@ fun BotContentBody(message: ChatMessage, actions: BotContentActions, isLiveChat:
         BotContent.PlainText -> PlainTextContent(message.text)
         is BotContent.Unsupported -> UnsupportedContent(message.text, content)
     }
+}
+
+/**
+ * Full copy-to-clipboard text for a bot message. [ChatMessage.text] alone is only ever the
+ * question/plain-text portion - a MultiChoice/MultiOption reply's option labels are separate
+ * fields rendered *instead of* (MultiOption) or *alongside* (MultiChoice) it, so copy needs to
+ * reassemble the same text a reader actually sees rather than just that one field.
+ */
+fun ChatMessage.copyText(): String = when (val content = content) {
+    is BotContent.MultiChoice -> buildString {
+        append(text.toPlainText())
+        content.options.forEach { append('\n'); append(it.text) }
+    }
+    is BotContent.MultiOption -> buildString {
+        content.description?.let { append(it) }
+        content.options.forEach {
+            if (isNotEmpty()) append('\n')
+            append(it.text)
+        }
+    }
+    else -> text.toPlainText()
 }

@@ -21,3 +21,17 @@ data class RichText(val runs: List<Run>) {
     /** A paragraph/list-item/`<br>` boundary - rendered as a newline. */
     data object LineBreak : Run
 }
+
+/** Parses [this] as chat-safe HTML and flattens it to plain text - every tag either becomes a
+ * newline (paragraph/list-item/`<br>`) or is dropped entirely, so raw markup like `<p>`/`</p>`
+ * never leaks into e.g. a copy-to-clipboard action. */
+fun String.toPlainText(): String = RichTextParser.parse(this).toPlainText()
+
+private fun RichText.toPlainText(): String = buildString {
+    runs.forEach { run ->
+        when (run) {
+            is RichText.LineBreak -> append('\n')
+            is RichText.TextRun -> append(run.text)
+        }
+    }
+}.trim()
