@@ -3,6 +3,8 @@
 ## Overview
 The Chat360 Android SDK allows you to integrate a chatbot into your Android application. This documentation provides a quick guide to get you started with the SDK.
 
+The chat UI is a fully native Jetpack Compose screen backed by a native WebSocket/REST client — there is no WebView involved. The public API below (`Chat360`, `CoreConfigs`, `startBot`, `getChatBotView`, `setHandleWindowEvent`, `sendEventToBot`) is unchanged for existing integrations; `startBot()`/`getChatBotView()` now launch/return the native screen transparently.
+
 
 ## Setup
 
@@ -39,7 +41,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         val chat360 = Chat360().getInstance()
-        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false)
+        chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false, false)
 
         // Set custom base URL (optional)
         chat360.setBaseUrl("https://your-custom-domain.com")
@@ -87,6 +89,11 @@ findViewById<FloatingActionButton>(R.id.floatingActionButton).setOnClickListener
 - **meta**: A map of additional metadata for the chatbot.
 - **useNewUI**: boolean to use new UI.
 - **isDebug**: A additional debug tag for  Chat36O internals.
+- **historyEnabled**: Whether previous conversation history is loaded when the chat opens. Defaults to `true`.
+- **themePreset**: `Chat360ThemePreset.DEFAULT` (brand-neutral, no config needed) or `CUSTOM` (supply your own colors/typography/branding below). Defaults to `DEFAULT`.
+- **customLightColors** / **customDarkColors**: Your own `Chat360Colors` palettes, used when `themePreset = CUSTOM`.
+- **customTypography**: Your own `Chat360Typography` (fonts), used when `themePreset = CUSTOM`.
+- **customBranding**: Your own `Chat360Branding` (title, logo, welcome copy), used when `themePreset = CUSTOM`.
 
 
 
@@ -98,6 +105,23 @@ You can customize the appearance of the chatbot interface using the following op
 - **closeButtonColor**: Set the color of the close button.
 - **statusBarColorFromHex**: Set the status bar color using a hexadecimal.
 - **closeButtonColorFromHex**: Set the close button color using a hexadecimal.
+
+### Theming
+
+By default the chat UI uses a brand-neutral look with no logo (falls back to an initial-letter avatar). The SDK does not ship any client-specific branding — to apply your own brand, switch to `CUSTOM` and supply your own colors/typography/branding:
+
+```kotlin
+chat360.coreConfig!!.themePreset = Chat360ThemePreset.CUSTOM
+chat360.coreConfig!!.customBranding = Chat360Branding(
+    botTitle = "Acme Support",
+    logo = Chat360Logo.Remote("https://example.com/logo.png"),
+)
+chat360.coreConfig!!.customLightColors = Chat360Colors(/* ... */)
+chat360.coreConfig!!.customDarkColors = Chat360Colors(/* ... */)
+chat360.coreConfig!!.customTypography = Chat360Typography(/* ... */) // optional, defaults to the system font
+```
+
+Colors/branding fetched from the bot's own server-side appearance configuration (name, avatar, etc., when available) are layered on top of whichever preset you choose, so your `CUSTOM` values still act as sensible defaults.
 
 ### Advanced Configuration
 

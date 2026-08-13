@@ -2,6 +2,7 @@ package com.chat360.chatbot.common.models
 
 import android.app.Application
 import com.chat360.chatbot.common.CoreConfigs
+import com.chat360.chatbot.domain.windowevent.WindowEventBridge
 
 class ConfigService {
 
@@ -11,7 +12,7 @@ class ConfigService {
     object WebEventHandler {
         var handleWindowEvent: ((Map<String, String>) -> Map<String, String>)? = null
         var sendEventToBot: ((Map<String, String>) -> Unit)? = { event ->
-            Chat360JSBridge.send("CHAT360_WINDOW_EVENT", event)
+            WindowEventBridge.sendToActiveSession(event)
         }
     }
 

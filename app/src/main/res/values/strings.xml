@@ -2,6 +2,9 @@
     <string name="app_name">Chat360DemoApp</string>
     <string name="open_activity">Open Activity</string>
     <string name="open_activity_fragment">Open Activity + Fragment</string>
+    <string name="open_native_poc">Open Native POC (Default theme)</string>
+    <string name="open_native_poc_hyundai">Open Native POC (Hyundai theme)</string>
+    <string name="open_native_poc_maruti">Open Native POC (Maruti Suzuki theme)</string>
     <!-- TODO: Remove or change this placeholder text -->
     <string name="application_id_for_provider">com.chat360.chat360demoapp.fileprovider</string>
     <string name="default_notification_channel_id">com.chat360.chat360demoapp2.urgent</string>
