@@ -334,7 +334,11 @@ private fun ConversationItem(
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(displayTitle, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = itemColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(conversation.updatedAt)), fontFamily = typography.textFamily, fontSize = 13.sp, color = colors.textSecondary)
+                // Shows when the conversation started, not its last activity - createdAt is
+                // stable (set once on first insert; see ensureConversationPersisted /
+                // replaceAgentRoomConversations' IGNORE-conflict insert), so this stays fixed
+                // as new messages arrive, unlike updatedAt.
+                Text(SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(conversation.createdAt)), fontFamily = typography.textFamily, fontSize = 13.sp, color = colors.textSecondary)
             }
             Column {
                 IconButton(onClick = { showActions = true }) {

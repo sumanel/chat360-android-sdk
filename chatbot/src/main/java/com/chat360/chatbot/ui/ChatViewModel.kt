@@ -93,9 +93,9 @@ class ChatViewModel(
     }
 
     init {
-        // With local caching disabled (see ChatCacheRepository.ENABLED), this Flow emits an
-        // empty list exactly once and completes - the sidebar's real source of truth is the
-        // live refreshRooms() fetch below, re-run fresh every time the chat opens.
+        // Local Room cache is the primary source for the sidebar; when a third-party
+        // chatHistoryRepository is also configured (below), its refreshRooms() result can
+        // overwrite this with the live agent-room list instead.
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
         if (chatHistoryRepository != null) {
             viewModelScope.launch(Dispatchers.IO) {
@@ -285,8 +285,8 @@ class ChatViewModel(
      * point at a different, merely-browsed conversation with no live room behind it at all.
      * Sending anything while browsing an old conversation snaps the display back to the connected
      * one first, since there's nowhere else coherent for it to go - via [restoreConversation]
-     * rather than a bare cache replay, so it comes back showing its real history instead of going
-     * blank while local caching is off (see ChatCacheRepository.ENABLED). */
+     * rather than a bare cache replay, so it comes back showing its real history rather than
+     * whatever partial state was last rendered. */
     private fun appendMessage(message: ChatMessage, cacheUserMessage: Boolean = message.fromUser) {
         val target = connectedConversationId
         if (message.fromUser && !restoringFromCache && target != null && activeConversationId != target) {
@@ -328,11 +328,10 @@ class ChatViewModel(
         }
     }
 
-    /** Local caching is disabled (see ChatCacheRepository.ENABLED), so [cache.cacheUserMessage]
-     * above is a no-op - but a conversation the user has actually engaged with is real for this
-     * session and must still show in the sidebar while the app stays open, same as a freshly
-     * cached one would have. In-memory only, by design: it's gone once the ViewModel/process is
-     * gone, since nothing is meant to survive on disk right now. */
+    /** Reflects a just-sent message into the sidebar immediately, ahead of the Room flow's own
+     * (slightly async) invalidation-triggered re-query, so the entry never has a visible lag
+     * appearing after the user's first message. The DB write in [cache.cacheUserMessage] above
+     * is the durable copy; this is just the optimistic in-memory mirror of it. */
     private fun upsertLiveConversationEntry(conversationId: String, title: String) {
         val now = System.currentTimeMillis()
         val normalizedTitle = title.trim().replace(Regex("\\s+"), " ").take(80).ifBlank { "New conversation" }
@@ -343,8 +342,8 @@ class ChatViewModel(
                 botId = botId,
                 roomId = connectedRoomId,
                 // Only the first real turn names the conversation - same rule as
-                // ChatCacheDao.touchAndSetTitleIfUnset, mirrored here since this in-memory list
-                // (not that DB row) is what the sidebar actually renders while caching is off.
+                // ChatCacheDao.touchAndSetTitleIfUnset, mirrored here so the optimistic entry
+                // above matches the title the DB row will settle on.
                 title = if (existing == null || existing.title == "New conversation") normalizedTitle else existing.title,
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
@@ -833,10 +832,9 @@ class ChatViewModel(
         val wasConnected = conversationId == connectedConversationId
         val wasActive = conversationId == activeConversationId
         val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
-        // Optimistic - with local caching off (see ChatCacheRepository.ENABLED) the sidebar's
-        // list is a plain in-memory StateFlow with no observer on the DB to pick this up on its
-        // own, so it must be dropped here explicitly rather than waiting on cache.deleteConversation
-        // (a no-op) or the fire-and-forget server call below.
+        // Optimistic - dropped from the in-memory list immediately rather than waiting on
+        // cache.deleteConversation's DB write and the Room flow's own (slightly async)
+        // invalidation-triggered re-query to catch up.
         _conversations.update { it.filterNot { conversation -> conversation.id == conversationId } }
         viewModelScope.launch {
             cache.deleteConversation(conversationId)
@@ -1009,11 +1007,10 @@ class ChatViewModel(
     }
 
     /** Replays [conversationId]'s local cache if there is one; otherwise re-seeds it from the
-     * server (see [activateConversation]'s doc for why cache always wins when present). With
-     * local caching off (see ChatCacheRepository.ENABLED) the cache branch is always empty, so
-     * this always falls through to the REST fetch - which is exactly what's needed to recover a
-     * reply that arrived on the live socket while this conversation wasn't the one on screen
-     * (see [handleEvent]'s doc): the server already has it, even though nothing local does. */
+     * server (see [activateConversation]'s doc for why cache always wins when present). The REST
+     * fallback also covers a conversation with no local cache yet whose reply arrived on the live
+     * socket while it wasn't the one on screen (see [handleEvent]'s doc): the server already has
+     * it, even though nothing local does yet. */
     private suspend fun restoreConversation(conversationId: String, roomId: String?) {
         val hasCachedMessages = replayFromCache(conversationId)
         if (!hasCachedMessages && roomId != null) refreshConversationHistory(conversationId, roomId)

@@ -14,11 +14,7 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
     private val json = Json { ignoreUnknownKeys = true }
 
     companion object {
-        /** Decision: chat state stays live-only, always fetched fresh from the server, with no
-         * local fallback - every write below becomes a no-op and every read reports "nothing
-         * cached" while this is false. The DAO/schema/methods are left fully intact and
-         * functional (not deleted) so this can be flipped back to true later. */
-        const val ENABLED = false
+        const val ENABLED = true
     }
 
     fun conversations(botId: String): Flow<List<CachedConversationEntity>> =
