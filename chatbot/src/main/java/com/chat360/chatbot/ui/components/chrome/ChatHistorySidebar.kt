@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +65,7 @@ fun ChatHistorySidebar(
     isDarkTheme: Boolean,
     onThemeChanged: (Boolean) -> Unit,
     showAssistantMode: Boolean,
+    trainingModeEnabled: Boolean = true,
     showAppearanceSwitcher: Boolean,
     conversations: List<CachedConversationEntity>,
     activeConversationId: String? = null,
@@ -175,8 +177,19 @@ fun ChatHistorySidebar(
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth()) {
-                    ModeOption("Training", TrainingIcon, Modifier.weight(1f), isTrainingMode) { onAssistantModeChanged(true) }
-                    ModeOption("Customer", PersonIcon, Modifier.weight(1f), !isTrainingMode) { onAssistantModeChanged(false) }
+                    ModeOption(
+                        text = "Training",
+                        icon = TrainingIcon,
+                        modifier = Modifier.weight(1f),
+                        selected = isTrainingMode,
+                        enabled = trainingModeEnabled,
+                    ) { onAssistantModeChanged(true) }
+                    ModeOption(
+                        text = "Customer",
+                        icon = PersonIcon,
+                        modifier = Modifier.weight(1f),
+                        selected = !isTrainingMode,
+                    ) { onAssistantModeChanged(false) }
                 }
             }
             Spacer(Modifier.height(18.dp))
@@ -362,18 +375,24 @@ private fun ModeOption(
     icon: ImageVector,
     modifier: Modifier,
     selected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
-    val contentColor = if (selected) colors.accent else colors.textPrimary
+    val contentColor = when {
+        !enabled -> colors.textSecondary
+        selected -> colors.accent
+        else -> colors.textPrimary
+    }
     Row(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .background(if (selected) colors.backgroundElevated else colors.backgroundSunken)
             .then(if (selected) Modifier.border(1.dp, colors.line, RoundedCornerShape(0.dp)) else Modifier)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.5f)
             .padding(vertical = 12.dp),
     ) {
         Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(18.dp))

@@ -330,6 +330,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             isDarkTheme = themeController?.isDarkTheme == true,
                             onThemeChanged = { themeController?.selectDarkTheme(it) },
                             showAssistantMode = features.showAssistantMode,
+                            trainingModeEnabled = features.enableTrainingMode,
                             showAppearanceSwitcher = features.showAppearanceSwitcher && sdkConfig.theme.allowThemeSwitch,
                             conversations = conversations,
                             activeConversationId = state.activeConversationId,

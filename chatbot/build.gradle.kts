@@ -18,7 +18,7 @@ android {
         }
     }
     defaultConfig {
-        minSdk = 24
+        minSdk = 23
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
         resValue("string", "chat360_base_url", "\"https://app.chat360.io\"")
@@ -61,7 +61,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "com.github.chat360Mobile"
                 artifactId = "chat360_android_sdk"
-                version = "2.0.0"
+                version = "2.0.1"
             }
         }
     }

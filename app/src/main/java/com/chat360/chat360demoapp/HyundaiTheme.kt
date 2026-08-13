@@ -121,7 +121,9 @@ val HyundaiConfig = Chat360UIConfig(
         showCopyMessage = true, showRegenerate = true, showLike = true, showDislike = true,
         showEmoji = false, showAttachment = false,
         showVoiceInput = false, showSpeechToText = true,
-        showAssistantMode = false, showAppearanceSwitcher = true,
+        // Both Training/Customer options are visible, but Training is shown disabled since
+        // Hyundai is customer-facing only; the sidebar already opens on Customer by default.
+        showAssistantMode = true, enableTrainingMode = false, showAppearanceSwitcher = true,
         // No Hyundai logo in the active conversation (message rows / typing indicator) - only
         // the pre-chat welcome splash still shows it.
         showBotAvatar = false,

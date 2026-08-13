@@ -54,6 +54,9 @@ data class FeatureConfig(
     val showCamera: Boolean = true,
     val showSend: Boolean = true,
     val showAssistantMode: Boolean = false,
+    /** When showAssistantMode is on, controls whether the Training option can be selected.
+     * Set to false to show it as a disabled/greyed-out choice (e.g. Hyundai: customer-only). */
+    val enableTrainingMode: Boolean = true,
     val showAppearanceSwitcher: Boolean = false,
     val showTypingIndicator: Boolean = true,
     val enableVoicePreview: Boolean = false,
