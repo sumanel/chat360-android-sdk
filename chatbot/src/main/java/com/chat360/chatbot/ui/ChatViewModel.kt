@@ -889,7 +889,7 @@ class ChatViewModel(
             cache.messages(conversationId).forEach { cached ->
                 hasCachedMessages = true
                 when (cached.kind) {
-                    "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true), cacheUserMessage = false)
+                    "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true, timeText = formatMessageTime(cached.createdAt)), cacheUserMessage = false)
                     "RAW" -> runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }
                         .getOrNull()?.let(::handleEvent)
                 }

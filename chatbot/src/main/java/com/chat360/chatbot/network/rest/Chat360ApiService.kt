@@ -1,5 +1,6 @@
 package com.chat360.chatbot.network.rest
 
+import android.util.Log
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import com.chat360.chatbot.network.rest.dto.BotAppearanceResponse
 import com.chat360.chatbot.network.rest.dto.HistoryResponse
@@ -30,6 +31,13 @@ class Chat360ApiService(
     private val client: OkHttpClient = OkHttpClient(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    companion object {
+        /** Filter logcat by this tag alone to see only the chat-history API's request/response
+         * traffic - e.g. `adb logcat -s Chat360HistoryApi`, or type it into Android Studio's
+         * Logcat search/tag filter. */
+        const val HISTORY_LOG_TAG = "Chat360HistoryApi"
+    }
 
     /** [roomId]/[sessionId] resume a prior session (returned as-is by the backend, no error,
      * when they're missing/stale/unknown - so it's always safe to pass whatever was last
@@ -79,8 +87,19 @@ class Chat360ApiService(
             .apply { taskType?.let { addQueryParameter("task_type", it) } }
             .apply { taskValue?.let { addQueryParameter("task_value", it.toString()) } }
             .build()
-        val body = execute(Request.Builder().url(url).get().build())
-        return json.decodeFromString(HistoryResponse.serializer(), body)
+        Log.d(HISTORY_LOG_TAG, "request url=$url")
+        val body = try {
+            execute(Request.Builder().url(url).get().build())
+        } catch (e: IOException) {
+            Log.e(HISTORY_LOG_TAG, "request failed url=$url", e)
+            throw e
+        }
+        Log.d(HISTORY_LOG_TAG, "response body=$body")
+        val response = json.decodeFromString(HistoryResponse.serializer(), body)
+        response.history.forEach { item ->
+            Log.d(HISTORY_LOG_TAG, "item user=${item.user} type=${item.type} chat_msg_id=${item.chat_msg_id} time=${item.time} timestamp_int=${item.timestamp_int}")
+        }
+        return response
     }
 
     /** Multipart POST; response is a JSON array of URLs. */
