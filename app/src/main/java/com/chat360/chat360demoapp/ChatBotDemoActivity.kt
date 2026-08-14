@@ -7,7 +7,7 @@ import com.chat360.chatbot.common.Chat360
 import com.chat360.chatbot.common.CoreConfigs
 
 class ChatBotDemoActivity : AppCompatActivity() {
-    private val botId = "2e97deac-2877-495f-a568-8e0e5438fec1"
+    private val botId = "0f22919b-fa77-4ddf-a26e-2dace99e3f83"
     private val flutter = false
     val meta = mapOf(
         "Key" to "Value",

@@ -265,6 +265,17 @@ class ChatRepository(
                 // would re-request (and duplicate-render) the same first node on every app
                 // reopen, on top of the real history just replayed above.
                 pendingInitJumpTargetId = null
+                // The replay above only updates the ViewModel's local cache/UI, never this
+                // class's own currentTargetId/lastBotNode (those stay whatever teardownForResession
+                // just reset them to) - and session.targetId can't be trusted to fill that gap on
+                // a resumed room (see the nodeType comment above). Without this, a room whose
+                // current position is e.g. a validation_error re-prompt (which itself carries no
+                // targetId - see IncomingEnvelope's validation_error handling) reconnects with no
+                // known targetId at all, so the very next free-text reply goes out with
+                // targetId=null and the flow can't route it. Folding through the room's recent
+                // history the same way a live BotMessage would (see handleIncoming) recovers the
+                // last real targetId before the user can send anything.
+                seedTargetContextFromHistory(session.room_id)
             } else if (loadConversationStarter(onRawIncoming)) {
                 // Conversation-starter teaser content applies when a room has no history yet:
                 // show it as the opening bubbles instead of an empty WelcomeSplash, using the
@@ -304,6 +315,26 @@ class ChatRepository(
             // Non-fatal: a fresh room has no history yet, and a failed fetch shouldn't block
             // connecting - the live socket is the source of truth either way.
             false
+        }
+    }
+
+    /** Recovers [currentTargetId]/[lastBotNode] for a resumed room by folding through its most
+     * recent history exactly the way a live BotMessage would (see handleIncoming) - last node
+     * wins, and a node with no targetId of its own (e.g. validation_error) never blanks out a
+     * real one already found. Best-effort like loadConversationStarter()/fetchAppearance(): a
+     * failed fetch just leaves whatever session-init already provided, never blocks connecting. */
+    private suspend fun seedTargetContextFromHistory(room: String) {
+        if (!historyEnabled) return
+        try {
+            apiService.getHistory(room).history.forEach { item ->
+                val event = item.toIncomingEvent()
+                if (event is IncomingSocketEvent.BotMessage) {
+                    lastBotNode = event.node
+                    currentTargetId = event.node.targetId ?: currentTargetId
+                }
+            }
+        } catch (e: Exception) {
+            // Non-fatal - see doc above.
         }
     }
 
