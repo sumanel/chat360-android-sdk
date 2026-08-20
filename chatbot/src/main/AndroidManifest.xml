@@ -34,7 +34,8 @@ xmlns:tools="http://schemas.android.com/tools">
         <activity
             android:name=".android.ChatComposeActivity"
             android:exported="false"
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Chat360AppTheme.NoActionBar" />
         <provider
             android:name="com.chat360.chatbot.Chat360FileProvider"
             android:authorities="${applicationId}.chat360.fileprovider"

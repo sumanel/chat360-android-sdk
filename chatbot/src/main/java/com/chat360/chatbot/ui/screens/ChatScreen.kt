@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
@@ -180,7 +181,13 @@ fun ChatScreen(viewModel: ChatViewModel) {
         val pinnedWelcomeMessage = state.messages.lastOrNull()?.takeIf { !it.fromUser && it.content is BotContent.WelcomeScreen }
         val listMessages = if (pinnedWelcomeMessage != null) state.messages.dropLast(1) else state.messages
 
-        Box(modifier = Modifier.fillMaxSize()) {
+        // imePadding() is the defensive half of the keyboard-overlap fix: it makes the input bar
+        // react to the actual IME inset directly, so the layout still lands correctly even when
+        // the surrounding window doesn't physically resize on keyboard show - e.g. when this
+        // screen is embedded via ChatComposeFragment inside a host Activity that doesn't declare
+        // adjustResize, or when edge-to-edge drawing is in play. When the window *does* resize
+        // normally, the reported ime inset here is already 0, so this is a no-op in that case.
+        Box(modifier = Modifier.fillMaxSize().imePadding()) {
             Column(modifier = Modifier.fillMaxSize().background(baseColors.background)) {
                 sdkConfig.ui.header?.invoke() ?: run {
                     if (features.showMenu || features.showNewChat) {
