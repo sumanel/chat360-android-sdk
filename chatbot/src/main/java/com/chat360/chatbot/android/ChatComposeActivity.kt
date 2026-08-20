@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.view.WindowCompat
 import com.chat360.chatbot.ui.ChatViewModel
@@ -43,7 +44,7 @@ class ChatComposeActivity : ComponentActivity() {
                 SideEffect {
                     window.statusBarColor = statusBar.toArgb()
                     WindowCompat.getInsetsController(window, window.decorView)
-                        .isAppearanceLightStatusBars = false
+                        .isAppearanceLightStatusBars = statusBar.luminance() > 0.5f
                 }
                 ChatScreen(viewModel)
             }

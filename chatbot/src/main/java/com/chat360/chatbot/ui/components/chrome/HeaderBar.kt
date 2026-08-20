@@ -52,7 +52,7 @@ fun HeaderBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(colors.background)
-            .padding(horizontal = 24.dp, vertical = 18.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showMenu) Icon(

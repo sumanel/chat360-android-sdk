@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+// import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -192,7 +192,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
         // inside a host Activity that doesn't declare adjustResize. On a window that already
         // reserves space for these bars (decorFitsSystemWindows/adjustResize), the corresponding
         // inset is already 0, so both modifiers are a no-op there.
-        Box(modifier = Modifier.fillMaxSize().systemBarsPadding().imePadding()) {
+        Box(modifier = Modifier.fillMaxSize().imePadding()) {
             Column(modifier = Modifier.fillMaxSize().background(baseColors.background)) {
                 sdkConfig.ui.header?.invoke() ?: run {
                     if (features.showMenu || features.showNewChat) {
