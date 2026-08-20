@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -101,12 +102,29 @@ fun ChatInputBar(
                 decorationBox = { innerTextField ->
                     Box {
                         if (value.isEmpty()) {
-                            Text(
-                                text = placeholder,
-                                fontFamily = typography.textFamily,
-                                fontSize = 15.sp,
-                                color = colors.textSecondary,
-                            )
+                            if (!enabled) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp,
+                                        color = colors.textSecondary,
+                                    )
+                                    Spacer(modifier = Modifier.size(8.dp))
+                                    Text(
+                                        text = "Connecting…",
+                                        fontFamily = typography.textFamily,
+                                        fontSize = 15.sp,
+                                        color = colors.textSecondary,
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = placeholder,
+                                    fontFamily = typography.textFamily,
+                                    fontSize = 15.sp,
+                                    color = colors.textSecondary,
+                                )
+                            }
                         }
                         innerTextField()
                     }
