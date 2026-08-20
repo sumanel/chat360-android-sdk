@@ -61,7 +61,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "com.github.chat360Mobile"
                 artifactId = "chat360_android_sdk"
-                version = "2.0.5"
+                version = "2.0.6"
             }
         }
     }
