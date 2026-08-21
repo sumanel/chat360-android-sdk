@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -59,6 +62,7 @@ import com.chat360.chatbot.ui.components.messages.UserMessageRow
 import com.chat360.chatbot.ui.components.messages.content.BotContentActions
 import com.chat360.chatbot.ui.theme.LocalChat360Branding
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
+import com.chat360.chatbot.ui.theme.resolvedStatusBar
 import com.chat360.chatbot.ui.theme.applyOverrides
 import com.chat360.chatbot.ui.theme.LocalChat360ThemeController
 import com.chat360.chatbot.config.LocalChat360UIConfig
@@ -182,16 +186,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
         val pinnedWelcomeMessage = state.messages.lastOrNull()?.takeIf { !it.fromUser && it.content is BotContent.WelcomeScreen }
         val listMessages = if (pinnedWelcomeMessage != null) state.messages.dropLast(1) else state.messages
 
-        // systemBarsPadding() keeps the header icons and input bar clear of the status bar /
-        // gesture nav bar on host apps/devices that draw edge-to-edge - without it, some phones
-        // render the hamburger/new-chat icons up under the status bar (unreachable) and the
-        // input bar flush against the bottom edge. imePadding() is the defensive half of the
-        // keyboard-overlap fix: it makes the input bar react to the actual IME inset directly, so
-        // the layout still lands correctly even when the surrounding window doesn't physically
-        // resize on keyboard show - e.g. when this screen is embedded via ChatComposeFragment
-        // inside a host Activity that doesn't declare adjustResize. On a window that already
-        // reserves space for these bars (decorFitsSystemWindows/adjustResize), the corresponding
-        // inset is already 0, so both modifiers are a no-op there.
+        Box(modifier = Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(baseColors.resolvedStatusBar))
         Box(modifier = Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
             Column(modifier = Modifier.fillMaxSize().background(baseColors.background)) {
                 sdkConfig.ui.header?.invoke() ?: run {

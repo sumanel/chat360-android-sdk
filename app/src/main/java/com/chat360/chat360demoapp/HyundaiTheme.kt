@@ -15,12 +15,6 @@ import com.chat360.chatbot.ui.theme.Chat360Colors
 import com.chat360.chatbot.ui.theme.Chat360Logo
 import com.chat360.chatbot.ui.theme.Chat360Typography
 
-/**
- * Hyundai's look lives here, in the demo app, not in the `chatbot` library - it's one client's
- * own branding, assigned as [com.chat360.chatbot.ui.theme.Chat360ThemePreset.CUSTOM] details via
- * `CoreConfigs`, the same way any other host app would configure its own brand. The library ships
- * only the brand-neutral default preset.
- */
 val HyundaiLightColors = Chat360Colors(
     accent = Color(0xFF002C5F),
     accentContrast = Color(0xFFFFFFFF),
@@ -39,15 +33,10 @@ val HyundaiLightColors = Chat360Colors(
     cardBorder = Color(0xFFE4DCD3),
     inputBackground = Color(0xFFFFFFFF),
     inputBorder = Color(0xFFCCCCCC),
-    statusBar = Color(0xFF0E1F38),
+     statusBar = Color(0xFF8B0000), // newly added
 )
 
 val HyundaiDarkColors = Chat360Colors(
-    // Same Hyundai navy hue as the light theme, lifted to a brighter shade - the light theme's
-    // 0xFF002C5F is used directly as text/icon/border/link color throughout the UI (not just as
-    // a button fill), and that near-black navy is essentially invisible against the near-black
-    // dark background below. accentContrast flips to dark to match, so accent-filled buttons
-    // (which use accent as background + accentContrast as content color) stay legible.
     accent = Color(0xFF5599E7),
     accentContrast = Color(0xFF0B0F14),
 
@@ -75,7 +64,7 @@ val HyundaiDarkColors = Chat360Colors(
     inputBackground = Color(0xFF141A22),
     inputBorder = Color(0xFF303844),
 
-    statusBar = Color(0xFF050608),
+     statusBar = Color(0xFF050608), // newly added
 )
 private val HyundaiSansHead = FontFamily(
     Font(R.font.hyundai_sans_head_light, FontWeight.Light),

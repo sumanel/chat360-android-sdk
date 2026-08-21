@@ -2,11 +2,6 @@ package com.chat360.chatbot.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-/**
- * Generic color-token contract for the whole chat UI. Every component reads colors through
- * this holder (via [LocalChat360Colors]) - never a brand name - so a new brand is "provide a
- * new Chat360Colors pair", never a code change in a message/input/chrome component.
- */
 data class Chat360Colors(
     val accent: Color,
     val accentContrast: Color,
@@ -25,14 +20,14 @@ data class Chat360Colors(
     val cardBorder: Color,
     val inputBackground: Color,
     val inputBorder: Color,
-    val statusBar: Color,
+    val statusBar: Color? = null,
 )
 
-/**
- * All-nullable mirror of [Chat360Colors], for partial overrides coming from a client's own
- * config or the bot's server-side appearance API - only the tokens actually present override
- * the preset's base values, everything else falls through.
- */
+val Chat360DefaultStatusBarColor = Color(0xFF002C5F)
+
+val Chat360Colors.resolvedStatusBar: Color
+    get() = statusBar ?: Chat360DefaultStatusBarColor
+
 data class Chat360ColorOverrides(
     val accent: Color? = null,
     val accentContrast: Color? = null,

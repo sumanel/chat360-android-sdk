@@ -15,6 +15,7 @@ import com.chat360.chatbot.ui.screens.ChatScreen
 import com.chat360.chatbot.ui.theme.Chat360Theme
 import com.chat360.chatbot.ui.theme.Chat360ThemePreset
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
+import com.chat360.chatbot.ui.theme.resolvedStatusBar
 
 /**
  * Native chat host, reachable two ways: `Chat360.startBot()` (reads config already set on
@@ -40,7 +41,7 @@ class ChatComposeActivity : ComponentActivity() {
                 customBranding = config.customBranding,
                 config = config.Chat360UIConfig,
             ) {
-                val statusBar = LocalChat360Colors.current.statusBar
+                val statusBar = LocalChat360Colors.current.resolvedStatusBar
                 SideEffect {
                     window.statusBarColor = statusBar.toArgb()
                     WindowCompat.getInsetsController(window, window.decorView)
