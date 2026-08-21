@@ -4,22 +4,19 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.view.WindowCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import com.chat360.chatbot.ui.ChatViewModel
 import com.chat360.chatbot.ui.screens.ChatScreen
 import com.chat360.chatbot.ui.theme.Chat360Theme
 import com.chat360.chatbot.ui.theme.Chat360ThemePreset
+import com.chat360.chatbot.ui.theme.LocalChat360Colors
 
-/**
- * Fragment counterpart of [ChatComposeActivity], returned by `Chat360.getChatBotView()` for host
- * apps that embed the bot inside their own screen instead of launching a standalone Activity.
- * Config is read from Fragment arguments (never the constructor - the system recreates fragments
- * via the no-arg constructor + saved arguments on config change/process death), resolved the same
- * way as the Activity via [resolveChatConfig]. Status bar styling is intentionally left to the
- * host, which owns the surrounding Window here.
- */
 class ChatComposeFragment : Fragment() {
 
     private val config: ResolvedChatConfig by lazy { resolveChatConfig(arguments) }
@@ -42,6 +39,13 @@ class ChatComposeFragment : Fragment() {
                 customBranding = config.customBranding,
                 config = config.Chat360UIConfig,
             ) {
+                val statusBar = LocalChat360Colors.current.statusBar
+                val window = requireActivity().window
+                SideEffect {
+                    window.statusBarColor = statusBar.toArgb()
+                    WindowCompat.getInsetsController(window, window.decorView)
+                        .isAppearanceLightStatusBars = statusBar.luminance() > 0.5f
+                }
                 ChatScreen(viewModel)
             }
         }

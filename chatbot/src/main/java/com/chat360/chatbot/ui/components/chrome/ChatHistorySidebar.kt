@@ -321,13 +321,13 @@ private fun ConversationItem(
     var title by remember(conversation.id, displayTitle) { mutableStateOf(displayTitle) }
     val itemColor = if (isActive) colors.accent else colors.textPrimary
 
-    Column(modifier = Modifier.padding(bottom = 10.dp)) {
+    Column(modifier = Modifier.padding(bottom = 4.dp)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(if (isActive) colors.backgroundSunken else colors.backgroundElevated, RoundedCornerShape(8.dp))
                 .combinedClickable(onClick = onSelected, onLongClick = { showActions = true })
-                .padding(horizontal = 10.dp, vertical = 12.dp),
+                .padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.Top,
         ) {
             Icon(HistoryIcon, contentDescription = null, tint = if (isActive) colors.accent else colors.textSecondary)
