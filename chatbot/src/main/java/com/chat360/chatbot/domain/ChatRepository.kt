@@ -69,6 +69,7 @@ class ChatRepository(
 
     private var ownerId: String? = null
     private var roomId: String? = null
+    private var sessionId: String? = null
     private var currentTargetId: String? = null
     private var lastBotNode: BotNode? = null
     private var pendingInitJumpTargetId: String? = null
@@ -205,6 +206,7 @@ class ChatRepository(
 
         ownerId = null
         roomId = null
+        sessionId = null
         currentTargetId = null
         lastBotNode = null
         pendingInitJumpTargetId = null
@@ -229,6 +231,7 @@ class ChatRepository(
             )
             ownerId = session.owner_id
             roomId = session.room_id
+            sessionId = session.session_id ?: session.session_token
             currentTargetId = session.targetId
             Log.i(TAG, "Session established: owner=${session.owner_id} room=${session.room_id}")
             sessionStore?.save(botId, PersistedSession(session.room_id, session.session_token, session.owner_id))
@@ -379,6 +382,8 @@ class ChatRepository(
             onAppearanceLoaded(null, null)
         }
     }
+    
+    fun currentSessionId(): String? = sessionId
 
     /** User-triggered "refresh this chat" action - reconnects immediately with the same
      * ownerId/roomId (unlike [startNewSession], which gets a whole new room), bypassing

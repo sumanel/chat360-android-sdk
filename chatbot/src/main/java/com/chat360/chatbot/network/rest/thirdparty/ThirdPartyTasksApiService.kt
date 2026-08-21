@@ -24,8 +24,6 @@ import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-/** Raw OkHttp + kotlinx.serialization REST client for the `third-party-tasks` API family that
- * backs the SDK's rooms/history list. */
 class ThirdPartyTasksApiService(
     private val baseUrl: String,
     private val client: OkHttpClient = OkHttpClient(),
@@ -115,6 +113,58 @@ class ThirdPartyTasksApiService(
         val responseBody = execute(request)
         return json.decodeFromString(RoomStatusEnvelope.serializer(), responseBody).data
             ?: throw ThirdPartyMalformedResponseException("room/update/status")
+    }
+
+    suspend fun submitMessageFeedback(
+        roomId: String,
+        sessionId: String,
+        bearerToken: String,
+        messageId: String,
+        query: String,
+        response: String,
+        feedback: String,
+        remarks: String?,
+    ) {
+        val url = "${baseUrl.trimEnd('/')}/api/third-party-tasks/feedback/queries"
+        val body = buildJsonObject {
+            put("room_id", roomId)
+            put("session_id", sessionId)
+            put("data", buildJsonObject {
+                put("message_id", messageId)
+                put("query", query)
+                put("response", response)
+                put("feedback", feedback)
+                put("Remarks", remarks)
+            })
+        }.toString().toRequestBody(jsonMediaType)
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $bearerToken")
+            .patch(body)
+            .build()
+        execute(request)
+    }
+
+    suspend fun submitPeriodicFeedback(
+        roomId: String,
+        sessionId: String,
+        bearerToken: String,
+        feedback: String,
+    ) {
+        val url = "${baseUrl.trimEnd('/')}/api/third-party-tasks/feedback"
+        val body = buildJsonObject {
+            put("room_id", roomId)
+            put("session_id", sessionId)
+            put("data", buildJsonObject {
+                put("feedback", feedback)
+            })
+        }.toString().toRequestBody(jsonMediaType)
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $bearerToken")
+            .patch(body)
+            .build()
+        execute(request)
     }
 
     private suspend fun execute(request: Request): String = suspendCancellableCoroutine { cont ->

@@ -31,26 +31,29 @@ import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.ui.ChatMessage
 import com.chat360.chatbot.config.LocalChat360UIConfig
 import com.chat360.chatbot.ui.components.common.LogoBadge
+import com.chat360.chatbot.ui.components.feedback.FeedbackRemarksDialog
 import com.chat360.chatbot.ui.components.messages.content.BotContentActions
 import com.chat360.chatbot.ui.components.messages.content.BotContentBody
 import com.chat360.chatbot.ui.components.messages.content.copyText
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
-/**
- * Row chrome (avatar, name label, card, timestamp) shared by every bot content type. When
- * [message] is agent-authored and [assignedAgent] is known, the name/avatar swap to the human
- * agent's instead of the bot's, applied per-message since this app has no persistent header
- * identity to swap instead.
- */
 @Composable
-fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: Boolean = false, assignedAgent: AssignedAgent? = null) {
+fun BotMessageRow(
+    message: ChatMessage,
+    actions: BotContentActions,
+    isLiveChat: Boolean = false,
+    assignedAgent: AssignedAgent? = null,
+    onFeedback: (liked: Boolean, remarks: String?) -> Unit = { _, _ -> },
+    onClearFeedback: () -> Unit = {},
+) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
     val config = LocalChat360UIConfig.current
     val agent = assignedAgent.takeIf { message.author == BotNode.MessageAuthor.AGENT }
     val clipboard = LocalClipboardManager.current
-    var feedback by remember(message.id) { mutableStateOf<Boolean?>(null) }
+    val feedback = message.liked
+    var showDislikeDialog by remember(message.id) { mutableStateOf(false) }
     Column {
         if (config.features.showBotAvatar) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -100,7 +103,13 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
                 painter = painterResource(R.drawable.ic_outline_thumb_up_24),
                 contentDescription = "Helpful",
                 tint = if (feedback == true) colors.accent else colors.textSecondary,
-                modifier = Modifier.size(18.dp).clickable { feedback = if (feedback == true) null else true },
+                modifier = Modifier.size(18.dp).clickable {
+                    if (feedback == true) {
+                        onClearFeedback()
+                    } else {
+                        onFeedback(true, null)
+                    }
+                },
             )
             }
             if (config.features.showFeedback && config.features.showDislike) {
@@ -109,9 +118,24 @@ fun BotMessageRow(message: ChatMessage, actions: BotContentActions, isLiveChat: 
                 painter = painterResource(R.drawable.ic_outline_thumb_down_24),
                 contentDescription = "Not helpful",
                 tint = if (feedback == false) colors.accent else colors.textSecondary,
-                modifier = Modifier.size(18.dp).clickable { feedback = if (feedback == false) null else false },
+                modifier = Modifier.size(18.dp).clickable {
+                    if (feedback == false) {
+                        onClearFeedback()
+                    } else {
+                        showDislikeDialog = true
+                    }
+                },
             )
             }
         }
+    }
+    if (showDislikeDialog) {
+        FeedbackRemarksDialog(
+            onSubmit = { remarks ->
+                showDislikeDialog = false
+                onFeedback(false, remarks)
+            },
+            onDismiss = { showDislikeDialog = false },
+        )
     }
 }

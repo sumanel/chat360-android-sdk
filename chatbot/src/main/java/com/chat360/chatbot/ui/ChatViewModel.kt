@@ -11,6 +11,7 @@ import com.chat360.chatbot.cache.ChatCacheRepository
 import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.SharedPreferencesSessionStore
 import com.chat360.chatbot.domain.thirdparty.ChatHistoryRepository
+import com.chat360.chatbot.domain.thirdparty.MessageFeedbackRepository
 import com.chat360.chatbot.domain.thirdparty.ThirdPartyTokenManager
 import com.chat360.chatbot.network.rest.thirdparty.ThirdPartyTasksApiService
 import com.chat360.chatbot.domain.validation.FormFieldValidator
@@ -21,6 +22,7 @@ import com.chat360.chatbot.model.wire.IncomingSocketEvent
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import com.chat360.chatbot.model.wire.toIncomingEvent
 import com.chat360.chatbot.network.rest.dto.SessionLanguage
+import com.chat360.chatbot.ui.components.messages.content.copyText
 import com.chat360.chatbot.ui.theme.toColorOverrides
 import com.chat360.chatbot.ui.theme.toLogoOverride
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +41,7 @@ class ChatViewModel(
     private val botId: String,
     private val cache: ChatCacheRepository,
     private val chatHistoryRepository: ChatHistoryRepository? = null,
+    private val messageFeedbackRepository: MessageFeedbackRepository? = null,
     private val suppressInitialBotMessages: Boolean = false,
 ) : ViewModel() {
 
@@ -79,7 +82,17 @@ class ChatViewModel(
     /** Set only while [appendMessage]'s browsing-snap-back restore is in flight for this exact
      * chatMsgId - see its doc for why. */
     private var pendingSnapBackChatMsgId: String? = null
+    /** The `chat_messages` row id [cacheIncomingEnvelope] just wrote for the raw envelope
+     * [handleEvent] is about to dispatch - consumed (and cleared) at the top of [handleEvent] so
+     * the resulting ChatMessage can be stamped with the row backing it. Relies on
+     * ChatRepository.handleIncoming calling onRawIncoming then onEvent synchronously for the same
+     * frame; stays null for replay paths, which never go through [cacheIncomingEnvelope]. */
+    private var lastCachedRowId: Long? = null
     private val cacheJson = Json { ignoreUnknownKeys = true }
+    /** Bot messages seen since the last periodic feedback prompt (or since connect) - compared
+     * against [nextPeriodicFeedbackThreshold] in [registerBotMessageForFeedback]. */
+    private var botMessagesSinceFeedback = 0
+    private var nextPeriodicFeedbackThreshold = (3..5).random()
     /** The active conversation's `previous_cursor` for [loadMoreHistory] - set by whichever
      * fetch (seed or "load more") most recently ran, reset to null on every conversation
      * switch since a cursor is only ever meaningful within the room it came from. */
@@ -145,6 +158,11 @@ class ChatViewModel(
     }
 
     private fun handleEvent(event: IncomingSocketEvent) {
+        // Consumed here (not left for the BotMessage branch below) so it's cleared on every call
+        // regardless of which branch runs or whether this event even reaches one - otherwise a
+        // stale id could leak onto an unrelated later message.
+        val cachedRowId = lastCachedRowId
+        lastCachedRowId = null
         // A live frame arriving while the user is browsing a different (non-connected)
         // conversation from the drawer must not render into that unrelated transcript - it still
         // got cached correctly (cacheIncomingEnvelope keys off connectedConversationId, not
@@ -162,6 +180,12 @@ class ChatViewModel(
                 // WINDOW_EVENT node never renders a bubble at all - it only drives the bridge.
                 if (node.text == null && node.content is BotContent.Unsupported) return
                 if (node.content is BotContent.WindowEvent) return
+                // Counted once per complete bot bubble, not per streamed chunk - a streaming
+                // reply only counts on its final chunk (streamEnded); history replay never counts
+                // at all, or every app reopen would immediately re-trigger the prompt.
+                if (!restoringFromCache && (node.streamId == null || node.streamEnded)) {
+                    registerBotMessageForFeedback()
+                }
                 // isLiveChat flips true on the transfer notice OR any admin/operator-authored
                 // message, and also flips back false on the next bot-authored message (rather
                 // than staying true until an explicit update_status). That's a deliberate
@@ -187,7 +211,7 @@ class ChatViewModel(
                 // its streamId instead of appending a new one; the flow stays paused (handled by
                 // the always-open input bar already) until a chunk arrives with streamEnded=true.
                 if (node.streamId != null) {
-                    appendOrMergeStreamChunk(node)
+                    appendOrMergeStreamChunk(node, cachedRowId)
                     return
                 }
                 appendMessage(
@@ -197,6 +221,7 @@ class ChatViewModel(
                         timeText = formatMessageTime(node.timestampMs),
                         content = node.content,
                         author = node.author,
+                        cacheRowId = cachedRowId,
                         formState = if (node.content is BotContent.Form) FormState() else null,
                         promptState = if (
                             node.content is BotContent.EmailPrompt ||
@@ -256,19 +281,23 @@ class ChatViewModel(
      * re-parses this same accumulated string on every recomposition, so no stripping happens here. */
     private val streamRawText = mutableMapOf<String, String>()
 
-    private fun appendOrMergeStreamChunk(node: BotNode) {
+    private fun appendOrMergeStreamChunk(node: BotNode, cachedRowId: Long?) {
         val streamId = node.streamId ?: return
         val mergedRaw = streamRawText.getOrDefault(streamId, "") + node.text.orEmpty()
         if (node.streamEnded) streamRawText.remove(streamId) else streamRawText[streamId] = mergedRaw
         _uiState.update { state ->
             val index = state.messages.indexOfLast { it.streamId == streamId }
             if (index >= 0) {
-                val merged = state.messages[index].copy(text = mergedRaw)
+                // Track the latest chunk's row so a like/dislike tapped mid-stream persists to
+                // wherever the bubble's text currently ends - falls back to whatever row this
+                // bubble already had if the newest chunk wasn't cached (e.g. conversation not
+                // yet persisted, see cacheIncomingEnvelope).
+                val merged = state.messages[index].copy(text = mergedRaw, cacheRowId = cachedRowId ?: state.messages[index].cacheRowId)
                 state.copy(messages = state.messages.toMutableList().apply { this[index] = merged })
             } else {
                 state.copy(
                     messages = state.messages.map { it.copy(repliesEnabled = false) } +
-                        ChatMessage(text = mergedRaw, fromUser = false, streamId = streamId),
+                        ChatMessage(text = mergedRaw, fromUser = false, streamId = streamId, cacheRowId = cachedRowId),
                 )
             }
         }
@@ -364,6 +393,54 @@ class ChatViewModel(
         }
         val chatMsgId = repository.sendQuickReply(option)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = option.text, fromUser = true))
+    }
+
+    /**
+     * Records a thumbs up/down on a bot message: updates [ChatUiState.messages] immediately so
+     * the icon reflects it, persists it to the local cache row backing this message (via
+     * [ChatMessage.cacheRowId]) so it survives leaving and reopening the conversation, and -
+     * separately, only when that backend is configured ([messageFeedbackRepository] is non-null,
+     * see [Factory]) and the session is established - submits it to the `third-party-tasks`
+     * feedback endpoint. [remarks] must be null for a like; for a dislike the UI collects a
+     * required 20+ char reason before calling this (see FeedbackRemarksDialog). `query`/`response`
+     * are the user turn that led to this bot message and the message's own display text - the
+     * nearest preceding user message in [messages][ChatUiState.messages] is used since bot
+     * messages don't carry a link to the turn that prompted them.
+     */
+    fun submitMessageFeedback(messageId: String, liked: Boolean, remarks: String?) {
+        val messages = _uiState.value.messages
+        val index = messages.indexOfFirst { it.id == messageId }
+        if (index < 0) return
+        val message = messages[index]
+        _uiState.update { state ->
+            state.copy(messages = state.messages.map { if (it.id == messageId) it.copy(liked = liked) else it })
+        }
+        persistMessageFeedback(message.cacheRowId, liked)
+
+        val repo = messageFeedbackRepository ?: return
+        val roomId = connectedRoomId ?: return
+        val sessionId = repository.currentSessionId() ?: return
+        val query = messages.subList(0, index).lastOrNull { it.fromUser }?.text.orEmpty()
+        val response = message.copyText()
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.submit(roomId, sessionId, messageId, query, response, liked, remarks)
+        }
+    }
+
+    /** Un-sets a previously given thumbs up/down (tapping the same icon again) - local/cache only,
+     * mirroring the existing UI behavior of never calling the feedback endpoint for a retraction
+     * (it has no "unset" concept). */
+    fun clearMessageFeedback(messageId: String) {
+        val message = _uiState.value.messages.find { it.id == messageId } ?: return
+        _uiState.update { state ->
+            state.copy(messages = state.messages.map { if (it.id == messageId) it.copy(liked = null) else it })
+        }
+        persistMessageFeedback(message.cacheRowId, null)
+    }
+
+    private fun persistMessageFeedback(cacheRowId: Long?, liked: Boolean?) {
+        cacheRowId ?: return
+        viewModelScope.launch(Dispatchers.IO) { cache.setMessageFeedback(cacheRowId, liked) }
     }
 
     /** Answers a RATING node - disables the row and shows the value as the outgoing bubble. */
@@ -749,6 +826,32 @@ class ChatViewModel(
         _uiState.update { it.copy(showFeedbackPrompt = false) }
     }
 
+    /** Bumps the periodic-feedback counter on every real bot bubble and, once it hits the
+     * current random 3-5 threshold, shows [PeriodicFeedbackDialog] and re-rolls the threshold
+     * for next time. A no-op if the `third-party-tasks` feedback backend isn't configured
+     * ([messageFeedbackRepository] null) or the prompt is already showing. */
+    private fun registerBotMessageForFeedback() {
+        if (messageFeedbackRepository == null) return
+        if (_uiState.value.showPeriodicFeedbackPrompt) return
+        botMessagesSinceFeedback++
+        if (botMessagesSinceFeedback < nextPeriodicFeedbackThreshold) return
+        botMessagesSinceFeedback = 0
+        nextPeriodicFeedbackThreshold = (3..5).random()
+        _uiState.update { it.copy(showPeriodicFeedbackPrompt = true) }
+    }
+
+    /** Submits the mandatory periodic check-in and closes the dialog - the dialog itself has no
+     * cancel path, so this is the only caller. */
+    fun submitPeriodicFeedback(feedback: String) {
+        _uiState.update { it.copy(showPeriodicFeedbackPrompt = false) }
+        val repo = messageFeedbackRepository ?: return
+        val roomId = connectedRoomId ?: return
+        val sessionId = repository.currentSessionId() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.submitPeriodic(roomId, sessionId, feedback)
+        }
+    }
+
     private fun updateAttachment(messageId: String, transform: (Attachment) -> Attachment) {
         _uiState.update { state ->
             state.copy(
@@ -790,6 +893,8 @@ class ChatViewModel(
         setActiveConversationId(conversationId)
         streamRawText.clear()
         hasStartedConversation = false
+        botMessagesSinceFeedback = 0
+        nextPeriodicFeedbackThreshold = (3..5).random()
         _uiState.update {
             it.copy(
                 messages = emptyList(),
@@ -801,6 +906,7 @@ class ChatViewModel(
                 isArchived = false,
                 voiceDraft = null,
                 showFeedbackPrompt = false,
+                showPeriodicFeedbackPrompt = false,
                 pendingUrlToOpen = null,
                 hasMoreHistory = false,
             )
@@ -890,14 +996,41 @@ class ChatViewModel(
                 hasCachedMessages = true
                 when (cached.kind) {
                     "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true, timeText = formatMessageTime(cached.createdAt)), cacheUserMessage = false)
-                    "RAW" -> runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }
-                        .getOrNull()?.let(::handleEvent)
+                    "RAW" -> {
+                        val event = runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }.getOrNull()
+                        if (event != null) {
+                            handleEvent(event)
+                            if (event is IncomingSocketEvent.BotMessage) {
+                                attachCachedFeedback(cached.id, cached.liked, event.node.streamId)
+                            }
+                        }
+                    }
                 }
             }
         } finally {
             restoringFromCache = false
         }
         return hasCachedMessages
+    }
+
+    /** Stamps a just-replayed bot bubble with the `chat_messages` row backing it, and restores
+     * any previously saved thumbs up/down - called right after [handleEvent] renders one RAW
+     * cache entry, since that's the only place with both the row id and the resulting ChatMessage
+     * in scope together (live dispatch instead threads this through [lastCachedRowId]). For a
+     * streaming bubble made of several chunk rows, [liked] only overwrites the target's existing
+     * value when non-null, so a later chunk's un-rated row can't clobber an earlier tap. */
+    private fun attachCachedFeedback(rowId: Long, liked: Boolean?, streamId: String?) {
+        _uiState.update { state ->
+            val index = if (streamId != null) state.messages.indexOfLast { it.streamId == streamId } else state.messages.lastIndex
+            if (index < 0) return@update state
+            val target = state.messages[index]
+            if (target.fromUser) return@update state
+            state.copy(
+                messages = state.messages.toMutableList().apply {
+                    this[index] = target.copy(cacheRowId = rowId, liked = liked ?: target.liked)
+                },
+            )
+        }
     }
 
     /** Seeds a conversation that has no local messages yet from the room's server snapshot -
@@ -974,9 +1107,9 @@ class ChatViewModel(
             pendingRawEnvelopes += raw
             return
         }
-        runCatching {
+        lastCachedRowId = runCatching {
             runBlocking(Dispatchers.IO) { cache.cacheRaw(conversationId, raw) }
-        }
+        }.getOrNull()
     }
 
     /** Commits [connectedConversationId] as a real cache row the first time the user sends a
@@ -1086,7 +1219,15 @@ class ChatViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             val cache = ChatCacheRepository(ChatCacheDatabase.get(context).dao())
-            val chatHistoryRepository = buildChatHistoryRepository(cache)
+            val trimmedClientId = clientId?.trim()?.takeIf { it.isNotEmpty() }
+            val trimmedApiKey = apiKey?.trim()?.takeIf { it.isNotEmpty() }
+            val trimmedEndUserId = endUserId?.trim()?.takeIf { it.isNotEmpty() }
+            // Both history (rooms/list) and per-message feedback ride the same `third-party-tasks`
+            // bearer-token auth - shared here so a host app that configures both doesn't fetch/
+            // cache two independent tokens for the identical clientId/apiKey pair.
+            val thirdParty = buildThirdPartyAuth(trimmedClientId, trimmedApiKey)
+            val chatHistoryRepository = buildChatHistoryRepository(cache, thirdParty, trimmedClientId, trimmedApiKey, trimmedEndUserId)
+            val messageFeedbackRepository = thirdParty?.let { (api, tokenManager) -> MessageFeedbackRepository(api, tokenManager) }
             return ChatViewModel(
                 repository = ChatRepository(
                     baseUrl,
@@ -1097,8 +1238,19 @@ class ChatViewModel(
                 botId = botId,
                 cache = cache,
                 chatHistoryRepository = chatHistoryRepository,
+                messageFeedbackRepository = messageFeedbackRepository,
                 suppressInitialBotMessages = suppressInitialBotMessages,
             ) as T
+        }
+
+        /** Builds the shared `third-party-tasks` API client + token manager once [clientId]/
+         * [apiKey] are both set - null otherwise (feedback and history both stay disabled).
+         * Doesn't log on its own; [buildChatHistoryRepository] below owns the one loud
+         * misconfiguration warning shared by both features. */
+        private fun buildThirdPartyAuth(clientId: String?, apiKey: String?): Pair<ThirdPartyTasksApiService, ThirdPartyTokenManager>? {
+            if (clientId == null || apiKey == null) return null
+            val api = ThirdPartyTasksApiService(baseUrl)
+            return api to ThirdPartyTokenManager(api, clientId, apiKey)
         }
 
         /** History (the rooms list backed by the `third-party-tasks` API) requires [clientId],
@@ -1106,32 +1258,37 @@ class ChatViewModel(
          * Leaving all three third-party fields unset is a valid choice (history is simply off);
          * setting only some of them is almost certainly a host-app integration mistake, so it's
          * always logged loudly - but never crashes the host app, in any build type, since a
-         * third-party SDK misconfiguration must never be able to take down the whole app. */
-        private fun buildChatHistoryRepository(cache: ChatCacheRepository): ChatHistoryRepository? {
-            val trimmedClientId = clientId?.trim()?.takeIf { it.isNotEmpty() }
-            val trimmedApiKey = apiKey?.trim()?.takeIf { it.isNotEmpty() }
-            val trimmedEndUserId = endUserId?.trim()?.takeIf { it.isNotEmpty() }
-            val hasAnyThirdPartyConfig = trimmedClientId != null || trimmedApiKey != null || trimmedEndUserId != null
-            if (trimmedClientId == null || trimmedApiKey == null || trimmedEndUserId == null || botId.isBlank()) {
+         * third-party SDK misconfiguration must never be able to take down the whole app.
+         * Per-message feedback ([MessageFeedbackRepository]) only needs [clientId]/[apiKey] (see
+         * [thirdParty]) and isn't gated by [endUserId] here - it has no concept of "whose room". */
+        private fun buildChatHistoryRepository(
+            cache: ChatCacheRepository,
+            thirdParty: Pair<ThirdPartyTasksApiService, ThirdPartyTokenManager>?,
+            clientId: String?,
+            apiKey: String?,
+            endUserId: String?,
+        ): ChatHistoryRepository? {
+            val hasAnyThirdPartyConfig = clientId != null || apiKey != null || endUserId != null
+            if (thirdParty == null || clientId == null || endUserId == null || botId.isBlank()) {
                 if (hasAnyThirdPartyConfig) {
                     Log.e(
                         "Chat360",
                         "Chat360 history is misconfigured: clientId, apiKey, and endUserId must ALL " +
                             "be set together (botId is already required) to enable the rooms/history " +
-                            "list. Got clientId=${trimmedClientId != null}, apiKey=${trimmedApiKey != null}, " +
-                            "endUserId=${trimmedEndUserId != null}. History will stay disabled until all are provided.",
+                            "list. Got clientId=${clientId != null}, apiKey=${apiKey != null}, " +
+                            "endUserId=${endUserId != null}. History will stay disabled until all are provided.",
                     )
                 }
                 return null
             }
-            val thirdPartyApi = ThirdPartyTasksApiService(baseUrl)
+            val (thirdPartyApi, tokenManager) = thirdParty
             return ChatHistoryRepository(
                 apiService = thirdPartyApi,
-                tokenManager = ThirdPartyTokenManager(thirdPartyApi, trimmedClientId, trimmedApiKey),
+                tokenManager = tokenManager,
                 cache = cache,
-                clientId = trimmedClientId,
+                clientId = clientId,
                 botId = botId,
-                endUserId = trimmedEndUserId,
+                endUserId = endUserId,
             )
         }
     }

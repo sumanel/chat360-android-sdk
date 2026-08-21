@@ -1,6 +1,7 @@
 package com.chat360.chatbot.ui.components.feedback
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,8 +17,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -44,6 +48,8 @@ import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
 private const val DEFAULT_RATING = 5
+private val DialogCornerRadius = RoundedCornerShape(20.dp)
+private val FieldCornerRadius = RoundedCornerShape(10.dp)
 
 /** Field types rendered directly - checkbox-matrix/radio-matrix/rank/file fall back to a plain notice (see [UnsupportedFieldNotice]). */
 private val SUPPORTED_FIELD_TYPES = setOf("label", "textarea", "textbox", "dropdown", "radio", "checkbox", "date")
@@ -118,7 +124,8 @@ fun FeedbackFormDialog(
                 .fillMaxWidth()
                 .heightIn(max = 560.dp)
                 .padding(horizontal = 16.dp)
-                .background(colors.backgroundElevated, RoundedCornerShape(20.dp))
+                .background(colors.backgroundElevated, DialogCornerRadius)
+                .border(1.dp, colors.line, DialogCornerRadius)
                 .padding(20.dp),
         ) {
             Text(
@@ -167,9 +174,15 @@ fun FeedbackFormDialog(
                     if (hasValidationErrors()) return@Button
                     onSubmit(rating, buildFeedbackText())
                 },
+                shape = FieldCornerRadius,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accent,
+                    contentColor = colors.accentContrast,
+                    disabledContainerColor = colors.textDisabled,
+                ),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Submit")
+                Text("Submit", fontFamily = typography.textFamily, fontWeight = FontWeight.Medium)
             }
         }
     }
@@ -240,7 +253,8 @@ private fun FeedbackFieldRow(
                 textStyle = TextStyle(fontFamily = typography.textFamily, fontSize = 14.sp, color = colors.textPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(colors.inputBackground, RoundedCornerShape(10.dp))
+                    .background(colors.inputBackground, FieldCornerRadius)
+                    .border(1.dp, colors.inputBorder, FieldCornerRadius)
                     .padding(12.dp),
             )
             "date" -> BasicTextField(
@@ -249,7 +263,8 @@ private fun FeedbackFieldRow(
                 textStyle = TextStyle(fontFamily = typography.textFamily, fontSize = 14.sp, color = colors.textPrimary),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(colors.inputBackground, RoundedCornerShape(10.dp))
+                    .background(colors.inputBackground, FieldCornerRadius)
+                    .border(1.dp, colors.inputBorder, FieldCornerRadius)
                     .padding(12.dp),
                 decorationBox = { inner ->
                     if (value.isEmpty()) {
@@ -269,7 +284,11 @@ private fun FeedbackFieldRow(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth().clickable { onValueChange(option.label) },
                         ) {
-                            RadioButton(selected = value == option.label, onClick = { onValueChange(option.label) })
+                            RadioButton(
+                                selected = value == option.label,
+                                onClick = { onValueChange(option.label) },
+                                colors = RadioButtonDefaults.colors(selectedColor = colors.accent, unselectedColor = colors.textSecondary),
+                            )
                             Text(option.label, fontFamily = typography.textFamily, fontSize = 14.sp, color = colors.textPrimary)
                         }
                     }
@@ -283,7 +302,11 @@ private fun FeedbackFieldRow(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth().clickable { onValueChange(option.value) },
                         ) {
-                            RadioButton(selected = value == option.value, onClick = { onValueChange(option.value) })
+                            RadioButton(
+                                selected = value == option.value,
+                                onClick = { onValueChange(option.value) },
+                                colors = RadioButtonDefaults.colors(selectedColor = colors.accent, unselectedColor = colors.textSecondary),
+                            )
                             Text(option.label, fontFamily = typography.textFamily, fontSize = 14.sp, color = colors.textPrimary)
                         }
                     }

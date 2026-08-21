@@ -91,6 +91,14 @@ data class ChatMessage(
     val author: BotNode.MessageAuthor = BotNode.MessageAuthor.BOT,
     /** Set only for a sent VOICE_MESSAGE - mutually exclusive with [attachment]/[text] rendering. */
     val voiceMessage: VoiceMessageInfo? = null,
+    /** This bot message's current thumbs up (true) / down (false) / unrated (null) state - the
+     * source of truth for BotMessageRow's feedback icons, kept in sync with [cacheRowId]'s DB row. */
+    val liked: Boolean? = null,
+    /** The `chat_messages` cache row backing this bot message, set once it's been written to the
+     * local cache - null for user messages and for a bot message not yet persisted. Feedback taps
+     * write through this id (see ChatViewModel.submitMessageFeedback/clearMessageFeedback) rather
+     * than [id], which is a fresh UUID on every replay and never stored anywhere. */
+    val cacheRowId: Long? = null,
 )
 
 /** [timestampMs] is the frame's real server send time (see BotNode.timestampMs/
@@ -128,6 +136,9 @@ data class ChatUiState(
     val feedbackConfig: FeedbackConfig? = null,
     /** True once `shouldAskFeedback` held the session open pending a submitted (or skipped) survey. */
     val showFeedbackPrompt: Boolean = false,
+    /** True after every 3-5 (random) bot messages - a mandatory, non-dismissable prompt for a
+     * free-text conversation check-in, distinct from [showFeedbackPrompt]'s end-of-chat survey. */
+    val showPeriodicFeedbackPrompt: Boolean = false,
     /** A `chat_inactivity_message` with `auto_archival` - the session is closing for
      * inactivity, so the input bar disables. */
     val isArchived: Boolean = false,

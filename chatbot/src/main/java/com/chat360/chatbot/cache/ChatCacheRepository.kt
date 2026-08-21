@@ -100,11 +100,21 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
         dao.deleteConversation(conversationId)
     }
 
-    suspend fun cacheRaw(conversationId: String, rawEnvelope: String) {
-        if (!ENABLED) return
+    /** Returns the inserted row's id (null when disabled) - callers use it to later attach a
+     * thumbs up/down to this exact bot message via [setMessageFeedback]. */
+    suspend fun cacheRaw(conversationId: String, rawEnvelope: String): Long? {
+        if (!ENABLED) return null
         val now = System.currentTimeMillis()
-        dao.insertMessage(CachedMessageEntity(conversationId = conversationId, kind = "RAW", payload = rawEnvelope, createdAt = now))
+        val rowId = dao.insertMessage(CachedMessageEntity(conversationId = conversationId, kind = "RAW", payload = rawEnvelope, createdAt = now))
         dao.touch(conversationId, now)
+        return rowId
+    }
+
+    /** Persists (or clears, when [liked] is null) a thumbs up/down against the cache row backing
+     * one bot message, so it survives leaving and reopening the conversation. */
+    suspend fun setMessageFeedback(messageRowId: Long, liked: Boolean?) {
+        if (!ENABLED) return
+        dao.setLiked(messageRowId, liked)
     }
 
     suspend fun cacheUserMessage(conversationId: String, text: String, chatMsgId: String?) {

@@ -53,6 +53,7 @@ import com.chat360.chatbot.ui.components.chrome.StatusBanner
 import com.chat360.chatbot.ui.components.chrome.TypingIndicatorRow
 import com.chat360.chatbot.ui.components.chrome.WelcomeSplash
 import com.chat360.chatbot.ui.components.feedback.FeedbackFormDialog
+import com.chat360.chatbot.ui.components.feedback.PeriodicFeedbackDialog
 import com.chat360.chatbot.ui.components.input.ChatInputBar
 import com.chat360.chatbot.ui.components.input.EmojiPickerPanel
 import com.chat360.chatbot.ui.components.input.SpeechToTextBar
@@ -299,7 +300,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 sdkConfig.ui.footer?.invoke() ?: ChatInputBar(
                     value = state.inputText,
                     onValueChange = viewModel::onInputChange,
-                    onSend = viewModel::sendMessage,
+                    onSend = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus(force = true)
+                        viewModel.sendMessage()
+                    },
                     onAttachmentClick = pickAttachment,
                     onMicClick = { voiceRecorder.requestStart() },
                     showDictationIcon = features.showSpeechToText && speechToText.isSupported(),
@@ -366,6 +371,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 onDismiss = viewModel::dismissFeedbackPrompt,
             )
         }
+
+        if (state.showPeriodicFeedbackPrompt) {
+            PeriodicFeedbackDialog(onSubmit = viewModel::submitPeriodicFeedback)
+        }
     }
 }
 
@@ -383,6 +392,8 @@ private fun BotMessageItem(
         message = message,
         isLiveChat = isLiveChat,
         assignedAgent = assignedAgent,
+        onFeedback = { liked, remarks -> viewModel.submitMessageFeedback(message.id, liked, remarks) },
+        onClearFeedback = { viewModel.clearMessageFeedback(message.id) },
         actions = BotContentActions(
             onQuickReply = { option -> viewModel.selectQuickReply(message.id, option) },
             onAttachmentClick = pickAttachment,

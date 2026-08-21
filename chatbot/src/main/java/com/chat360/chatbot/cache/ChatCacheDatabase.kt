@@ -43,6 +43,9 @@ data class CachedMessageEntity(
     val payload: String,
     val chatMsgId: String? = null,
     val createdAt: Long,
+    /** Thumbs up/down on a RAW (bot) row - true/false once the user has rated it, null otherwise.
+     * Never set on a USER row. */
+    val liked: Boolean? = null,
 )
 
 @Dao
@@ -86,10 +89,13 @@ interface ChatCacheDao {
     }
 
     @Insert
-    suspend fun insertMessage(message: CachedMessageEntity)
+    suspend fun insertMessage(message: CachedMessageEntity): Long
 
     @Insert
     suspend fun insertMessages(messages: List<CachedMessageEntity>)
+
+    @Query("UPDATE chat_messages SET liked = :liked WHERE id = :messageRowId")
+    suspend fun setLiked(messageRowId: Long, liked: Boolean?)
 
     @Query("DELETE FROM chat_messages WHERE conversationId = :conversationId")
     suspend fun deleteMessages(conversationId: String)
@@ -123,7 +129,7 @@ interface ChatCacheDao {
     suspend fun touch(conversationId: String, updatedAt: Long)
 }
 
-@Database(entities = [CachedConversationEntity::class, CachedMessageEntity::class], version = 1, exportSchema = false)
+@Database(entities = [CachedConversationEntity::class, CachedMessageEntity::class], version = 2, exportSchema = false)
 abstract class ChatCacheDatabase : RoomDatabase() {
     abstract fun dao(): ChatCacheDao
 

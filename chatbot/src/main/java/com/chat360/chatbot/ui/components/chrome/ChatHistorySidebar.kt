@@ -1,5 +1,6 @@
 package com.chat360.chatbot.ui.components.chrome
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,14 +21,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,11 +39,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.chat360.chatbot.cache.CachedConversationEntity
 import com.chat360.chatbot.network.rest.dto.SessionLanguage
 import com.chat360.chatbot.ui.components.icons.AddIcon
@@ -353,23 +360,152 @@ private fun ConversationItem(
     }
 
     if (showRenameDialog) {
-        AlertDialog(
-            onDismissRequest = { showRenameDialog = false },
-            title = { Text("Rename conversation") },
-            text = { OutlinedTextField(value = title, onValueChange = { title = it }, singleLine = true, label = { Text("Conversation name") }) },
-            confirmButton = { TextButton(onClick = { onRenamed(title); showRenameDialog = false }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") } },
+        RenameConversationDialog(
+            initialTitle = title,
+            onConfirm = { newTitle -> title = newTitle; onRenamed(newTitle); showRenameDialog = false },
+            onDismiss = { showRenameDialog = false },
         )
     }
 
     if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete conversation") },
-            text = { Text("This can't be undone. Delete \"$displayTitle\"?") },
-            confirmButton = { TextButton(onClick = { onDeleted(); showDeleteDialog = false }) { Text("Delete") } },
-            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } },
+        DeleteConversationDialog(
+            conversationTitle = displayTitle,
+            onConfirm = { onDeleted(); showDeleteDialog = false },
+            onDismiss = { showDeleteDialog = false },
         )
+    }
+}
+
+private val ConversationDialogCornerRadius = RoundedCornerShape(20.dp)
+private val ConversationDialogFieldCornerRadius = RoundedCornerShape(10.dp)
+
+@Composable
+private fun ConversationDialogShell(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val colors = LocalChat360Colors.current
+    val typography = LocalChat360Typography.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(colors.backgroundElevated, ConversationDialogCornerRadius)
+            .border(1.dp, colors.line, ConversationDialogCornerRadius)
+            .padding(20.dp),
+    ) {
+        Text(
+            text = title,
+            fontFamily = typography.textFamily,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = colors.textPrimary,
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+        content()
+    }
+}
+
+@Composable
+private fun RenameConversationDialog(
+    initialTitle: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = LocalChat360Colors.current
+    val typography = LocalChat360Typography.current
+    var name by remember { mutableStateOf(initialTitle) }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        ConversationDialogShell(title = "Rename conversation") {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                singleLine = true,
+                label = { Text("Conversation name", fontFamily = typography.textFamily) },
+                shape = ConversationDialogFieldCornerRadius,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = colors.accent,
+                    unfocusedBorderColor = colors.inputBorder,
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary,
+                    focusedLabelColor = colors.accent,
+                    unfocusedLabelColor = colors.textSecondary,
+                    cursorColor = colors.accent,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = ConversationDialogFieldCornerRadius,
+                    border = BorderStroke(1.dp, colors.inputBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textPrimary),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Cancel", fontFamily = typography.textFamily, fontWeight = FontWeight.Medium)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Button(
+                    onClick = { onConfirm(name) },
+                    shape = ConversationDialogFieldCornerRadius,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.accent,
+                        contentColor = colors.accentContrast,
+                    ),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Save", fontFamily = typography.textFamily, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeleteConversationDialog(
+    conversationTitle: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = LocalChat360Colors.current
+    val typography = LocalChat360Typography.current
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        ConversationDialogShell(title = "Delete conversation") {
+            Text(
+                text = "This can't be undone. Delete \"$conversationTitle\"?",
+                fontFamily = typography.textFamily,
+                fontSize = 14.sp,
+                color = colors.textSecondary,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    shape = ConversationDialogFieldCornerRadius,
+                    border = BorderStroke(1.dp, colors.inputBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textPrimary),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Cancel", fontFamily = typography.textFamily, fontWeight = FontWeight.Medium)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Button(
+                    onClick = onConfirm,
+                    shape = ConversationDialogFieldCornerRadius,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ActiveRed,
+                        contentColor = Color.White,
+                    ),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Delete", fontFamily = typography.textFamily, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
     }
 }
 
