@@ -14,12 +14,10 @@ import androidx.compose.ui.text.withStyle
 import com.chat360.chatbot.model.richtext.RichText
 import com.chat360.chatbot.model.richtext.RichTextParser
 
-/** Parses [this] as chat-safe HTML and renders it as a real `AnnotatedString` (bold/italic/
- * underline/strikethrough spans, clickable links, list bullets) instead of showing literal tags. */
 fun String.toAnnotatedString(linkColor: Color): AnnotatedString =
     RichTextParser.parse(this).toAnnotatedString(linkColor)
 
-private fun RichText.toAnnotatedString(linkColor: Color): AnnotatedString = buildAnnotatedString {
+fun RichText.toAnnotatedString(linkColor: Color): AnnotatedString = buildAnnotatedString {
     runs.forEach { run ->
         when (run) {
             is RichText.LineBreak -> append('\n')
