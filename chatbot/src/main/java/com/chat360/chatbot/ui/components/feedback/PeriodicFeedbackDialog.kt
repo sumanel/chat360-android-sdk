@@ -31,10 +31,11 @@ import com.chat360.chatbot.ui.theme.LocalChat360Typography
 
 private val DialogCornerRadius = RoundedCornerShape(20.dp)
 private val FieldCornerRadius = RoundedCornerShape(10.dp)
+private const val MIN_FEEDBACK_LENGTH = 20
 
 /**
  * Mandatory, non-dismissable check-in shown every 3-5 bot messages. No cancel/close affordance
- * by design - [onSubmit] is the only way out, gated on non-blank text.
+ * by design - [onSubmit] is the only way out, gated on at least [MIN_FEEDBACK_LENGTH] characters.
  */
 @Composable
 fun PeriodicFeedbackDialog(onSubmit: (feedback: String) -> Unit) {
@@ -42,7 +43,7 @@ fun PeriodicFeedbackDialog(onSubmit: (feedback: String) -> Unit) {
     val typography = LocalChat360Typography.current
     var feedback by remember { mutableStateOf("") }
     var attemptedSubmit by remember { mutableStateOf(false) }
-    val hasError = attemptedSubmit && feedback.trim().isEmpty()
+    val hasError = attemptedSubmit && feedback.trim().length < MIN_FEEDBACK_LENGTH
 
     Dialog(
         onDismissRequest = {},
@@ -84,7 +85,7 @@ fun PeriodicFeedbackDialog(onSubmit: (feedback: String) -> Unit) {
             if (hasError) {
                 Spacer(modifier = Modifier.size(4.dp))
                 Text(
-                    text = "Please enter your feedback",
+                    text = "Please enter at least $MIN_FEEDBACK_LENGTH characters",
                     fontFamily = typography.textFamily,
                     fontSize = 12.sp,
                     color = ActiveRed,
@@ -95,7 +96,7 @@ fun PeriodicFeedbackDialog(onSubmit: (feedback: String) -> Unit) {
                 onClick = {
                     attemptedSubmit = true
                     val trimmed = feedback.trim()
-                    if (trimmed.isEmpty()) return@Button
+                    if (trimmed.length < MIN_FEEDBACK_LENGTH) return@Button
                     onSubmit(trimmed)
                 },
                 shape = FieldCornerRadius,
