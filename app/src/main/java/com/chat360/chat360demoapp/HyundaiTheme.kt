@@ -33,7 +33,7 @@ val HyundaiLightColors = Chat360Colors(
     cardBorder = Color(0xFFE4DCD3),
     inputBackground = Color(0xFFFFFFFF),
     inputBorder = Color(0xFFCCCCCC),
-     statusBar = Color(0xFF8B0000), // newly added
+    statusBar = Color(0xFF002C5F), // newly added
 )
 
 val HyundaiDarkColors = Chat360Colors(

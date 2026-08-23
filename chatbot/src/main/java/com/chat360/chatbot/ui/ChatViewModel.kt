@@ -174,6 +174,11 @@ class ChatViewModel(
             is IncomingSocketEvent.BotMessage -> {
                 if (suppressInitialBotMessages && !hasStartedConversation && !restoringFromCache) return
                 val node = event.node
+                // Unconditional (unlike the PlainTextContent table-only log) - fires for every bot
+                // node regardless of nodeType/content routing, so it's the fastest way to confirm
+                // whether a given message (e.g. one expected to carry a <table>) even reaches this
+                // far. logcat filter: tag:Chat360BotText
+                Log.d("Chat360BotText", "nodeType=${node.nodeType} streamId=${node.streamId} text=${node.text}")
                 // An Unsupported node with no text at all renders nothing (yet) rather than an
                 // empty bubble; one with fallback text (most node types include questionText)
                 // still shows as plain text even before its specific renderer exists. A
@@ -284,7 +289,14 @@ class ChatViewModel(
     private fun appendOrMergeStreamChunk(node: BotNode, cachedRowId: Long?) {
         val streamId = node.streamId ?: return
         val mergedRaw = streamRawText.getOrDefault(streamId, "") + node.text.orEmpty()
-        if (node.streamEnded) streamRawText.remove(streamId) else streamRawText[streamId] = mergedRaw
+        if (node.streamEnded) {
+            streamRawText.remove(streamId)
+            // The streamed counterpart to appendMessage's log above - only once the bubble is
+            // complete, not per chunk, so the transcript still reads as one line per bot reply.
+            Log.d("Chat360Conversation", "BOT: $mergedRaw")
+        } else {
+            streamRawText[streamId] = mergedRaw
+        }
         _uiState.update { state ->
             val index = state.messages.indexOfLast { it.streamId == streamId }
             if (index >= 0) {
@@ -317,6 +329,11 @@ class ChatViewModel(
      * rather than a bare cache replay, so it comes back showing its real history rather than
      * whatever partial state was last rendered. */
     private fun appendMessage(message: ChatMessage, cacheUserMessage: Boolean = message.fromUser) {
+        // Full USER/BOT transcript as the conversation happens - covers every non-streaming
+        // message (typed text, quick replies, forms, dates, bot replies, ...); a streamed
+        // (chatgpt_message) bot reply logs separately below, once it's complete. logcat filter:
+        // tag:Chat360Conversation
+        Log.d("Chat360Conversation", "${if (message.fromUser) "USER" else "BOT"}: ${message.text}")
         val target = connectedConversationId
         if (message.fromUser && !restoringFromCache && target != null && activeConversationId != target) {
             setActiveConversationId(target)
