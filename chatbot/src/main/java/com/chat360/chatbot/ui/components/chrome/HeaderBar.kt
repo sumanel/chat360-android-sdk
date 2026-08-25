@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,6 +31,7 @@ import com.chat360.chatbot.ui.components.icons.RefreshIcon
 import com.chat360.chatbot.ui.components.icons.ShortcutIcon
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
+import kotlinx.coroutines.delay
 
 @Composable
 fun HeaderBar(
@@ -44,6 +46,7 @@ fun HeaderBar(
     shortcuts: Map<String, String> = emptyMap(),
     onShortcutSelected: (targetId: String, label: String) -> Unit = { _, _ -> },
     onRefreshClick: () -> Unit = {},
+    sessionCreatedAtMs: Long? = null,
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -99,6 +102,22 @@ fun HeaderBar(
             }
         }
         Spacer(modifier = Modifier.weight(1f))
+        if (sessionCreatedAtMs != null) {
+            val remainingText by produceState(initialValue = formatSessionCountdown(sessionCreatedAtMs), sessionCreatedAtMs) {
+                while (true) {
+                    value = formatSessionCountdown(sessionCreatedAtMs)
+                    delay(1_000)
+                }
+            }
+            Text(
+                text = remainingText,
+                color = colors.textPrimary,
+                fontFamily = typography.textFamily,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+        }
         if (showNewChat) Icon(
             imageVector = AddIcon,
             contentDescription = "Start new chat",
@@ -108,4 +127,12 @@ fun HeaderBar(
                 .clickable(enabled = newChatEnabled, onClick = onNewChatClick),
         )
     }
+}
+
+private fun formatSessionCountdown(createdAtMs: Long): String {
+    val elapsedSeconds = ((System.currentTimeMillis() - createdAtMs) / 1000).coerceAtLeast(0)
+    val remainingSeconds = 3_599 - (elapsedSeconds % 3_600)
+    val minutes = remainingSeconds / 60
+    val seconds = remainingSeconds % 60
+    return String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)
 }

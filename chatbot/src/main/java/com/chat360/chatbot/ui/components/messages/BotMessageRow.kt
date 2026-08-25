@@ -88,26 +88,21 @@ fun BotMessageRow(
                 modifier = Modifier.size(18.dp).clickable { clipboard.setText(AnnotatedString(message.copyText())) },
             )
             }
-            if (config.features.showRegenerate) {
-            Spacer(modifier = Modifier.size(18.dp))
-            androidx.compose.material3.Icon(
-                painter = painterResource(R.drawable.ic_baseline_refresh_24),
-                contentDescription = "Regenerate response",
-                tint = colors.textSecondary,
-                modifier = Modifier.size(20.dp).clickable { config.callbacks.onRegenerateClicked(message.id) },
-            )
-            }
             if (config.features.showFeedback && config.features.showLike) {
             Spacer(modifier = Modifier.size(18.dp))
             androidx.compose.material3.Icon(
                 painter = painterResource(R.drawable.ic_outline_thumb_up_24),
                 contentDescription = "Helpful",
                 tint = if (feedback == true) colors.accent else colors.textSecondary,
-                modifier = Modifier.size(18.dp).clickable {
-                    if (feedback == true) {
-                        onClearFeedback()
-                    } else {
-                        onFeedback(true, null)
+                modifier = if (feedback == false) {
+                    Modifier.size(18.dp)
+                } else {
+                    Modifier.size(18.dp).clickable {
+                        if (feedback == true) {
+                            onClearFeedback()
+                        } else {
+                            onFeedback(true, null)
+                        }
                     }
                 },
             )

@@ -43,6 +43,7 @@ class ChatViewModel(
     private val chatHistoryRepository: ChatHistoryRepository? = null,
     private val messageFeedbackRepository: MessageFeedbackRepository? = null,
     private val suppressInitialBotMessages: Boolean = false,
+    private val enablePeriodicFeedback: Boolean = false,
 ) : ViewModel() {
 
     private var hasStartedConversation = false
@@ -61,11 +62,13 @@ class ChatViewModel(
     /** The conversation currently *displayed* - can diverge from [connectedConversationId] when
      * the user is browsing an older cached conversation from the drawer (see [openConversation]). */
     private var activeConversationId: String? = null
-    /** The conversation the live [ChatRepository] socket is actually bound to - set once per
-     * `connect()`/[startNewChat]'s `startNewSession()`, never by [openConversation]. Live socket
-     * events/reconnects only ever belong to *this* conversation - caching and rendering both key
-     * off it, never off [activeConversationId], so browsing an old conversation can never
-     * misattribute a live frame into it. */
+    /** The conversation the live [ChatRepository] socket is actually bound to - set by
+     * `connect()`/[startNewChat]'s `startNewSession()`, and also by [openConversation] itself
+     * (via [switchToActiveRoomIfResumable]) when the opened room can be resumed on this device.
+     * Live socket events/reconnects only ever belong to *this* conversation - caching and
+     * rendering both key off it, never off [activeConversationId], so a browsed conversation this
+     * device can't resume (see [switchToActiveRoomIfResumable]'s doc) can never misattribute a
+     * live frame into it. */
     private var connectedConversationId: String? = null
     /** The connected conversation's server room id, staged here until [ensureConversationPersisted]
      * commits it - only known once session-init/[activateConversation] returns. */
@@ -245,6 +248,7 @@ class ChatViewModel(
             is IncomingSocketEvent.CloseConnection -> _uiState.update { it.copy(isConnected = false) }
             is IncomingSocketEvent.AgentAssigned -> _uiState.update { it.copy(assignedAgent = event.agent) }
             is IncomingSocketEvent.LiveChatEnded -> _uiState.update { it.copy(isLiveChat = false) }
+            is IncomingSocketEvent.SessionTime -> _uiState.update { it.copy(sessionCreatedAtMs = event.createdAtMs) }
             is IncomingSocketEvent.InactivityNotice -> {
                 if (event.message != null) appendMessage(ChatMessage(text = event.message, fromUser = false), cacheUserMessage = false)
                 if (event.autoArchive) _uiState.update { it.copy(isArchived = true) }
@@ -410,6 +414,14 @@ class ChatViewModel(
         }
         val chatMsgId = repository.sendQuickReply(option)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = option.text, fromUser = true))
+        showAgentTyping()
+    }
+
+    /** Shows the typing/loading indicator right away after any user reply, instead of waiting on
+     * a server typing_status event - the bot flow (unlike a live human agent) doesn't reliably
+     * send one. Skipped in live chat, where an idle agent shouldn't appear typing. */
+    private fun showAgentTyping() {
+        _uiState.update { if (it.isLiveChat) it else it.copy(isAgentTyping = true) }
     }
 
     /**
@@ -473,6 +485,7 @@ class ChatViewModel(
         }
         val chatMsgId = repository.sendRating(value)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = value.toString(), fromUser = true))
+        showAgentTyping()
     }
 
     /** Answers the AUTOSUGGESTION sub-case of CUSTOMINPUT - single tap selects and submits. */
@@ -488,6 +501,7 @@ class ChatViewModel(
         }
         val chatMsgId = repository.sendAutoSuggestion(text)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
+        showAgentTyping()
     }
 
     fun updatePromptValue(messageId: String, primary: String, secondary: String = "") {
@@ -513,6 +527,7 @@ class ChatViewModel(
         markPromptSubmitted(messageId)
         val chatMsgId = repository.sendEmail(email)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = email, fromUser = true))
+        showAgentTyping()
     }
 
     /** Answers a PHONE node. International + splitVariable sends two variables; otherwise a single combined value. */
@@ -532,6 +547,7 @@ class ChatViewModel(
             repository.sendPhone(combined)
         }
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = combined, fromUser = true))
+        showAgentTyping()
     }
 
     /** Answers a standalone DATE node - picking a date both fills and submits, single action. */
@@ -549,6 +565,7 @@ class ChatViewModel(
         }
         val chatMsgId = repository.sendDate(formattedDate, content.rules.dateFormat)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = formattedDate, fromUser = true))
+        showAgentTyping()
     }
 
     /** Answers a standalone TIME node. */
@@ -559,6 +576,7 @@ class ChatViewModel(
         markPromptSubmitted(messageId)
         val chatMsgId = repository.sendTime(formattedTime)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = formattedTime, fromUser = true))
+        showAgentTyping()
     }
 
     private fun markPromptSubmitted(messageId: String) {
@@ -593,6 +611,7 @@ class ChatViewModel(
             state.copy(messages = state.messages.map { if (it.id == messageId) it.copy(repliesEnabled = false) else it })
         }
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
+        showAgentTyping()
     }
 
     /** Answers an IMAGE_BUTTON reply-type button; web_url buttons are opened externally by the UI, never reach here. */
@@ -604,6 +623,7 @@ class ChatViewModel(
         }
         val chatMsgId = repository.sendImageButton(card, button, submitType)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = button.text, fromUser = true))
+        showAgentTyping()
     }
 
     /** Answers a TEXT_CAROUSEL card/button/dynamic-pill tap; "link"-type taps are opened externally by the UI. */
@@ -615,6 +635,7 @@ class ChatViewModel(
         }
         val chatMsgId = repository.sendTextCarouselReply(text, clickedIndex, targetId)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
+        showAgentTyping()
     }
 
     /** Answers a WELCOME_SCREEN card tap. */
@@ -628,6 +649,7 @@ class ChatViewModel(
         val ctaTargetId = if (card.ctaEnabled && card.ctaType == "component" && !card.ctaLink.isNullOrBlank()) card.ctaLink else null
         val chatMsgId = repository.sendWelcomeCard(text, index + 1, ctaTargetId)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
+        showAgentTyping()
     }
 
     /** IFRAME's postMessage bridge: the embedded page asked to advance the flow, no chat bubble involved. */
@@ -640,6 +662,7 @@ class ChatViewModel(
     fun selectShortcut(targetId: String, label: String) {
         val chatMsgId = repository.sendShortcut(targetId, label)
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = label, fromUser = true))
+        showAgentTyping()
     }
 
     /** Switches the bot flow to another language's entry node - reconnects first if the socket
@@ -773,6 +796,7 @@ class ChatViewModel(
             .joinToString(", ") { formState.values[it.index].orEmpty() }
             .ifBlank { "Form submitted" }
         appendMessage(ChatMessage(chatMsgId = chatMsgId, text = summary, fromUser = true))
+        showAgentTyping()
     }
 
     fun sendFile(bytes: ByteArray, fileName: String, mimeType: String) {
@@ -846,9 +870,11 @@ class ChatViewModel(
     /** Bumps the periodic-feedback counter on every real bot bubble and, once it hits the
      * current random 3-5 threshold, shows [PeriodicFeedbackDialog] and re-rolls the threshold
      * for next time. A no-op if the `third-party-tasks` feedback backend isn't configured
-     * ([messageFeedbackRepository] null) or the prompt is already showing. */
+     * ([messageFeedbackRepository] null), the host app disabled it ([enablePeriodicFeedback]),
+     * or the prompt is already showing. */
     private fun registerBotMessageForFeedback() {
         if (messageFeedbackRepository == null) return
+        if (!enablePeriodicFeedback) return
         if (_uiState.value.showPeriodicFeedbackPrompt) return
         botMessagesSinceFeedback++
         if (botMessagesSinceFeedback < nextPeriodicFeedbackThreshold) return
@@ -1147,12 +1173,16 @@ class ChatViewModel(
         viewModelScope.launch {
             setActiveConversationId(conversationId)
             previousHistoryCursor = null
-            // Only the connected conversation has a live socket that could actually be typing a
-            // reply - a merely-browsed one (this) never does, so any typing indicator left over
-            // from whatever was connected before must not leak into this view.
+            // Reset here - restoreConversation()'s replay may render its own isLiveChat/assignedAgent
+            // from the opened conversation's history, but any typing indicator left over from
+            // whatever was connected before must not leak into this view either way.
             _uiState.update { it.copy(isArchived = false, isLiveChat = false, assignedAgent = null, isAgentTyping = false) }
             val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
             restoreConversation(conversationId, roomId)
+            // Reconnect the live socket to this room right away (when this device can resume it -
+            // see switchToActiveRoomIfResumable's doc) instead of waiting for the user to hit send,
+            // so a re-opened conversation is already live the moment it's on screen.
+            switchToActiveRoomIfResumable()
         }
     }
 
@@ -1174,10 +1204,11 @@ class ChatViewModel(
         hasStartedConversation = true
         _uiState.update { it.copy(inputText = "") }
         viewModelScope.launch {
-            // Browsing a different, older conversation and sending here must continue *that*
-            // room, not whatever's still connected - switchToActiveRoomIfResumable reconnects
-            // the live socket to it first when this device can (see its own doc); appendMessage's
-            // snap-back only remains as the fallback for a room it can't resume this way.
+            // Usually already a no-op by now - openConversation() reconnects the live socket to
+            // the active room as soon as it's opened. Kept as a safety net for the rare case that
+            // didn't happen yet (e.g. the reconnect from opening is still in flight, or this is
+            // the very first send right after connect()); appendMessage's snap-back remains the
+            // fallback for a room this device can't resume this way (see the doc below).
             switchToActiveRoomIfResumable()
             // Even with no connectivity right now, still hand this to the repository rather than
             // failing it immediately - AckTracker retries the send for a couple of minutes, which
@@ -1185,16 +1216,15 @@ class ChatViewModel(
             // only ever flips to "Not delivered" once every retry has genuinely failed.
             val chatMsgId = repository.sendFreeText(text)
             appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
-            // Show the typing/loading indicator right away instead of waiting on a server
-            // typing_status event, which the bot flow (unlike a live human agent) doesn't
-            // reliably send. Skipped in live chat, where an idle agent shouldn't appear typing.
-            _uiState.update { if (it.isLiveChat) it else it.copy(isAgentTyping = true) }
+            showAgentTyping()
         }
     }
 
     /** If the user is browsing a conversation other than the one actually connected, and this
      * device has a persisted session for that browsed room (i.e. it connected to it itself at
-     * some point - see SessionStore.loadForRoom), reconnects the live socket to resume it. A
+     * some point - see SessionStore.loadForRoom), reconnects the live socket to resume it. Called
+     * from [openConversation] right after opening so the socket is live as soon as the
+     * conversation is on screen, and again from [sendMessage] as a fallback (see its own doc). A
      * room this device never itself connected to (e.g. one only seen in another device's
      * history) can't be resumed this way - there is no way to rejoin a room without its session
      * token, confirmed against the live API - so this is a no-op for it, same as before this
@@ -1232,6 +1262,7 @@ class ChatViewModel(
         private val apiKey: String? = null,
         private val endUserId: String? = null,
         private val suppressInitialBotMessages: Boolean = false,
+        private val enablePeriodicFeedback: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1257,6 +1288,7 @@ class ChatViewModel(
                 chatHistoryRepository = chatHistoryRepository,
                 messageFeedbackRepository = messageFeedbackRepository,
                 suppressInitialBotMessages = suppressInitialBotMessages,
+                enablePeriodicFeedback = enablePeriodicFeedback,
             ) as T
         }
 

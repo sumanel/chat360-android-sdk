@@ -11,6 +11,7 @@ import com.chat360.chatbot.model.wire.IncomingSocketEvent
 import com.chat360.chatbot.model.wire.OutgoingMessage
 import com.chat360.chatbot.model.wire.PingMessage
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
+import com.chat360.chatbot.model.wire.SessionTimeMessage
 import com.chat360.chatbot.model.wire.SystemJumpMessage
 import com.chat360.chatbot.model.wire.toIncomingEvent
 import com.chat360.chatbot.network.rest.Chat360ApiService
@@ -423,6 +424,7 @@ class ChatRepository(
                 heartbeat.start()
                 reconnectManager.onConnected()
                 onConnected()
+                requestSessionTime()
                 pendingInitJumpTargetId?.let { targetId ->
                     pendingInitJumpTargetId = null
                     sendSystemJump(targetId)
@@ -468,6 +470,12 @@ class ChatRepository(
     }
 
     private fun handleIncoming(raw: String, onRawIncoming: (String) -> Unit) {
+        // Logged before the room-drop check below (and under its own tag) so the response is
+        // always visible via `adb logcat -s Chat360SessionTime`, regardless of which room it
+        // ends up matching - see requestSessionTime().
+        if (raw.contains(SESSION_TIME_DATA_TYPE)) {
+            Log.d(SESSION_TIME_TAG, "<< SESSION TIME RESPONSE: $raw")
+        }
         val envelope = json.decodeFromString(RawSocketEnvelope.serializer(), raw)
         // A slow reply (this bot's flow can take several seconds) can land after the user has
         // already started a new chat or switched rooms, which tears down and replaces roomId -
@@ -614,6 +622,19 @@ class ChatRepository(
             room_id = roomId,
         )
         wsClient.send(json.encodeToString(jump))
+    }
+
+    /**
+     * Requests the Hyundai-specific server-tracked session duration for the current room.
+     * Standalone frame, not ack-tracked (same pattern as [sendSystemJump]/the heartbeat ping).
+     * Logged under its own tag ([SESSION_TIME_TAG]) - filter logcat with
+     * `adb logcat -s Chat360SessionTime` to see just this request and its response, isolated
+     * from the general `Chat360WS` socket firehose.
+     */
+    private fun requestSessionTime() {
+        val payload = json.encodeToString(SessionTimeMessage(room_id = roomId))
+        Log.d(SESSION_TIME_TAG, ">> SESSION TIME REQUEST: $payload")
+        if (!wsClient.send(payload)) ensureReconnecting()
     }
 
     /**
@@ -1017,6 +1038,10 @@ class ChatRepository(
 
     private companion object {
         const val TAG = "Chat360WS"
+        /** Dedicated logcat tag for the Hyundai session-time request/response - see
+         * [requestSessionTime]. Filter with `adb logcat -s Chat360SessionTime`. */
+        const val SESSION_TIME_TAG = "Chat360SessionTime"
+        const val SESSION_TIME_DATA_TYPE = "session_time_hyundai"
         /** How soon a byte-identical bot node has to arrive after the last one to be treated as
          * a redelivery artifact rather than a genuine new reply - see [lastDispatchedAt]. */
         const val DUPLICATE_NODE_WINDOW_MS = 2_000L

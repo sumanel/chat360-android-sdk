@@ -3,6 +3,7 @@ package com.chat360.chatbot.ui.components.feedback
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,13 +23,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.chat360.chatbot.R
 import com.chat360.chatbot.ui.components.chrome.ActiveRed
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
@@ -63,12 +68,24 @@ fun FeedbackRemarksDialog(
                 .border(1.dp, colors.line, DialogCornerRadius)
                 .padding(20.dp),
         ) {
-            Text(
-                text = "What went wrong?",
-                fontFamily = typography.textFamily,
-                fontSize = 16.sp,
-                color = colors.textPrimary,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "What went wrong?",
+                    fontFamily = typography.textFamily,
+                    fontSize = 16.sp,
+                    color = colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    painter = painterResource(R.drawable.ic_baseline_close_24),
+                    contentDescription = "Close",
+                    tint = colors.textSecondary,
+                    modifier = Modifier.size(20.dp).clickable { onDismiss() },
+                )
+            }
             Spacer(modifier = Modifier.size(6.dp))
             Text(
                 text = "Please share at least $MIN_REMARKS_LENGTH characters so we can improve.",

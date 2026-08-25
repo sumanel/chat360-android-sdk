@@ -214,6 +214,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             shortcuts = shortcuts,
                             onShortcutSelected = { targetId, label -> viewModel.selectShortcut(targetId, label) },
                             onRefreshClick = { viewModel.refreshConnection() },
+                            sessionCreatedAtMs = if (features.showSessionTimer) state.sessionCreatedAtMs else null,
                         )
                     }
                 }

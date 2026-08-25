@@ -49,6 +49,11 @@ data class RawSocketEnvelope(
      * new chat/switches rooms) instead of it leaking into whatever room is connected by then -
      * see ChatRepository.handleIncoming. */
     val room_id: String? = null,
+    /** Discriminator for a non-`type`-keyed response frame - currently only the Hyundai
+     * `session_time_hyundai` reply (see [toIncomingEvent]'s handling and [session]). */
+    val data_type: String? = null,
+    /** Nested payload on a `session_time_hyundai` response: room_id/session_id/admin_uuid/created_at. */
+    val session: JsonObject? = null,
 )
 
 /** Typed result of dispatching a [RawSocketEnvelope] through the dispatch chain. */
@@ -68,6 +73,8 @@ sealed interface IncomingSocketEvent {
     data object LiveChatEnded : IncomingSocketEvent
     /** A `chat_inactivity_message` frame - [message] only set for its `type:'message'` sub-case; [autoArchive] mirrors `auto_archival` (session is being closed for inactivity). */
     data class InactivityNotice(val message: String?, val autoArchive: Boolean) : IncomingSocketEvent
+    /** A `session_time_hyundai` response - [createdAtMs] is the session's `created_at`, epoch ms UTC. */
+    data class SessionTime(val createdAtMs: Long) : IncomingSocketEvent
     data class Unhandled(val raw: RawSocketEnvelope) : IncomingSocketEvent
 }
 
@@ -79,6 +86,12 @@ sealed interface IncomingSocketEvent {
  */
 fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     val timestampMs = timestamp_int?.toDoubleOrNull()?.let { (it * 1000).toLong() } ?: time.parseServerTimestamp()
+
+    if (data_type == "session_time_hyundai") {
+        val createdAtMs = session?.string("created_at")?.parseIsoUtcTimestamp()
+        if (createdAtMs != null) return IncomingSocketEvent.SessionTime(createdAtMs)
+    }
+
     if (type == "pong") return IncomingSocketEvent.Pong
 
     if (type == "close_connection") {
@@ -183,6 +196,24 @@ private fun String?.parseServerTimestamp(): Long? {
         val format = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.US)
         format.timeZone = java.util.TimeZone.getTimeZone("UTC")
         format.parse(this)?.time
+    }.getOrNull()
+}
+
+/** Parses `session.created_at` - "yyyy-MM-ddTHH:mm:ss.ffffff" UTC, no offset. The fractional
+ * part is variable-length (Python's isoformat(), microsecond precision) and SimpleDateFormat's
+ * `S` pattern can't parse that directly (it expects a fixed digit count), so it's split off and
+ * truncated to millisecond precision by hand instead. */
+private fun String?.parseIsoUtcTimestamp(): Long? {
+    this ?: return null
+    return runCatching {
+        val dotIndex = indexOf('.')
+        val datePart = if (dotIndex >= 0) substring(0, dotIndex) else this
+        val fractionPart = if (dotIndex >= 0) substring(dotIndex + 1) else null
+        val format = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+        format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val baseMs = format.parse(datePart)?.time ?: return@runCatching null
+        val millis = fractionPart?.take(3)?.padEnd(3, '0')?.toIntOrNull() ?: 0
+        baseMs + millis
     }.getOrNull()
 }
 

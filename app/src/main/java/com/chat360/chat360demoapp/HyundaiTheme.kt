@@ -106,18 +106,22 @@ val HyundaiConfig = Chat360UIConfig(
         followSystemTheme = false,
     ),
     features = FeatureConfig(
-        showMenu = true, showHistorySidebar = true, showNewChat = true,
-        showCopyMessage = true, showRegenerate = true, showLike = true, showDislike = true,
-        showEmoji = false, showAttachment = false,
-        showVoiceInput = false, showSpeechToText = true,
-        // Both Training/Customer options are visible, but Training is shown disabled since
-        // Hyundai is customer-facing only; the sidebar already opens on Customer by default.
-        showAssistantMode = true, enableTrainingMode = false, showAppearanceSwitcher = true,
-        // No Hyundai logo in the active conversation (message rows / typing indicator) - only
-        // the pre-chat welcome splash still shows it.
+        showMenu = true, 
+        showHistorySidebar = true, 
+        showNewChat = true,
+        showCopyMessage = true, 
+        showRegenerate = true, 
+        showLike = true, 
+        showDislike = true,
+        showEmoji = false, 
+        showAttachment = false,
+        showVoiceInput = false, 
+        showSpeechToText = true,
+        showAssistantMode = true, 
+        enableTrainingMode = false, 
+        showAppearanceSwitcher = true,
         showBotAvatar = false,
+        showSessionTimer = true,
     ),
-    // The bot must not speak first - the conversation should open empty/blank, with the user's
-    // own message as the first bubble, instead of an unsolicited greeting like "How can I help you".
-    behavior = BehaviorConfig(suppressInitialBotMessages = true),
+    behavior = BehaviorConfig(suppressInitialBotMessages = true, enablePeriodicFeedback = true),
 )

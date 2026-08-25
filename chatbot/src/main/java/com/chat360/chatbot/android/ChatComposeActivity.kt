@@ -27,7 +27,7 @@ class ChatComposeActivity : ComponentActivity() {
     private val config: ResolvedChatConfig by lazy { resolveChatConfig(intent) }
 
     private val viewModel: ChatViewModel by viewModels {
-        ChatViewModel.Factory(context = applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, clientId = config.clientId, apiKey = config.apiKey, endUserId = config.endUserId, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages)
+        ChatViewModel.Factory(context = applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, clientId = config.clientId, apiKey = config.apiKey, endUserId = config.endUserId, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages, enablePeriodicFeedback = config.Chat360UIConfig.behavior.enablePeriodicFeedback)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

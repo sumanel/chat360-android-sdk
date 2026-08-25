@@ -63,10 +63,14 @@ data class FeatureConfig(
     /** Bot avatar shown next to each message row and the typing indicator - the welcome splash's
      * centered logo is unaffected, this only covers the active-conversation chrome. */
     val showBotAvatar: Boolean = true,
+    val showSessionTimer: Boolean = false,
 )
 
 data class BehaviorConfig(
     val suppressInitialBotMessages: Boolean = false,
+    /** Periodically prompts the user for feedback after every 3-5 bot responses. Only takes
+     * effect when the `third-party-tasks` feedback backend is configured (clientId/apiKey set). */
+    val enablePeriodicFeedback: Boolean = false,
 )
 
 /** Optional full replacements for default Compose chrome. Slots own their interaction handling. */
