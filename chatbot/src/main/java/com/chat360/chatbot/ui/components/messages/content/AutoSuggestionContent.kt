@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.ui.ChatMessage
-import com.chat360.chatbot.ui.components.common.QuickReplyButton
+import com.chat360.chatbot.ui.components.common.InlineChoiceList
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 import androidx.compose.material3.Text
@@ -30,16 +30,16 @@ fun AutoSuggestionContent(
     Column {
         PlainTextContent(message.text)
         content.description?.let {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(it, fontFamily = typography.textFamily, fontSize = 13.sp, color = colors.textSecondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(it, fontFamily = typography.textFamily, fontSize = 14.sp, color = colors.textSecondary)
         }
-        content.choices.forEachIndexed { index, choice ->
-            Spacer(modifier = Modifier.height(10.dp))
-            QuickReplyButton(
-                text = choice,
+        if (content.choices.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            InlineChoiceList(
+                labels = content.choices,
                 enabled = message.repliesEnabled && !isLiveChat,
-                selected = message.selectedReplyIndex == index,
-                onClick = { onSelected(index, choice) },
+                isSelected = { index -> message.selectedReplyIndex == index },
+                onSelect = { index -> onSelected(index, content.choices[index]) },
             )
         }
     }

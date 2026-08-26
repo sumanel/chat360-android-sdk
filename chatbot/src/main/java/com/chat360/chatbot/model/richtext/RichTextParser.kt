@@ -134,6 +134,8 @@ object RichTextParser {
             }
         }
         flushText()
+        while (runs.isNotEmpty() && runs.last() is RichText.LineBreak) runs.removeAt(runs.lastIndex)
+        while (runs.isNotEmpty() && runs.first() is RichText.LineBreak) runs.removeAt(0)
         return RichText(runs)
     }
 

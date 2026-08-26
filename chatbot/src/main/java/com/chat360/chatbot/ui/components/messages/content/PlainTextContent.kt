@@ -31,8 +31,8 @@ fun PlainTextContent(text: String) {
     Text(
         text = text.toAnnotatedString(linkColor = colors.accent),
         fontFamily = typography.textFamily,
-        fontSize = 15.sp,
-        lineHeight = 22.sp,
+        fontSize = 16.sp,
+        lineHeight = 20.sp,
         color = colors.bubbleAiText,
     )
 }

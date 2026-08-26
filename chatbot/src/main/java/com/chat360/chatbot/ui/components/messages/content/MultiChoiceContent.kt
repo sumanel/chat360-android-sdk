@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.ui.ChatMessage
-import com.chat360.chatbot.ui.components.common.QuickReplyButton
+import com.chat360.chatbot.ui.components.common.InlineChoiceList
 
 @Composable
 fun MultiChoiceContent(
@@ -19,13 +19,13 @@ fun MultiChoiceContent(
 ) {
     Column {
         PlainTextContent(message.text)
-        content.options.forEach { option ->
+        if (content.options.isNotEmpty()) {
             Spacer(modifier = Modifier.height(10.dp))
-            QuickReplyButton(
-                text = option.text,
+            InlineChoiceList(
+                labels = content.options.map { it.text },
                 enabled = message.repliesEnabled && !isLiveChat,
-                selected = message.selectedReplyIndex == option.index,
-                onClick = { onQuickReply(option) },
+                isSelected = { index -> message.selectedReplyIndex == content.options[index].index },
+                onSelect = { index -> onQuickReply(content.options[index]) },
             )
         }
     }
