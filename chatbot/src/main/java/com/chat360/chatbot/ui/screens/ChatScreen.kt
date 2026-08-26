@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -325,12 +326,18 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.55f))
-                        .clickable { showHistorySidebar = false },
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { showHistorySidebar = false },
                 ) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
-                            .clickable { },
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { },
                     ) {
                         ChatHistorySidebar(
                             onDismiss = { showHistorySidebar = false },

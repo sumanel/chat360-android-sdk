@@ -90,6 +90,11 @@ class ChatRepository(
      * arriving right on top of the last one (a redelivery artifact) rather than a genuine later
      * reply that just happens to fall back to identical wording/node - see [DUPLICATE_NODE_WINDOW_MS]. */
     private var lastDispatchedAt: Long = 0L
+    /** Set every time a new socket connection opens (fresh connect, reconnect, or manual
+     * reconnect); cleared the moment the bot's first reply for that connection arrives, at which
+     * point [requestSessionTime] is sent for the first time - the timer intentionally doesn't
+     * start any earlier than that. See [handleIncoming]'s BotMessage case. */
+    private var awaitingFirstBotReplySessionTime = false
 
     private var onEvent: (IncomingSocketEvent) -> Unit = {}
     private var onConnected: () -> Unit = {}
@@ -424,7 +429,11 @@ class ChatRepository(
                 heartbeat.start()
                 reconnectManager.onConnected()
                 onConnected()
-                requestSessionTime()
+                // Not requested immediately here - the timer should only start counting once the
+                // bot's first reply on this connection actually arrives (see handleIncoming's
+                // BotMessage case, which fires the request once awaitingFirstBotReplySessionTime
+                // is consumed).
+                awaitingFirstBotReplySessionTime = true
                 pendingInitJumpTargetId?.let { targetId ->
                     pendingInitJumpTargetId = null
                     sendSystemJump(targetId)
@@ -524,6 +533,11 @@ class ChatRepository(
                 lastDispatchedAt = now
                 lastBotNode = event.node
                 currentTargetId = event.node.targetId ?: currentTargetId
+                if (awaitingFirstBotReplySessionTime) {
+                    awaitingFirstBotReplySessionTime = false
+                    Log.d(SESSION_TIME_TAG, "First bot reply after new connection - requesting session time (room=$roomId)")
+                    requestSessionTime()
+                }
                 handleWindowEventNode(event.node.content)
                 // END-node side effects - not about rendering. urlMessage opens externally in
                 // addition to whatever bubble/nothing the node's own text produces; end_session

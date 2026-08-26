@@ -952,6 +952,9 @@ class ChatViewModel(
                 showPeriodicFeedbackPrompt = false,
                 pendingUrlToOpen = null,
                 hasMoreHistory = false,
+                // Cleared rather than left stale - otherwise the previous conversation's session
+                // timer keeps rendering until this new room's own SessionTime event arrives.
+                sessionCreatedAtMs = null,
             )
         }
         viewModelScope.launch {
@@ -1175,8 +1178,10 @@ class ChatViewModel(
             previousHistoryCursor = null
             // Reset here - restoreConversation()'s replay may render its own isLiveChat/assignedAgent
             // from the opened conversation's history, but any typing indicator left over from
-            // whatever was connected before must not leak into this view either way.
-            _uiState.update { it.copy(isArchived = false, isLiveChat = false, assignedAgent = null, isAgentTyping = false) }
+            // whatever was connected before must not leak into this view either way. Same for
+            // sessionCreatedAtMs - otherwise the previous conversation's timer stays on screen
+            // until this room's own SessionTime event arrives.
+            _uiState.update { it.copy(isArchived = false, isLiveChat = false, assignedAgent = null, isAgentTyping = false, sessionCreatedAtMs = null) }
             val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
             restoreConversation(conversationId, roomId)
             // Reconnect the live socket to this room right away (when this device can resume it -
