@@ -43,6 +43,7 @@ fun BotMessageRow(
     message: ChatMessage,
     actions: BotContentActions,
     isLiveChat: Boolean = false,
+    isConnected: Boolean = true,
     assignedAgent: AssignedAgent? = null,
     onFeedback: (liked: Boolean, remarks: String?) -> Unit = { _, _ -> },
     onClearFeedback: () -> Unit = {},
@@ -68,7 +69,7 @@ fun BotMessageRow(
                 .border(1.dp, colors.cardBorder, RoundedCornerShape(0.dp))
                 .padding(horizontal = 18.dp, vertical = 14.dp),
         ) {
-            BotContentBody(message, actions, isLiveChat)
+            BotContentBody(message, actions, isLiveChat, isConnected)
         }
         Spacer(modifier = Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {

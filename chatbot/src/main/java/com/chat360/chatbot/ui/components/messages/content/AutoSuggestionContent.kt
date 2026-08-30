@@ -23,6 +23,7 @@ fun AutoSuggestionContent(
     message: ChatMessage,
     content: BotContent.AutoSuggestion,
     isLiveChat: Boolean,
+    isConnected: Boolean,
     onSelected: (index: Int, text: String) -> Unit,
 ) {
     val colors = LocalChat360Colors.current
@@ -37,7 +38,7 @@ fun AutoSuggestionContent(
             Spacer(modifier = Modifier.height(4.dp))
             InlineChoiceList(
                 labels = content.choices,
-                enabled = message.repliesEnabled && !isLiveChat,
+                enabled = message.repliesEnabled && !isLiveChat && isConnected,
                 isSelected = { index -> message.selectedReplyIndex == index },
                 onSelect = { index -> onSelected(index, content.choices[index]) },
             )

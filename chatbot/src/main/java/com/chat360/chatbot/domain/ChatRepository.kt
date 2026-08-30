@@ -23,10 +23,14 @@ import com.chat360.chatbot.network.ws.AckTracker
 import com.chat360.chatbot.network.ws.Chat360WebSocketClient
 import com.chat360.chatbot.network.ws.HeartbeatManager
 import com.chat360.chatbot.network.ws.ReconnectManager
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -67,6 +71,13 @@ class ChatRepository(
         explicitNulls = false
     }
     private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Serializes connect()/startNewSession()/switchToRoom() end to end (teardown through
+    // openSocket()) - without this, two of them can interleave at a suspension point (e.g. both
+    // awaiting apiService.getSession()) and race on ownerId/roomId/sessionId/etc below, so
+    // whichever's HTTP response lands last wins even if it was the first one requested - the
+    // exact "switching rooms during bot loading" corruption this class exists to prevent for
+    // live-frame routing. A second caller simply waits for the first to fully finish instead.
+    private val sessionMutex = Mutex()
 
     private var ownerId: String? = null
     private var roomId: String? = null
@@ -90,11 +101,55 @@ class ChatRepository(
      * arriving right on top of the last one (a redelivery artifact) rather than a genuine later
      * reply that just happens to fall back to identical wording/node - see [DUPLICATE_NODE_WINDOW_MS]. */
     private var lastDispatchedAt: Long = 0L
-    /** Set every time a new socket connection opens (fresh connect, reconnect, or manual
-     * reconnect); cleared the moment the bot's first reply for that connection arrives, at which
-     * point [requestSessionTime] is sent for the first time - the timer intentionally doesn't
-     * start any earlier than that. See [handleIncoming]'s BotMessage case. */
+    /** True once this room has ever had a session_time worth trusting server-side - either it
+     * was resumed with existing history (set by [establishSession]) or its first live bot reply
+     * has already come in on some earlier connection (set by the BotMessage branch below). While
+     * false, [openSocket]'s onOpen has nothing to ask about yet and must wait for
+     * [awaitingFirstBotReplySessionTime]'s gate instead of querying immediately. Reset to false
+     * only when the room itself changes (see [teardownForResession]) - a reconnect of the same
+     * still-live room keeps it set, so every reconnect can immediately ask and trust the answer. */
+    private var sessionEverStarted = false
+    /** Set every time a new socket connection opens for a room with no trustworthy session_time
+     * yet (![sessionEverStarted]) - cleared the moment a bot reply actually arrives live on that
+     * connection, at which point [requestSessionTime] is sent for the first time. The timer
+     * intentionally never starts any earlier than that: a genuinely new room has no session_time
+     * to ask about until the user sends something and the bot replies to it. See
+     * [handleIncoming]'s BotMessage case. */
     private var awaitingFirstBotReplySessionTime = false
+    /** Set right before [awaitingFirstBotReplySessionTime] fires its [requestSessionTime] call -
+     * the very first live bot reply this room has ever had. Consumed by [handleIncoming] on the
+     * matching SessionTime reply to substitute "now" for the server's `created_at`, so a brand
+     * new conversation's timer always starts counting down from a clean 59:59 rather than
+     * whatever the server's created_at/round-trip latency would otherwise show. */
+    private var overrideNextSessionTimeWithNow = false
+    /** Set right before [openSocket]'s onOpen asks immediately because [sessionEverStarted] is
+     * already true (a resumed room, or a reconnect of a room already past its first reply).
+     * Consumed by [handleIncoming] on the matching SessionTime reply: a created_at within the
+     * last [FRESHLY_CREATED_SESSION_WINDOW_SECONDS] means the backend just minted a brand new one
+     * for this very query (an expired/stale session gets silently renewed, not returned as its
+     * true old start time) - not trustworthy yet, so the reply is held back instead, see
+     * [pendingSessionResetOnNextBotMessage]. Anything older than that is genuinely this session's
+     * real start time, and its real remaining time is shown right away. */
+    private var awaitingImmediateSessionTimeCheck = false
+    /** Set right before each [requestSessionTime] call, cleared the moment any SessionTime frame
+     * arrives. Lets [handleIncoming] tell a reply to our own request apart from a SessionTime
+     * frame the backend pushes unprompted - see [pendingSessionResetOnNextBotMessage]. */
+    private var awaitingSessionTimeResponse = false
+    /** Set when a session_time reply shouldn't be shown to the UI the moment it arrives - either
+     * [handleIncoming] received a SessionTime frame we never asked for (the backend pushes one of
+     * these unprompted when the current session's hour window lapses and rolls over to a fresh
+     * one), or [awaitingImmediateSessionTimeCheck] found the resumed session's real elapsed time
+     * already past an hour. Either way the reset should only become visible once the bot's next
+     * reply actually comes in, same as [overrideNextSessionTimeWithNow]'s first message. Consumed
+     * by the BotMessage branch below, which then emits a SessionTime(now) itself instead of
+     * waiting on another round trip to the server. */
+    private var pendingSessionResetOnNextBotMessage = false
+    /** Completed once the bot's full reply to the most recently sent user message arrives (see
+     * [sendTracked]/[handleIncoming]'s BotMessage branch) - null when no reply is currently
+     * outstanding. Awaited by [awaitPendingReplyBeforeTeardown] so switching rooms/starting a new
+     * chat never closes the socket out from under a reply that's still being generated
+     * server-side for the room being left. */
+    private var pendingReplyDeferred: CompletableDeferred<Unit>? = null
 
     private var onEvent: (IncomingSocketEvent) -> Unit = {}
     private var onConnected: () -> Unit = {}
@@ -131,8 +186,10 @@ class ChatRepository(
         onSlowConnectionChanged: (Boolean) -> Unit = {},
         onMessageTimedOut: (String) -> Unit = {},
         onAppearanceLoaded: (BotAppearanceDetails?, chatboxName: String?) -> Unit = { _, _ -> },
-        /** Called after session init so the local cache can select the matching conversation.
-         * Return true when its cached messages were replayed; remote history is then skipped. */
+        /** Called after session init so the local cache can select the matching conversation and
+         * paint it immediately, then refresh it from the room's server history (see
+         * ChatViewModel.activateConversation). Return true when the room turned out to have any
+         * history at all - from cache, the server, or both. */
         onConversationStarted: suspend (roomId: String) -> Boolean = { false },
         /** Every server envelope, including history/starter frames, for durable local replay. */
         onRawIncoming: (String) -> Unit = {},
@@ -159,7 +216,7 @@ class ChatRepository(
         this.onSessionResumed = onSessionResumed
         this.onBotSettingsLoaded = onBotSettingsLoaded
 
-        establishSession(onConversationStarted, sessionStore?.load(botId))
+        sessionMutex.withLock { establishSession(onConversationStarted, sessionStore?.load(botId)) }
     }
 
     /**
@@ -171,9 +228,12 @@ class ChatRepository(
      * conversations together in the same room history.
      */
     suspend fun startNewSession(onConversationStarted: suspend (roomId: String) -> Boolean = { false }) {
-        Log.i(TAG, "Starting new session (user-initiated) - tearing down room=$roomId")
-        teardownForResession()
-        establishSession(onConversationStarted, persisted = null)
+        sessionMutex.withLock {
+            Log.i(TAG, "Starting new session (user-initiated) - tearing down room=$roomId")
+            awaitPendingReplyBeforeTeardown()
+            teardownForResession()
+            establishSession(onConversationStarted, persisted = null)
+        }
     }
 
     /**
@@ -190,10 +250,25 @@ class ChatRepository(
      */
     suspend fun switchToRoom(targetRoomId: String, onConversationStarted: suspend (roomId: String) -> Boolean = { false }): Boolean {
         val persisted = sessionStore?.loadForRoom(botId, targetRoomId) ?: return false
-        Log.i(TAG, "Switching to room=$targetRoomId (tearing down room=$roomId)")
-        teardownForResession()
-        establishSession(onConversationStarted, persisted)
+        sessionMutex.withLock {
+            Log.i(TAG, "Switching to room=$targetRoomId (tearing down room=$roomId)")
+            awaitPendingReplyBeforeTeardown()
+            teardownForResession()
+            establishSession(onConversationStarted, persisted)
+        }
         return true
+    }
+
+    /** Waits for [pendingReplyDeferred] (if any) to complete - i.e. for the bot's reply to the
+     * last message sent on the room about to be torn down to fully arrive - before
+     * [teardownForResession] closes the socket out from under it. Bounded by
+     * [PENDING_REPLY_AWAIT_TIMEOUT_MS] so a slow/stuck bot can never block a room switch or new
+     * chat indefinitely; a no-op (returns immediately) when nothing is outstanding. */
+    private suspend fun awaitPendingReplyBeforeTeardown() {
+        val deferred = pendingReplyDeferred ?: return
+        if (deferred.isCompleted) return
+        Log.i(TAG, "Waiting up to ${PENDING_REPLY_AWAIT_TIMEOUT_MS}ms for in-flight bot reply before switching rooms (room=$roomId)")
+        withTimeoutOrNull(PENDING_REPLY_AWAIT_TIMEOUT_MS) { deferred.await() }
     }
 
     /** Shared by [startNewSession] and [switchToRoom] - both tear down the current room's
@@ -217,6 +292,13 @@ class ChatRepository(
         lastBotNode = null
         pendingInitJumpTargetId = null
         shouldAskFeedback = false
+        pendingReplyDeferred = null
+        sessionEverStarted = false
+        awaitingFirstBotReplySessionTime = false
+        overrideNextSessionTimeWithNow = false
+        awaitingImmediateSessionTimeCheck = false
+        awaitingSessionTimeResponse = false
+        pendingSessionResetOnNextBotMessage = false
     }
 
     /** [persisted] is the session offered to the backend to resume - the last-connected one from
@@ -293,14 +375,19 @@ class ChatRepository(
                 // exact same first node the starter fetch just displayed.
                 pendingInitJumpTargetId = null
             }
+            // A resumed room's session already exists server-side - openSocket's onOpen can ask
+            // for its session_time right away instead of waiting on a bot reply that reopening
+            // a past conversation never provokes on its own. A genuinely new room has nothing to
+            // ask about yet, so this stays false until its own first live reply sets it.
+            sessionEverStarted = hadHistory
             openSocket()
         } catch (e: Exception) {
             onError(e)
         }
     }
 
-    /** Fetches the most recent page for cache-first conversation seeding - only ever called
-     * when the caller has no local messages yet (see ChatViewModel.activateConversation's doc).
+    /** Fetches the most recent page to refresh a conversation's display/cache - called every
+     * time a room is entered, cache or no cache (see ChatViewModel.activateConversation's doc).
      * Carries [HistoryResponse.previous_cursor] so the caller can page further back on demand. */
     suspend fun fetchHistory(roomId: String): HistoryResponse =
         if (historyEnabled) apiService.getHistory(roomId) else HistoryResponse()
@@ -429,11 +516,21 @@ class ChatRepository(
                 heartbeat.start()
                 reconnectManager.onConnected()
                 onConnected()
-                // Not requested immediately here - the timer should only start counting once the
-                // bot's first reply on this connection actually arrives (see handleIncoming's
-                // BotMessage case, which fires the request once awaitingFirstBotReplySessionTime
-                // is consumed).
-                awaitingFirstBotReplySessionTime = true
+                if (sessionEverStarted) {
+                    // A resumed room, or a reconnect of a room already past its first reply -
+                    // its session_time is safe to ask about right away. handleIncoming decides
+                    // whether the answer is fresh enough to show immediately or stale enough to
+                    // hold back - see awaitingImmediateSessionTimeCheck.
+                    Log.d(SESSION_TIME_TAG, "Session already started - requesting session time immediately to check elapsed time (room=$roomId)")
+                    awaitingImmediateSessionTimeCheck = true
+                    requestSessionTime()
+                } else {
+                    // A genuinely new room has no session_time to ask about yet - the timer must
+                    // stay hidden/not-running until the user sends something new and a bot reply
+                    // actually arrives live on this connection (see handleIncoming's BotMessage
+                    // case, which fires the request once this is consumed).
+                    awaitingFirstBotReplySessionTime = true
+                }
                 pendingInitJumpTargetId?.let { targetId ->
                     pendingInitJumpTargetId = null
                     sendSystemJump(targetId)
@@ -500,7 +597,40 @@ class ChatRepository(
         }
         heartbeat.onMessageReceived(isPong = envelope.type == "pong")
 
-        val event = envelope.toIncomingEvent()
+        var event = envelope.toIncomingEvent()
+        if (event is IncomingSocketEvent.SessionTime) {
+            if (awaitingSessionTimeResponse) {
+                awaitingSessionTimeResponse = false
+                if (overrideNextSessionTimeWithNow) {
+                    overrideNextSessionTimeWithNow = false
+                    event = IncomingSocketEvent.SessionTime(System.currentTimeMillis())
+                } else if (awaitingImmediateSessionTimeCheck) {
+                    awaitingImmediateSessionTimeCheck = false
+                    val elapsedSeconds = (System.currentTimeMillis() - event.createdAtMs) / 1000
+                    if (elapsedSeconds < FRESHLY_CREATED_SESSION_WINDOW_SECONDS) {
+                        // A created_at this close to "now" means the backend just minted it for
+                        // this very query (an expired/stale session gets silently renewed rather
+                        // than returning its true old start time) - not a real value worth
+                        // trusting yet. Held back until the bot's next reply actually arrives (see
+                        // pendingSessionResetOnNextBotMessage and the BotMessage branch below)
+                        // instead of starting the countdown off this synthetic timestamp now.
+                        Log.d(SESSION_TIME_TAG, "Resumed session's created_at is only ${elapsedSeconds}s old - deferring to next bot reply (room=$roomId)")
+                        pendingSessionResetOnNextBotMessage = true
+                        return
+                    }
+                    // Genuinely old enough to trust - show the real remaining time immediately.
+                }
+            } else {
+                // Unprompted - the backend pushes one of these on its own when the current
+                // session's hour window lapses and it rolls over to a fresh one. Held back until
+                // the bot's next reply actually arrives (see pendingSessionResetOnNextBotMessage
+                // and the BotMessage branch below) instead of snapping the countdown to 59:59 the
+                // instant this frame lands with no bot activity behind it.
+                Log.d(SESSION_TIME_TAG, "Unsolicited session time reset received - deferring to next bot reply (room=$roomId)")
+                pendingSessionResetOnNextBotMessage = true
+                return
+            }
+        }
         // Agent-authored messages are excluded from this dedup: an agent legitimately repeating
         // themselves shouldn't be swallowed, and admin/operator frames don't carry the same
         // node-id-per-flow-step guarantee bot nodes do. Full node equality (not just nodeId) so a
@@ -533,10 +663,24 @@ class ChatRepository(
                 lastDispatchedAt = now
                 lastBotNode = event.node
                 currentTargetId = event.node.targetId ?: currentTargetId
+                // Only a complete reply clears the pending-reply gate - a streaming
+                // (chatgpt_message) answer must keep the socket open across every chunk, not just
+                // its first one, so awaitPendingReplyBeforeTeardown waits for streamEnded.
+                if (event.node.streamId == null || event.node.streamEnded) {
+                    pendingReplyDeferred?.complete(Unit)
+                    pendingReplyDeferred = null
+                }
                 if (awaitingFirstBotReplySessionTime) {
                     awaitingFirstBotReplySessionTime = false
-                    Log.d(SESSION_TIME_TAG, "First bot reply after new connection - requesting session time (room=$roomId)")
+                    sessionEverStarted = true
+                    overrideNextSessionTimeWithNow = true
+                    Log.d(SESSION_TIME_TAG, "First live bot reply on this connection - requesting session time, countdown will start at 59:59 (room=$roomId)")
                     requestSessionTime()
+                }
+                if (pendingSessionResetOnNextBotMessage) {
+                    pendingSessionResetOnNextBotMessage = false
+                    Log.d(SESSION_TIME_TAG, "Applying deferred session time reset on this bot reply - countdown restarts at 59:59 (room=$roomId)")
+                    onEvent(IncomingSocketEvent.SessionTime(System.currentTimeMillis()))
                 }
                 handleWindowEventNode(event.node.content)
                 // END-node side effects - not about rendering. urlMessage opens externally in
@@ -646,6 +790,7 @@ class ChatRepository(
      * from the general `Chat360WS` socket firehose.
      */
     private fun requestSessionTime() {
+        awaitingSessionTimeResponse = true
         val payload = json.encodeToString(SessionTimeMessage(room_id = roomId))
         Log.d(SESSION_TIME_TAG, ">> SESSION TIME REQUEST: $payload")
         if (!wsClient.send(payload)) ensureReconnecting()
@@ -1032,6 +1177,11 @@ class ChatRepository(
                 "targetId=${outgoing.targetId} message=${outgoing.message}",
         )
         val payload = json.encodeToString(outgoing)
+        // Marks a bot reply as outstanding for this room - see awaitPendingReplyBeforeTeardown,
+        // which keeps the socket open long enough for it to actually arrive if the user switches
+        // rooms/starts a new chat before it does. Replacing any still-incomplete prior deferred
+        // is fine here: only the latest send's reply is what a switch needs to wait for.
+        pendingReplyDeferred = CompletableDeferred()
         if (!wsClient.send(payload)) ensureReconnecting()
         ackTracker.trackSend(outgoing.chat_msg_id) {
             if (!wsClient.send(payload)) ensureReconnecting()
@@ -1046,6 +1196,7 @@ class ChatRepository(
         reconnectManager.cancel()
         ackTracker.cancelAll()
         wsClient.close()
+        pendingReplyDeferred = null
         repoScope.cancel()
         WindowEventBridge.unregisterSession()
     }
@@ -1059,5 +1210,12 @@ class ChatRepository(
         /** How soon a byte-identical bot node has to arrive after the last one to be treated as
          * a redelivery artifact rather than a genuine new reply - see [lastDispatchedAt]. */
         const val DUPLICATE_NODE_WINDOW_MS = 2_000L
+        /** Max time a room switch/new chat will wait for an in-flight bot reply to finish before
+         * tearing down the old socket anyway - see [awaitPendingReplyBeforeTeardown]. */
+        const val PENDING_REPLY_AWAIT_TIMEOUT_MS = 10_000L
+        /** How fresh a resumed session's created_at can be before it's treated as synthetic
+         * (the backend minting a brand new one for this very query) rather than its true start
+         * time - see [awaitingImmediateSessionTimeCheck]. */
+        const val FRESHLY_CREATED_SESSION_WINDOW_SECONDS = 15L
     }
 }

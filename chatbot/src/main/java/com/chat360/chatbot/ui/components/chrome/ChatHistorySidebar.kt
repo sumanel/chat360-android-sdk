@@ -52,7 +52,7 @@ import com.chat360.chatbot.network.rest.dto.SessionLanguage
 import com.chat360.chatbot.ui.components.icons.AddIcon
 import com.chat360.chatbot.ui.components.icons.ChevronLeftIcon
 import com.chat360.chatbot.ui.components.icons.DarkModeIcon
-import com.chat360.chatbot.ui.components.icons.HistoryIcon
+import com.chat360.chatbot.ui.components.icons.ChatBubbleIcon
 import com.chat360.chatbot.ui.components.icons.LightModeIcon
 import com.chat360.chatbot.ui.components.icons.MoreIcon
 import com.chat360.chatbot.ui.components.icons.PersonIcon
@@ -60,6 +60,7 @@ import com.chat360.chatbot.ui.components.icons.TrainingIcon
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -155,9 +156,8 @@ fun ChatHistorySidebar(
                     color = colors.textSecondary
                 )
             } else {
-                HistoryGroup(
-                    title = "Conversations",
-                    items = conversations,
+                HistoryTimeline(
+                    conversations = conversations,
                     activeConversationId = activeConversationId,
                     onConversationSelected = onConversationSelected,
                     onConversationRenamed = onConversationRenamed,
@@ -262,10 +262,51 @@ private fun LanguageChip(label: String, selected: Boolean, onClick: () -> Unit) 
     }
 }
 
+private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
+
+/**
+ * Buckets conversations into timeline sections (Today / Yesterday / Previous 7 Days / ...)
+ * based on [CachedConversationEntity.createdAt], preserving each bucket's incoming order
+ * (conversations already arrive newest-first from the repository).
+ */
+private fun groupConversationsByDate(
+    conversations: List<CachedConversationEntity>
+): List<Pair<String, List<CachedConversationEntity>>> {
+    val todayStart = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val yesterdayStart = todayStart - DAY_MILLIS
+    val last7Start = todayStart - 7 * DAY_MILLIS
+    val last30Start = todayStart - 30 * DAY_MILLIS
+
+    val buckets = linkedMapOf(
+        "Today" to mutableListOf<CachedConversationEntity>(),
+        "Yesterday" to mutableListOf(),
+        "Previous 7 Days" to mutableListOf(),
+        "Previous 30 Days" to mutableListOf(),
+        "Older" to mutableListOf(),
+    )
+
+    conversations.forEach { conversation ->
+        val bucketKey = when {
+            conversation.createdAt >= todayStart -> "Today"
+            conversation.createdAt >= yesterdayStart -> "Yesterday"
+            conversation.createdAt >= last7Start -> "Previous 7 Days"
+            conversation.createdAt >= last30Start -> "Previous 30 Days"
+            else -> "Older"
+        }
+        buckets.getValue(bucketKey).add(conversation)
+    }
+
+    return buckets.filterValues { it.isNotEmpty() }.map { (label, items) -> label to items }
+}
+
 @Composable
-private fun HistoryGroup(
-    title: String,
-    items: List<CachedConversationEntity>,
+private fun HistoryTimeline(
+    conversations: List<CachedConversationEntity>,
     activeConversationId: String?,
     onConversationSelected: (String) -> Unit,
     onConversationRenamed: (String, String) -> Unit,
@@ -274,20 +315,22 @@ private fun HistoryGroup(
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
+    val groups = remember(conversations) { groupConversationsByDate(conversations) }
 
-    Column(modifier = modifier) {
-        Text(
-            title,
-            fontFamily = typography.textFamily,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.textSecondary
-        )
-        Spacer(Modifier.height(12.dp))
-
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth()
-        ) {
+    LazyColumn(
+        modifier = modifier.fillMaxWidth()
+    ) {
+        groups.forEach { (label, items) ->
+            item(key = "header_$label") {
+                Text(
+                    label.uppercase(Locale.getDefault()),
+                    fontFamily = typography.textFamily,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 12.dp)
+                )
+            }
             items(
                 items = items,
                 key = { it.id }
@@ -337,7 +380,7 @@ private fun ConversationItem(
                 .padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            Icon(HistoryIcon, contentDescription = null, tint = if (isActive) colors.accent else colors.textSecondary)
+            Icon(ChatBubbleIcon, contentDescription = null, tint = if (isActive) colors.accent else colors.textSecondary)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(displayTitle, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = itemColor, maxLines = 1, overflow = TextOverflow.Ellipsis)

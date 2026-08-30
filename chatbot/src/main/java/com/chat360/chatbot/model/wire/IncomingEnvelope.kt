@@ -106,7 +106,7 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     }
 
     if (user == "end_user") {
-        return IncomingSocketEvent.EchoedUserMessage(chat_msg_id, (message as? JsonPrimitive)?.contentOrNull, timestampMs)
+        return IncomingSocketEvent.EchoedUserMessage(chat_msg_id, message.echoedUserText(), timestampMs)
     }
 
     if (type == "typing_status") {
@@ -184,6 +184,18 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     }
 
     return IncomingSocketEvent.Unhandled(this)
+}
+
+/** An `end_user` echo's `message` is a plain string for free-typed replies, but a
+ * `{"text": ..., "type": "multichoice-option", "value": ...}` object for a tapped quick
+ * reply/multi-choice/checkbox selection (confirmed against the live history API) - falling back
+ * to only the JsonPrimitive case silently dropped every one of those from history replay, since
+ * the resulting null [IncomingSocketEvent.EchoedUserMessage.text] short-circuits
+ * ChatViewModel.handleEvent's `event.text?.let { ... }` render. */
+private fun JsonElement?.echoedUserText(): String? = when (this) {
+    is JsonPrimitive -> contentOrNull
+    is JsonObject -> string("text")
+    else -> null
 }
 
 /** The backend sends `time` as "dd/MM/yyyy HH:mm:ss" in UTC (confirmed against the same field

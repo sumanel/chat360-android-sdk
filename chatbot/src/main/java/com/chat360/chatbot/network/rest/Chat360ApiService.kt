@@ -37,6 +37,22 @@ class Chat360ApiService(
          * traffic - e.g. `adb logcat -s Chat360HistoryApi`, or type it into Android Studio's
          * Logcat search/tag filter. */
         const val HISTORY_LOG_TAG = "Chat360HistoryApi"
+
+        /** Logcat truncates a single log line at ~4KB, which silently cuts off long response
+         * bodies. Split into fixed-size chunks (numbered when there's more than one) so the
+         * full payload is always visible. */
+        private const val LOG_CHUNK_SIZE = 3000
+
+        private fun logChunked(tag: String, message: String) {
+            if (message.length <= LOG_CHUNK_SIZE) {
+                Log.d(tag, message)
+                return
+            }
+            val chunks = message.chunked(LOG_CHUNK_SIZE)
+            chunks.forEachIndexed { index, chunk ->
+                Log.d(tag, "[${index + 1}/${chunks.size}] $chunk")
+            }
+        }
     }
 
     /** [roomId]/[sessionId] resume a prior session (returned as-is by the backend, no error,
@@ -94,7 +110,7 @@ class Chat360ApiService(
             Log.e(HISTORY_LOG_TAG, "request failed url=$url", e)
             throw e
         }
-        Log.d(HISTORY_LOG_TAG, "response body=$body")
+        logChunked(HISTORY_LOG_TAG, "response body=$body")
         val response = json.decodeFromString(HistoryResponse.serializer(), body)
         response.history.forEach { item ->
             Log.d(HISTORY_LOG_TAG, "item user=${item.user} type=${item.type} chat_msg_id=${item.chat_msg_id} time=${item.time} timestamp_int=${item.timestamp_int}")

@@ -117,6 +117,23 @@ val HistoryIcon: ImageVector by lazy {
     }
 }
 
+/** Outlined speech-bubble ("message square") glyph used for rows in the conversation-history list. */
+val ChatBubbleIcon: ImageVector by lazy {
+    materialIcon("ChatBubble") {
+        strokedPath {
+            moveTo(21f, 15f)
+            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 19f, y1 = 17f)
+            horizontalLineTo(7f)
+            lineTo(3f, 21f)
+            verticalLineTo(5f)
+            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 5f, y1 = 3f)
+            horizontalLineTo(19f)
+            arcTo(2f, 2f, 0f, isMoreThanHalf = false, isPositiveArc = true, x1 = 21f, y1 = 5f)
+            close()
+        }
+    }
+}
+
 val MoreIcon: ImageVector by lazy {
     materialIcon("More") {
         filledPath { moveTo(3f, 10f); lineTo(7f, 10f); lineTo(7f, 14f); lineTo(3f, 14f); close() }
@@ -173,6 +190,18 @@ val ShortcutIcon: ImageVector by lazy {
 
 private fun ImageVector.Builder.filledPath(block: PathBuilder.() -> Unit) =
     path(fill = SolidColor(androidx.compose.ui.graphics.Color.Black), pathBuilder = block)
+
+private fun ImageVector.Builder.strokedPath(
+    strokeWidth: Float = 1.7f,
+    block: PathBuilder.() -> Unit,
+) = path(
+    fill = null,
+    stroke = SolidColor(androidx.compose.ui.graphics.Color.Black),
+    strokeLineWidth = strokeWidth,
+    strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round,
+    strokeLineJoin = androidx.compose.ui.graphics.StrokeJoin.Round,
+    pathBuilder = block,
+)
 
 private fun materialIcon(
     name: String,

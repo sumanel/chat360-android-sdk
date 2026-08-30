@@ -206,6 +206,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 keyboardController?.hide()
                                 focusManager.clearFocus(force = true)
                                 sdkConfig.callbacks.onMenuClicked()
+                                viewModel.refreshRoomsList()
                                 showHistorySidebar = true
                             },
                             onNewChatClick = {
@@ -227,7 +228,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
             pinnedWelcomeMessage?.let { pinned ->
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    BotMessageItem(pinned, viewModel, pickAttachment, captureFromCamera, state.isLiveChat, state.assignedAgent)
+                    BotMessageItem(pinned, viewModel, pickAttachment, captureFromCamera, state.isLiveChat, state.isConnected, state.assignedAgent)
                 }
             }
 
@@ -251,7 +252,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         if (message.fromUser) {
                             UserMessageRow(message)
                         } else {
-                            BotMessageItem(message, viewModel, pickAttachment, captureFromCamera, state.isLiveChat, state.assignedAgent)
+                            BotMessageItem(message, viewModel, pickAttachment, captureFromCamera, state.isLiveChat, state.isConnected, state.assignedAgent)
                         }
                     }
                     if (state.isAgentTyping && features.showTypingIndicator) {
@@ -394,11 +395,13 @@ private fun BotMessageItem(
     pickAttachment: () -> Unit,
     captureFromCamera: () -> Unit,
     isLiveChat: Boolean,
+    isConnected: Boolean,
     assignedAgent: AssignedAgent?,
 ) {
     BotMessageRow(
         message = message,
         isLiveChat = isLiveChat,
+        isConnected = isConnected,
         assignedAgent = assignedAgent,
         onFeedback = { liked, remarks -> viewModel.submitMessageFeedback(message.id, liked, remarks) },
         onClearFeedback = { viewModel.clearMessageFeedback(message.id) },

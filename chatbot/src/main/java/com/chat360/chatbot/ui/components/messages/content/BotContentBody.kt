@@ -11,9 +11,9 @@ import com.chat360.chatbot.ui.ChatMessage
  * never a change to [ChatMessage] or the row chrome around this.
  */
 @Composable
-fun BotContentBody(message: ChatMessage, actions: BotContentActions, isLiveChat: Boolean = false) {
+fun BotContentBody(message: ChatMessage, actions: BotContentActions, isLiveChat: Boolean = false, isConnected: Boolean = true) {
     when (val content = message.content) {
-        is BotContent.MultiChoice -> MultiChoiceContent(message, content, isLiveChat, actions.onQuickReply)
+        is BotContent.MultiChoice -> MultiChoiceContent(message, content, isLiveChat, isConnected, actions.onQuickReply)
         is BotContent.Media -> MediaContent(message, content, isLiveChat, actions.onTextCarouselTap)
         is BotContent.Carousel -> CarouselContent(message.text, content)
         is BotContent.FileUploadPrompt -> FileUploadPromptContent(content, isLiveChat, actions.onAttachmentClick, actions.onCameraClick)
@@ -31,10 +31,10 @@ fun BotContentBody(message: ChatMessage, actions: BotContentActions, isLiveChat:
         } else {
             PlainTextContent(message.text)
         }
-        is BotContent.AutoSuggestion -> AutoSuggestionContent(message, content, isLiveChat, actions.onAutoSuggestionSelected)
+        is BotContent.AutoSuggestion -> AutoSuggestionContent(message, content, isLiveChat, isConnected, actions.onAutoSuggestionSelected)
         is BotContent.DatePrompt -> DatePromptContent(message, content, isLiveChat, actions.onDateSelected)
         is BotContent.TimePrompt -> TimePromptContent(message, content, isLiveChat, actions.onTimeSubmit)
-        is BotContent.MultiOption -> MultiOptionContent(message, content, isLiveChat, actions.onCheckboxToggle, actions.onCheckboxSubmit)
+        is BotContent.MultiOption -> MultiOptionContent(message, content, isLiveChat, isConnected, actions.onCheckboxToggle, actions.onCheckboxSubmit)
         is BotContent.ImageButtons -> ImageButtonsContent(message, content, isLiveChat, actions.onImageButtonClick)
         is BotContent.TextCarousel -> TextCarouselContent(message, content, isLiveChat, actions.onTextCarouselTap)
         is BotContent.LinkCard -> LinkCardContent(message.text, content)

@@ -15,6 +15,7 @@ fun MultiChoiceContent(
     message: ChatMessage,
     content: BotContent.MultiChoice,
     isLiveChat: Boolean,
+    isConnected: Boolean,
     onQuickReply: (BotContent.MultiChoice.Option) -> Unit,
 ) {
     Column {
@@ -23,7 +24,7 @@ fun MultiChoiceContent(
             Spacer(modifier = Modifier.height(10.dp))
             InlineChoiceList(
                 labels = content.options.map { it.text },
-                enabled = message.repliesEnabled && !isLiveChat,
+                enabled = message.repliesEnabled && !isLiveChat && isConnected,
                 isSelected = { index -> message.selectedReplyIndex == content.options[index].index },
                 onSelect = { index -> onQuickReply(content.options[index]) },
             )

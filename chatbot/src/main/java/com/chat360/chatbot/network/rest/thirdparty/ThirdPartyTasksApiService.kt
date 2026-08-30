@@ -1,5 +1,6 @@
 package com.chat360.chatbot.network.rest.thirdparty
 
+import android.util.Log
 import com.chat360.chatbot.network.rest.dto.thirdparty.RoomStatusEnvelope
 import com.chat360.chatbot.network.rest.dto.thirdparty.RoomUpdateEnvelope
 import com.chat360.chatbot.network.rest.dto.thirdparty.RoomsListEnvelope
@@ -30,6 +31,29 @@ class ThirdPartyTasksApiService(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val jsonMediaType = "application/json".toMediaTypeOrNull()
+
+    companion object {
+        /** Filter logcat by this tag alone to see only the history sidebar's `rooms/list`
+         * request/response traffic - e.g. `adb logcat -s Chat360RoomsApi`, or type it into
+         * Android Studio's Logcat search/tag filter. */
+        const val ROOMS_LOG_TAG = "Chat360RoomsApi"
+
+        /** Logcat truncates a single log line at ~4KB, which silently cuts off long response
+         * bodies. Split into fixed-size chunks (numbered when there's more than one) so the
+         * full payload is always visible. */
+        private const val LOG_CHUNK_SIZE = 3000
+
+        private fun logChunked(tag: String, message: String) {
+            if (message.length <= LOG_CHUNK_SIZE) {
+                Log.d(tag, message)
+                return
+            }
+            val chunks = message.chunked(LOG_CHUNK_SIZE)
+            chunks.forEachIndexed { index, chunk ->
+                Log.d(tag, "[${index + 1}/${chunks.size}] $chunk")
+            }
+        }
+    }
 
     suspend fun fetchToken(clientId: String, apiKey: String): TokenResponse {
         val url = "${baseUrl.trimEnd('/')}/api/third-party-tasks/auth/token"
@@ -68,9 +92,21 @@ class ThirdPartyTasksApiService(
             .addHeader("Authorization", "Bearer $bearerToken")
             .get()
             .build()
-        val body = execute(request)
-        return json.decodeFromString(RoomsListEnvelope.serializer(), body).data
+        Log.d(ROOMS_LOG_TAG, "request url=$url")
+        val body = try {
+            execute(request)
+        } catch (e: IOException) {
+            Log.e(ROOMS_LOG_TAG, "request failed url=$url", e)
+            throw e
+        }
+        logChunked(ROOMS_LOG_TAG, "response body=$body")
+        val response = json.decodeFromString(RoomsListEnvelope.serializer(), body).data
             ?: throw ThirdPartyMalformedResponseException("rooms/list")
+        Log.d(ROOMS_LOG_TAG, "rooms=${response.rooms.size} totalCount=${response.totalCount} hasMore=${response.hasMore}")
+        response.rooms.forEach { room ->
+            Log.d(ROOMS_LOG_TAG, "room room_id=${room.roomId} room_name=${room.roomName} status=${room.status} created_at=${room.createdAt} updated_at=${room.updatedAt} session_count=${room.sessionCount}")
+        }
+        return response
     }
 
     suspend fun updateRoom(

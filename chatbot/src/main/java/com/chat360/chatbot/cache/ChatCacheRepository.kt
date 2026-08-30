@@ -74,20 +74,52 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
             }
     }
 
+    /** Replaces a conversation's server-sourced messages wholesale - the caller re-reads
+     * [messages] afterward for the inserted rows' ids (and any [CachedMessageEntity.liked]
+     * carried over below) to attach to what it renders. Any locally-sent ("USER") message the
+     * backend hasn't indexed into its own history endpoint yet is carried forward rather than
+     * deleted - see [notYetIndexedUserMessages]'s doc; the caller re-reads [messages] afterward,
+     * so it renders these the same way it renders everything else here. */
     suspend fun replaceRawHistory(conversationId: String, history: List<RawSocketEnvelope>) {
         if (!ENABLED) return
         val fetchedAt = System.currentTimeMillis()
-        dao.replaceMessages(
-            conversationId,
-            history.mapIndexed { index, envelope ->
-                CachedMessageEntity(
-                    conversationId = conversationId,
-                    kind = "RAW",
-                    payload = json.encodeToString(envelope),
-                    createdAt = fetchedAt + index,
-                )
-            },
-        )
+        val existing = dao.messages(conversationId)
+        // A bot envelope carries no stable id at this decode layer - matching the freshly
+        // re-serialized payload against what's already cached is the only way to tell "this is
+        // still the same message" and carry its thumbs up/down forward. A message whose content
+        // genuinely changed server-side just loses its rating, same as any content decoded fresh
+        // from history for the first time.
+        val likedByPayload = existing
+            .filter { it.kind == "RAW" && it.liked != null }
+            .associate { it.payload to it.liked }
+        val historyChatMsgIds = history.mapNotNullTo(mutableSetOf()) { it.chat_msg_id }
+        // A message this device just sent (or snapped back to send while browsing elsewhere -
+        // see ChatViewModel.appendMessage) can easily lose the race against this same history
+        // fetch: the websocket send and the backend indexing it into its *own* history endpoint
+        // aren't the same write, so a refresh that lands in between would otherwise silently wipe
+        // it the instant the wholesale replace below runs - exactly what made a just-sent message
+        // vanish on a fast room switch. Carrying it forward here instead lets it survive until a
+        // later refresh's history page genuinely includes it, at which point its chatMsgId starts
+        // matching one in historyChatMsgIds and it naturally drops out of this set on its own -
+        // no separate cleanup needed.
+        val notYetIndexedUserMessages = existing.filter {
+            it.kind == "USER" && (it.chatMsgId == null || it.chatMsgId !in historyChatMsgIds)
+        }
+        val historyRows = history.mapIndexed { index, envelope ->
+            val payload = json.encodeToString(envelope)
+            CachedMessageEntity(
+                conversationId = conversationId,
+                kind = "RAW",
+                payload = payload,
+                createdAt = fetchedAt + index,
+                liked = likedByPayload[payload],
+            )
+        }
+        // Appended after the fetched history (not merged by timestamp) so a not-yet-indexed send
+        // always renders as the most recent message - the only case this preserves is exactly
+        // that: something sent after everything the server just returned. id reset to 0 since
+        // these are reinserted as new rows once dao.replaceMessages deletes the old ones.
+        dao.replaceMessages(conversationId, historyRows + notYetIndexedUserMessages.map { it.copy(id = 0) })
     }
 
     suspend fun renameConversation(conversationId: String, title: String) {

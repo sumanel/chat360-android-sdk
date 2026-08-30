@@ -82,6 +82,19 @@ class ChatViewModel(
     private val pendingRawEnvelopes = mutableListOf<String>()
     /** True only while Room entries are being replayed; cached messages are never “initial” UI. */
     private var restoringFromCache = false
+    /** While [restoringFromCache] is true, whether the bot messages currently being replayed are
+     * still the unanswered leading run of a conversation the user never actually started - i.e.
+     * this replay batch is known to reach all the way back to the room's true beginning (always
+     * true for local cache, since [replayFromCache] has no pagination; only true for a REST page
+     * whose `previous_cursor` came back null) and no replayed user turn has been seen yet. Flips
+     * false the moment a real user turn replays (see the EchoedUserMessage branch and
+     * [replayFromCache]'s "USER" branch), so [suppressInitialBotMessages] keeps hiding the same
+     * auto-sent opener on every replay - cache, initial REST fetch, or a "load more" that finally
+     * reaches the start - instead of only on the very first live connect. A REST batch that isn't
+     * confirmed as the earliest page is never treated as suppressible, since a recent slice with
+     * no user turn in it just means the user's last reply predates that page, not that the
+     * conversation never started. */
+    private var suppressLeadingReplayBotMessages = false
     /** Set only while [appendMessage]'s browsing-snap-back restore is in flight for this exact
      * chatMsgId - see its doc for why. */
     private var pendingSnapBackChatMsgId: String? = null
@@ -100,6 +113,21 @@ class ChatViewModel(
      * fetch (seed or "load more") most recently ran, reset to null on every conversation
      * switch since a cursor is only ever meaningful within the room it came from. */
     private var previousHistoryCursor: Int? = null
+    /** Bumped by [beginLoad] on every new room-switch/history-seed attempt (opening a
+     * conversation, activating a freshly connected room, starting a new chat, snapping back to
+     * the connected room to send). [replayFromCache]/[refreshConversationHistory]/[loadMoreHistory]
+     * capture the generation in effect when they start and re-check it with [isCurrentLoad] after
+     * every suspending call (a Room query, a history REST fetch) before touching any of the
+     * shared vars above or [_uiState] - if a newer attempt started while they were suspended, they
+     * bail instead of clobbering whatever that newer attempt already wrote. Plain (not @Volatile):
+     * every read/write happens on the main thread, since it's only ever touched from
+     * viewModelScope coroutines and from [ChatRepository]'s callbacks, which are themselves now
+     * posted to the main thread (see Chat360WebSocketClient) - the actual cross-thread races this
+     * class used to be exposed to. */
+    private var loadGeneration = 0
+
+    private fun beginLoad(): Int = ++loadGeneration
+    private fun isCurrentLoad(generation: Int) = generation == loadGeneration
 
     /** Mirrors [activeConversationId] into [ChatUiState] so the history sidebar can highlight
      * whichever conversation is currently open - the plain `var` above is read-only from the UI. */
@@ -113,14 +141,9 @@ class ChatViewModel(
         // chatHistoryRepository is also configured (below), its refreshRooms() result can
         // overwrite this with the live agent-room list instead.
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
-        if (chatHistoryRepository != null) {
-            viewModelScope.launch(Dispatchers.IO) {
-                val refreshed = chatHistoryRepository.refreshRooms()
-                if (refreshed != null) _conversations.value = refreshed
-                _uiState.update { it.copy(isHistoryUnavailable = refreshed == null) }
-            }
-        }
+        refreshRoomsList()
         viewModelScope.launch {
+            val generation = beginLoad()
             repository.connect(
                 onEvent = ::handleEvent,
                 onConnected = { _uiState.update { it.copy(isConnected = true, error = null) } },
@@ -145,7 +168,7 @@ class ChatViewModel(
                         )
                     }
                 },
-                onConversationStarted = { roomId -> activateConversation(roomId) },
+                onConversationStarted = { roomId -> activateConversation(roomId, generation) },
                 onRawIncoming = ::cacheIncomingEnvelope,
                 onOpenUrl = { url -> _uiState.update { it.copy(pendingUrlToOpen = url) } },
                 onSessionResumed = { takeover, agent ->
@@ -175,7 +198,8 @@ class ChatViewModel(
         if (!restoringFromCache && activeConversationId != connectedConversationId) return
         when (event) {
             is IncomingSocketEvent.BotMessage -> {
-                if (suppressInitialBotMessages && !hasStartedConversation && !restoringFromCache) return
+                val isSuppressibleLeadingMessage = if (restoringFromCache) suppressLeadingReplayBotMessages else !hasStartedConversation
+                if (suppressInitialBotMessages && isSuppressibleLeadingMessage) return
                 val node = event.node
                 // Unconditional (unlike the PlainTextContent table-only log) - fires for every bot
                 // node regardless of nodeType/content routing, so it's the fastest way to confirm
@@ -248,7 +272,12 @@ class ChatViewModel(
             is IncomingSocketEvent.CloseConnection -> _uiState.update { it.copy(isConnected = false) }
             is IncomingSocketEvent.AgentAssigned -> _uiState.update { it.copy(assignedAgent = event.agent) }
             is IncomingSocketEvent.LiveChatEnded -> _uiState.update { it.copy(isLiveChat = false) }
-            is IncomingSocketEvent.SessionTime -> _uiState.update { it.copy(sessionCreatedAtMs = event.createdAtMs) }
+            // Only ever meaningful live - history/cache replay can surface a stored
+            // session_time_hyundai entry from a past connection whose created_at is long stale,
+            // and applying it here would show/reset the timer the instant an old conversation's
+            // history loads, before ChatRepository's own live-socket gating (deferred-until-next-
+            // bot-reply, elapsed-time check, etc.) ever gets a say.
+            is IncomingSocketEvent.SessionTime -> if (!restoringFromCache) _uiState.update { it.copy(sessionCreatedAtMs = event.createdAtMs) }
             is IncomingSocketEvent.InactivityNotice -> {
                 if (event.message != null) appendMessage(ChatMessage(text = event.message, fromUser = false), cacheUserMessage = false)
                 if (event.autoArchive) _uiState.update { it.copy(isArchived = true) }
@@ -264,6 +293,10 @@ class ChatViewModel(
             // deliberate optimistic append still pending right behind it.
             is IncomingSocketEvent.EchoedUserMessage -> {
                 if (restoringFromCache && event.chatMsgId != pendingSnapBackChatMsgId) {
+                    // A real user turn just replayed, so the conversation demonstrably started -
+                    // any bot message from here on in this batch is a genuine reply, never the
+                    // suppressible opener (see suppressLeadingReplayBotMessages's doc).
+                    suppressLeadingReplayBotMessages = false
                     event.text?.let {
                         appendMessage(
                             ChatMessage(
@@ -350,8 +383,9 @@ class ChatViewModel(
             // that branch tell "this is the send I'm about to append myself" apart from a
             // genuine older turn being replayed, without touching the replay path itself.
             pendingSnapBackChatMsgId = message.chatMsgId
+            val generation = beginLoad()
             viewModelScope.launch {
-                restoreConversation(target, connectedRoomId)
+                restoreConversation(target, connectedRoomId, generation)
                 pendingSnapBackChatMsgId = null
                 appendMessageNow(message, cacheUserMessage)
             }
@@ -927,12 +961,32 @@ class ChatViewModel(
      * [refreshConversationHistory] replaces a conversation's cache with its room's current server
      * state). Not written to the DB until the user actually sends something in it - see
      * [ensureConversationPersisted] - so an unused "new chat" never leaves an empty entry behind. */
+    /** Re-fetches the agent's rooms from `rooms/list` and refreshes the sidebar's conversation
+     * list from the result - called once at load and again each time the history sidebar is
+     * opened, so it always reflects the latest server-side rooms. The request/response traffic
+     * is logged under [ThirdPartyTasksApiService.ROOMS_LOG_TAG] - filter logcat by that tag
+     * (`adb logcat -s Chat360RoomsApi`) to inspect it. No-op when no [chatHistoryRepository] is
+     * configured. */
+    fun refreshRoomsList() {
+        val repo = chatHistoryRepository ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val refreshed = repo.refreshRooms()
+            if (refreshed != null) _conversations.value = refreshed
+            _uiState.update { it.copy(isHistoryUnavailable = refreshed == null) }
+        }
+    }
+
     fun startNewChat() {
+        val generation = beginLoad()
         val conversationId = java.util.UUID.randomUUID().toString()
-        connectedConversationId = conversationId
-        connectedRoomId = null
-        conversationPersisted = false
-        pendingRawEnvelopes.clear()
+        // Only the display resets immediately, for a responsive "new chat" screen. Live-frame
+        // routing (connectedConversationId, and everything activateConversation() sets alongside
+        // it below) deliberately stays on the *old* conversation until that actually runs - which
+        // now only happens once the old room's socket is genuinely torn down (see
+        // ChatRepository.awaitPendingReplyBeforeTeardown). Flipping connectedConversationId here
+        // instead would misattribute a bot reply still in flight for the old room into this
+        // brand-new, still-empty chat - and even render it live, since activeConversationId and
+        // connectedConversationId would briefly (and wrongly) agree.
         setActiveConversationId(conversationId)
         streamRawText.clear()
         hasStartedConversation = false
@@ -958,7 +1012,13 @@ class ChatViewModel(
             )
         }
         viewModelScope.launch {
-            repository.startNewSession(onConversationStarted = ::activateConversation)
+            repository.startNewSession(onConversationStarted = { roomId ->
+                // Only now does routing actually move to the new conversation - see the doc
+                // above. activateConversation() reads this as its cache.activateForRoom hint, so
+                // the brand-new room lands on the exact id already shown optimistically.
+                connectedConversationId = conversationId
+                activateConversation(roomId, generation)
+            })
         }
     }
 
@@ -1004,15 +1064,27 @@ class ChatViewModel(
     }
 
     /** Binds the server room to its Room record and restores cached rich websocket messages.
-     * Local cache is the durable source of truth for a conversation this device has already
-     * seen - [refreshConversationHistory]'s REST fetch only ever seeds a conversation that has
-     * none yet; growing it further is only ever additive pagination, never a wholesale resync.
-     * Skipping it once local messages exist also avoids a real data-loss bug:
-     * that endpoint caps at a handful of the most recent raw items, and unconditionally
-     * replacing the local cache with a truncated snapshot on every reopen would silently delete
-     * everything older than that window. */
-    private suspend fun activateConversation(roomId: String): Boolean {
+     * Local cache is shown first so entering an already-seen room paints instantly, but it is
+     * never the final word: [refreshConversationHistory] then fetches the room's latest history
+     * page and overwrites both the on-screen messages and the cache with it, so messages that
+     * landed elsewhere (another device/session) since this cache was last written still show up
+     * here. [refreshConversationHistory] itself guards against a transient empty response wiping
+     * out a real cache. */
+    private suspend fun activateConversation(roomId: String, generation: Int): Boolean {
         val (conversationId, hasCachedMessages) = cache.activateForRoom(botId, roomId, connectedConversationId)
+        // Repository-binding bookkeeping is committed unconditionally, before the generation
+        // check below - by the time this callback runs, ChatRepository's live socket is *already*
+        // unconditionally bound to this room (establishSession sets its own roomId/ownerId/
+        // sessionId and opens the socket before ever calling back here - see
+        // ChatRepository.establishSession), regardless of whether a newer switch was requested
+        // while this one was in flight. Gating this assignment on isCurrentLoad used to leave
+        // connectedConversationId pointing at the *previous* room in that case, while the socket
+        // had already moved on - so a live frame that genuinely belonged to this room got cached
+        // under the wrong (stale) conversation instead (cacheIncomingEnvelope/appendMessageNow key
+        // off connectedConversationId, not off loadGeneration). These callbacks fire in strict
+        // request order (serialized by ChatRepository's sessionMutex), so the last one to run
+        // always reflects the true current binding - a "stale" one committing here first is
+        // harmless, since the newer call's own commit runs right behind it and wins.
         connectedConversationId = conversationId
         connectedRoomId = roomId
         // An already-cached conversation is by definition already a persisted row; a brand-new
@@ -1020,28 +1092,46 @@ class ChatViewModel(
         // user sends something - see ensureConversationPersisted.
         conversationPersisted = hasCachedMessages
         if (!hasCachedMessages) pendingRawEnvelopes.clear()
+        // Only the on-screen rendering below is allowed to bail on staleness: cache.activateForRoom
+        // is a suspending DB call - a newer switch (openConversation, startNewChat, ...) may have
+        // already bumped loadGeneration while this was in flight. Bailing here instead of finishing
+        // keeps this stale activation from painting its history over whatever the newer switch's
+        // own activation already rendered.
+        if (!isCurrentLoad(generation)) return hasCachedMessages
         setActiveConversationId(conversationId)
         previousHistoryCursor = null
-        if (hasCachedMessages) {
-            replayFromCache(conversationId)
-            return true
-        }
-        return refreshConversationHistory(conversationId, roomId)
+        if (hasCachedMessages) replayFromCache(conversationId, generation)
+        val refreshedFromServer = refreshConversationHistory(conversationId, roomId, generation)
+        return hasCachedMessages || refreshedFromServer
     }
 
     /** Replays a conversation's cached Room entries through [handleEvent] - shared by
      * [activateConversation]'s cache-hit path, [openConversation], and [appendMessage]'s
      * snap-back-to-connected path. Returns whether any cached entries were found. */
-    private suspend fun replayFromCache(conversationId: String): Boolean {
+    private suspend fun replayFromCache(conversationId: String, generation: Int): Boolean {
+        if (!isCurrentLoad(generation)) return false
         streamRawText.clear()
         _uiState.update { it.copy(messages = emptyList(), hasMoreHistory = false) }
         restoringFromCache = true
+        // Local cache holds the conversation from its true start (no pagination - see
+        // hasMoreHistory always false below), so it's always the earliest batch.
+        suppressLeadingReplayBotMessages = true
         var hasCachedMessages = false
         try {
-            cache.messages(conversationId).forEach { cached ->
+            val cachedMessages = cache.messages(conversationId)
+            // cache.messages is the suspension point a newer switch can interleave at - two
+            // replays both awaiting their own DB query would otherwise both resume and append
+            // into whatever _uiState.messages currently holds, mixing one room's history into the
+            // other's transcript. Bailing here (before appending anything) is what this generation
+            // check exists to prevent.
+            if (!isCurrentLoad(generation)) return false
+            cachedMessages.forEach { cached ->
                 hasCachedMessages = true
                 when (cached.kind) {
-                    "USER" -> appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true, timeText = formatMessageTime(cached.createdAt)), cacheUserMessage = false)
+                    "USER" -> {
+                        suppressLeadingReplayBotMessages = false
+                        appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true, timeText = formatMessageTime(cached.createdAt)), cacheUserMessage = false)
+                    }
                     "RAW" -> {
                         val event = runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }.getOrNull()
                         if (event != null) {
@@ -1054,7 +1144,13 @@ class ChatViewModel(
                 }
             }
         } finally {
-            restoringFromCache = false
+            // Only the generation that's still current may reset these - a stale replay's finally
+            // running after a newer one has already started (and set them true again for its own
+            // run) must not rip them out from under it.
+            if (isCurrentLoad(generation)) {
+                restoringFromCache = false
+                suppressLeadingReplayBotMessages = false
+            }
         }
         return hasCachedMessages
     }
@@ -1079,21 +1175,70 @@ class ChatViewModel(
         }
     }
 
-    /** Seeds a conversation that has no local messages yet from the room's server snapshot -
-     * see [activateConversation]'s doc for why this must never run once local cache exists. */
-    private suspend fun refreshConversationHistory(conversationId: String, roomId: String): Boolean {
+    /** Fetches the room's latest history page from the server and overwrites both the on-screen
+     * messages and the local cache with it - see [activateConversation]'s doc. Runs whether or
+     * not a local cache already exists, so it's also what keeps a resumed room in sync with
+     * messages that landed elsewhere (another device/session). A response that comes back empty
+     * never overwrites an already-populated display/cache: that's far more likely a transient
+     * backend hiccup than a room that genuinely lost all its history, and blindly wiping local
+     * data on that response would be a real data-loss bug. */
+    private suspend fun refreshConversationHistory(conversationId: String, roomId: String, generation: Int): Boolean {
         val response = runCatching { repository.fetchHistory(roomId) }.getOrNull() ?: return false
         val history = response.history
-        if (activeConversationId != conversationId) return history.isNotEmpty()
+        // repository.fetchHistory is a real network round trip - the suspension point a newer
+        // switch can race ahead at. isCurrentLoad replaces the old activeConversationId
+        // comparison: that alone isn't enough for an A->B->A switch sequence, where a stale
+        // response from the *first* visit to A would wrongly look current again once B->A's own
+        // (later) load makes activeConversationId equal A a second time.
+        if (!isCurrentLoad(generation)) return history.isNotEmpty()
+        if (history.isEmpty() && _uiState.value.messages.isNotEmpty()) return false
+        // Persisted first (rather than rendered straight from `history`) so the render loop below
+        // can source each bubble from its real Room row - carrying over the row id (for feedback
+        // taps) and any thumbs up/down replaceRawHistory just carried forward from the old cache.
+        cache.replaceRawHistory(conversationId, history)
+        if (!isCurrentLoad(generation)) return history.isNotEmpty()
+        val cachedRows = cache.messages(conversationId)
+        if (!isCurrentLoad(generation)) return history.isNotEmpty()
         streamRawText.clear()
         _uiState.update { it.copy(messages = emptyList(), isArchived = false, isLiveChat = false, assignedAgent = null) }
         restoringFromCache = true
+        // A null previous_cursor means this "most recent page" fetch already reached back to the
+        // room's true start - only then can its leading bot messages be the suppressible opener;
+        // a page with more history behind it is by definition not the conversation's beginning.
+        suppressLeadingReplayBotMessages = response.previous_cursor == null
         try {
-            history.map { it.toIncomingEvent() }.forEach(::handleEvent)
+            cachedRows.forEach { cached ->
+                when (cached.kind) {
+                    // A not-yet-server-indexed send that replaceRawHistory just carried forward
+                    // instead of deleting (see its doc) - this loop used to only ever decode
+                    // "RAW" JSON envelopes, so a plain-text USER row would silently fail that
+                    // decode and vanish instead of rendering; branch on kind the same way
+                    // replayFromCache already does for a pure local-cache replay.
+                    "USER" -> {
+                        suppressLeadingReplayBotMessages = false
+                        appendMessage(
+                            ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true, timeText = formatMessageTime(cached.createdAt)),
+                            cacheUserMessage = false,
+                        )
+                    }
+                    "RAW" -> {
+                        val event = runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }.getOrNull()
+                        if (event != null) {
+                            handleEvent(event)
+                            if (event is IncomingSocketEvent.BotMessage) {
+                                attachCachedFeedback(cached.id, cached.liked, event.node.streamId)
+                            }
+                        }
+                    }
+                }
+            }
         } finally {
-            restoringFromCache = false
+            if (isCurrentLoad(generation)) {
+                restoringFromCache = false
+                suppressLeadingReplayBotMessages = false
+            }
         }
-        cache.replaceRawHistory(conversationId, history)
+        if (!isCurrentLoad(generation)) return history.isNotEmpty()
         previousHistoryCursor = response.previous_cursor
         _uiState.update { it.copy(hasMoreHistory = response.previous_cursor != null) }
         return history.isNotEmpty()
@@ -1106,20 +1251,31 @@ class ChatViewModel(
         val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId ?: return
         val cursor = previousHistoryCursor ?: return
         if (_uiState.value.isLoadingMoreHistory) return
+        // Not a new "load" of its own (it's paging within the already-active conversation, not
+        // switching to a different one) - captures whatever generation is already current so a
+        // room switch that happens while this REST call is in flight still invalidates it.
+        val generation = loadGeneration
         _uiState.update { it.copy(isLoadingMoreHistory = true) }
         viewModelScope.launch {
             val response = runCatching { repository.fetchMoreHistory(roomId, cursor) }.getOrNull()
-            if (response == null || activeConversationId != conversationId) {
+            if (response == null || !isCurrentLoad(generation)) {
                 _uiState.update { it.copy(isLoadingMoreHistory = false) }
                 return@launch
             }
             val sizeBefore = _uiState.value.messages.size
             restoringFromCache = true
+            // Same rule as refreshConversationHistory: only the page that finally reaches
+            // previous_cursor == null is confirmed to hold the room's true opening messages.
+            suppressLeadingReplayBotMessages = response.previous_cursor == null
             try {
                 response.history.map { it.toIncomingEvent() }.forEach(::handleEvent)
             } finally {
-                restoringFromCache = false
+                if (isCurrentLoad(generation)) {
+                    restoringFromCache = false
+                    suppressLeadingReplayBotMessages = false
+                }
             }
+            if (!isCurrentLoad(generation)) return@launch
             // handleEvent only ever appends - the older page just landed at the tail, so move
             // it to the front instead of re-deriving each ChatMessage's construction here.
             _uiState.update { state ->
@@ -1173,6 +1329,7 @@ class ChatViewModel(
 
     fun openConversation(conversationId: String) {
         if (conversationId == activeConversationId) return
+        val generation = beginLoad()
         viewModelScope.launch {
             setActiveConversationId(conversationId)
             previousHistoryCursor = null
@@ -1183,22 +1340,24 @@ class ChatViewModel(
             // until this room's own SessionTime event arrives.
             _uiState.update { it.copy(isArchived = false, isLiveChat = false, assignedAgent = null, isAgentTyping = false, sessionCreatedAtMs = null) }
             val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
-            restoreConversation(conversationId, roomId)
+            restoreConversation(conversationId, roomId, generation)
             // Reconnect the live socket to this room right away (when this device can resume it -
             // see switchToActiveRoomIfResumable's doc) instead of waiting for the user to hit send,
             // so a re-opened conversation is already live the moment it's on screen.
-            switchToActiveRoomIfResumable()
+            switchToActiveRoomIfResumable(generation)
         }
     }
 
-    /** Replays [conversationId]'s local cache if there is one; otherwise re-seeds it from the
-     * server (see [activateConversation]'s doc for why cache always wins when present). The REST
-     * fallback also covers a conversation with no local cache yet whose reply arrived on the live
-     * socket while it wasn't the one on screen (see [handleEvent]'s doc): the server already has
-     * it, even though nothing local does yet. */
-    private suspend fun restoreConversation(conversationId: String, roomId: String?) {
-        val hasCachedMessages = replayFromCache(conversationId)
-        if (!hasCachedMessages && roomId != null) refreshConversationHistory(conversationId, roomId)
+    /** Replays [conversationId]'s local cache first for an instant paint, then always fetches
+     * its latest history page from the server to overwrite both the display and the cache (see
+     * [activateConversation]'s doc). This also covers a conversation with no local cache yet
+     * whose reply arrived on the live socket while it wasn't the one on screen (see
+     * [handleEvent]'s doc): the server already has it, even though nothing local does yet. */
+    private suspend fun restoreConversation(conversationId: String, roomId: String?, generation: Int) {
+        replayFromCache(conversationId, generation)
+        if (roomId != null && isCurrentLoad(generation)) {
+            refreshConversationHistory(conversationId, roomId, generation)
+        }
     }
 
     fun sendMessage() {
@@ -1234,7 +1393,7 @@ class ChatViewModel(
      * history) can't be resumed this way - there is no way to rejoin a room without its session
      * token, confirmed against the live API - so this is a no-op for it, same as before this
      * existed. */
-    private suspend fun switchToActiveRoomIfResumable() {
+    private suspend fun switchToActiveRoomIfResumable(generation: Int = loadGeneration) {
         val active = activeConversationId ?: return
         if (active == connectedConversationId) return
         val targetRoomId = _conversations.value.firstOrNull { it.id == active }?.roomId ?: return
@@ -1245,12 +1404,20 @@ class ChatViewModel(
         // own doc) there's no reconnect coming to do that, so it's restored here instead.
         _uiState.update { it.copy(isConnected = false) }
         val switched = repository.switchToRoom(targetRoomId) { resumedRoomId ->
+            // Committed unconditionally, not gated on isCurrentLoad - by the time this runs,
+            // ChatRepository's live socket is already unconditionally bound to this room (see
+            // activateConversation's doc for the full reasoning: establishSession commits its own
+            // roomId/session and opens the socket before ever calling back here, so leaving these
+            // fields stale would let a live frame that genuinely belongs to this room get cached
+            // under whatever conversation was connected before). switchToRoom is only ever called
+            // for a room this device has itself previously connected to (see its own doc), so it
+            // always has real history to resume - hadHistory is unconditionally true here.
             connectedConversationId = active
             connectedRoomId = resumedRoomId
             conversationPersisted = true
             true
         }
-        if (!switched) _uiState.update { it.copy(isConnected = true) }
+        if (!switched && isCurrentLoad(generation)) _uiState.update { it.copy(isConnected = true) }
     }
 
     override fun onCleared() {
