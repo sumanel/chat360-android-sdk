@@ -12,8 +12,8 @@ data class SessionInitResponse(
     val owner_id: String,
     val session_token: String? = null,
     val session_id: String? = null,
-    // Live-chat resume state - lets a killed-and-reopened app pick up mid-live-chat state
-    // correctly instead of assuming a fresh bot-flow session.
+    // Live-chat resume state - lets a chat screen reopened while the process is still alive pick
+    // up mid-live-chat state correctly instead of assuming a fresh bot-flow session.
     val takeover: Boolean = false,
     val assigned_user: SessionAssignedUser? = null,
     val configs: SessionConfigs? = null,

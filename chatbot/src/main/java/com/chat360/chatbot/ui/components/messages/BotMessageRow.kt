@@ -92,7 +92,9 @@ fun BotMessageRow(
             if (config.features.showFeedback && config.features.showLike) {
             Spacer(modifier = Modifier.size(18.dp))
             androidx.compose.material3.Icon(
-                painter = painterResource(R.drawable.ic_outline_thumb_up_24),
+                painter = painterResource(
+                    if (feedback == true) R.drawable.ic_filled_thumb_up_24 else R.drawable.ic_outline_thumb_up_24,
+                ),
                 contentDescription = "Helpful",
                 tint = if (feedback == true) colors.accent else colors.textSecondary,
                 modifier = if (feedback == false) {
@@ -111,7 +113,9 @@ fun BotMessageRow(
             if (config.features.showFeedback && config.features.showDislike) {
             Spacer(modifier = Modifier.size(18.dp))
             androidx.compose.material3.Icon(
-                painter = painterResource(R.drawable.ic_outline_thumb_down_24),
+                painter = painterResource(
+                    if (feedback == false) R.drawable.ic_filled_thumb_down_24 else R.drawable.ic_outline_thumb_down_24,
+                ),
                 contentDescription = "Not helpful",
                 tint = if (feedback == false) colors.accent else colors.textSecondary,
                 modifier = Modifier.size(18.dp).clickable {

@@ -55,10 +55,12 @@ class ChatRepository(
     private val historyEnabled: Boolean = true,
     private val apiService: Chat360ApiService = Chat360ApiService(baseUrl),
     private val wsClient: Chat360WebSocketClient = Chat360WebSocketClient(),
-    /** Resumes the same room/session on the next [connect] (cold app launch) instead of always
-     * allocating a new one - null disables this and every connect starts fresh, same as before.
-     * Deliberately never consulted by [startNewSession] (see its own doc) - that's a real
-     * user-initiated "start over". */
+    /** Resumes the same room/session on a [connect] that reopens the chat screen while the
+     * process is still alive, instead of always allocating a new one - null disables this and
+     * every connect starts fresh, same as before. Never consulted on this bot's first [connect]
+     * in a genuinely new process (see [botsConnectedThisProcess]), and deliberately never
+     * consulted by [startNewSession] (see its own doc) - that's a real user-initiated "start
+     * over". */
     private val sessionStore: SessionStore? = null,
 ) {
     // encodeDefaults is essential: most wire fields (type/user/replyType/chat_msg_id/...) are
@@ -194,7 +196,7 @@ class ChatRepository(
         /** Every server envelope, including history/starter frames, for durable local replay. */
         onRawIncoming: (String) -> Unit = {},
         onOpenUrl: (String) -> Unit = {},
-        /** Seeds live-chat state from the session itself (takeover/assigned_user) before any history replays - lets a killed-and-reopened app resume mid-live-chat correctly instead of assuming a fresh bot-flow session. */
+        /** Seeds live-chat state from the session itself (takeover/assigned_user) before any history replays - lets a chat screen reopened while the process is still alive resume mid-live-chat correctly instead of assuming a fresh bot-flow session. */
         onSessionResumed: (takeover: Boolean, agent: AssignedAgent?) -> Unit = { _, _ -> },
         /** The session ended but is being held open (see LiveChatEnded below) so the UI can
          * show the post-chat survey first. */
@@ -216,7 +218,15 @@ class ChatRepository(
         this.onSessionResumed = onSessionResumed
         this.onBotSettingsLoaded = onBotSettingsLoaded
 
-        sessionMutex.withLock { establishSession(onConversationStarted, sessionStore?.load(botId)) }
+        // The very first connect() this bot sees in the process's lifetime is a genuine cold app
+        // launch - always start a fresh conversation there, ignoring whatever room SharedPreferences
+        // has persisted from before the process died. Any later connect() in the same process life
+        // (e.g. the chat screen was closed and reopened, but the host app/process stayed alive) does
+        // resume it, since by then it really is "the conversation that's still active" - see
+        // botsConnectedThisProcess's own doc.
+        val isColdProcessStart = botsConnectedThisProcess.add(botId)
+        val persisted = if (isColdProcessStart) null else sessionStore?.load(botId)
+        sessionMutex.withLock { establishSession(onConversationStarted, persisted) }
     }
 
     /**
@@ -302,7 +312,9 @@ class ChatRepository(
     }
 
     /** [persisted] is the session offered to the backend to resume - the last-connected one from
-     * [connect] (a cold app launch legitimately wants its last conversation back), a specific
+     * [connect] (reopening the chat screen within the same still-alive process legitimately wants
+     * its last conversation back; a genuine cold app launch passes null instead - see
+     * [botsConnectedThisProcess]), a specific
      * older room from [switchToRoom], or null from [startNewSession] (an explicit "start over"
      * must never resume the room it's tearing down). */
     private suspend fun establishSession(onConversationStarted: suspend (roomId: String) -> Boolean, persisted: PersistedSession?) {
@@ -1217,5 +1229,15 @@ class ChatRepository(
          * (the backend minting a brand new one for this very query) rather than its true start
          * time - see [awaitingImmediateSessionTimeCheck]. */
         const val FRESHLY_CREATED_SESSION_WINDOW_SECONDS = 15L
+        /** Bot ids that have already run [connect] at least once during this process's lifetime.
+         * Deliberately an in-memory set rather than anything persisted - it must reset when the
+         * process is killed and relaunched, so a genuine cold app launch starts a brand new
+         * conversation while merely reopening the chat screen with the host app/process still
+         * alive in the background (e.g. finishing and re-launching [ChatComposeActivity]) keeps
+         * resuming whatever conversation was last active. Shared across every [ChatRepository]
+         * instance in the process (a `synchronizedSet`, since different bots' instances can call
+         * [connect] concurrently on different threads), which is exactly what makes it a process-
+         * wide "have we resumed yet" marker rather than a per-instance one. */
+        val botsConnectedThisProcess: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
     }
 }

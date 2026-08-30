@@ -251,6 +251,7 @@ class ChatViewModel(
                         text = node.text.orEmpty(),
                         fromUser = false,
                         timeText = formatMessageTime(node.timestampMs),
+                        timestampMs = node.timestampMs ?: System.currentTimeMillis(),
                         content = node.content,
                         author = node.author,
                         cacheRowId = cachedRowId,
@@ -298,12 +299,36 @@ class ChatViewModel(
                     // suppressible opener (see suppressLeadingReplayBotMessages's doc).
                     suppressLeadingReplayBotMessages = false
                     event.text?.let {
+                        // History replay never goes through selectQuickReply/selectAutoSuggestion
+                        // (which set selectedReplyIndex live) - reconstruct it here by matching
+                        // this echoed reply's text against the immediately preceding bot message's
+                        // own options, so a replayed MULTI_CHOICE/AUTOSUGGESTION shows which
+                        // option the user actually picked instead of none highlighted.
+                        _uiState.update { state ->
+                            val lastIndex = state.messages.lastIndex
+                            val last = state.messages.getOrNull(lastIndex)
+                            val matchedIndex = when (val content = last?.content) {
+                                is BotContent.MultiChoice -> content.options.firstOrNull { option -> option.text == it }?.index
+                                is BotContent.AutoSuggestion -> content.choices.indexOf(it).takeIf { i -> i >= 0 }
+                                else -> null
+                            }
+                            if (last != null && !last.fromUser && matchedIndex != null) {
+                                state.copy(
+                                    messages = state.messages.toMutableList().apply {
+                                        this[lastIndex] = last.copy(selectedReplyIndex = matchedIndex)
+                                    },
+                                )
+                            } else {
+                                state
+                            }
+                        }
                         appendMessage(
                             ChatMessage(
                                 chatMsgId = event.chatMsgId,
                                 text = it,
                                 fromUser = true,
                                 timeText = formatMessageTime(event.timestampMs),
+                                timestampMs = event.timestampMs ?: System.currentTimeMillis(),
                             ),
                             cacheUserMessage = false,
                         )
@@ -1130,7 +1155,7 @@ class ChatViewModel(
                 when (cached.kind) {
                     "USER" -> {
                         suppressLeadingReplayBotMessages = false
-                        appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true, timeText = formatMessageTime(cached.createdAt)), cacheUserMessage = false)
+                        appendMessage(ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true, timeText = formatMessageTime(cached.createdAt), timestampMs = cached.createdAt), cacheUserMessage = false)
                     }
                     "RAW" -> {
                         val event = runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(cached.payload).toIncomingEvent() }.getOrNull()
@@ -1217,7 +1242,7 @@ class ChatViewModel(
                     "USER" -> {
                         suppressLeadingReplayBotMessages = false
                         appendMessage(
-                            ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true, timeText = formatMessageTime(cached.createdAt)),
+                            ChatMessage(chatMsgId = cached.chatMsgId, text = cached.payload, fromUser = true, timeText = formatMessageTime(cached.createdAt), timestampMs = cached.createdAt),
                             cacheUserMessage = false,
                         )
                     }

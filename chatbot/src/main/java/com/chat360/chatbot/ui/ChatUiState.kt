@@ -55,6 +55,7 @@ data class ChatMessage(
     val fromUser: Boolean,
     val failed: Boolean = false,
     val timeText: String = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()),
+    val timestampMs: Long = System.currentTimeMillis(),
     val content: BotContent = BotContent.PlainText,
     val repliesEnabled: Boolean = true,
     val selectedReplyIndex: Int? = null,

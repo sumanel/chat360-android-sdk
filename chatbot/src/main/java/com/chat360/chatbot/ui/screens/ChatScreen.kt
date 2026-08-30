@@ -51,6 +51,9 @@ import com.chat360.chatbot.ui.ChatViewModel
 import com.chat360.chatbot.ui.components.chrome.HeaderBar
 import com.chat360.chatbot.ui.components.chrome.ChatHistorySidebar
 import com.chat360.chatbot.ui.components.chrome.StatusBanner
+import com.chat360.chatbot.ui.components.chrome.DateSeparatorRow
+import com.chat360.chatbot.ui.components.chrome.chatDateSeparatorKey
+import com.chat360.chatbot.ui.components.chrome.chatDateSeparatorLabel
 import com.chat360.chatbot.ui.components.chrome.TypingIndicatorRow
 import com.chat360.chatbot.ui.components.chrome.WelcomeSplash
 import com.chat360.chatbot.ui.components.feedback.FeedbackFormDialog
@@ -134,6 +137,17 @@ fun ChatScreen(viewModel: ChatViewModel) {
         val focusManager = LocalFocusManager.current
         val keyboardController = LocalSoftwareKeyboardController.current
 
+        // While a WELCOME_SCREEN message is the most-recent one, it renders fixed above the
+        // scroll list instead of inside it: it stops being pinned automatically once anything
+        // else arrives after it.
+        val pinnedWelcomeMessage = state.messages.lastOrNull()?.takeIf { !it.fromUser && it.content is BotContent.WelcomeScreen }
+        val listMessages = if (pinnedWelcomeMessage != null) state.messages.dropLast(1) else state.messages
+        // Derived (not stateful) so it stays correct whether messages grew at the tail (a live
+        // reply) or were prepended at the head (loadMoreHistory's older page) - see that
+        // function's doc. A separator is inserted whenever the calendar day changes between two
+        // consecutive messages.
+        val listRows = remember(listMessages) { buildChatListRows(listMessages) }
+
         LaunchedEffect(speechToText.transcript) {
             if (speechToText.isListening) viewModel.onInputChange(speechToText.transcript)
         }
@@ -146,7 +160,9 @@ fun ChatScreen(viewModel: ChatViewModel) {
         LaunchedEffect(state.messages.lastOrNull()?.id, state.isAgentTyping) {
             val newTailId = state.messages.lastOrNull()?.id
             if (state.messages.isNotEmpty() && newTailId != lastTailMessageId) {
-                listState.animateScrollToItem(state.messages.size - 1 + if (state.isAgentTyping) 1 else 0)
+                val loadingItemOffset = if (state.isLoadingMoreHistory) 1 else 0
+                val typingItemOffset = if (state.isAgentTyping) 1 else 0
+                listState.animateScrollToItem(loadingItemOffset + listRows.size - 1 + typingItemOffset)
             }
             lastTailMessageId = newTailId
         }
@@ -181,12 +197,6 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 viewModel.clearPendingUrl()
             }
         }
-
-        // While a WELCOME_SCREEN message is the most-recent one, it renders fixed above the
-        // scroll list instead of inside it: it stops being pinned automatically once anything
-        // else arrives after it.
-        val pinnedWelcomeMessage = state.messages.lastOrNull()?.takeIf { !it.fromUser && it.content is BotContent.WelcomeScreen }
-        val listMessages = if (pinnedWelcomeMessage != null) state.messages.dropLast(1) else state.messages
 
         Box(modifier = Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(baseColors.resolvedStatusBar))
         Box(modifier = Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
@@ -248,11 +258,25 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             }
                         }
                     }
-                    items(listMessages, key = { it.id }) { message ->
-                        if (message.fromUser) {
-                            UserMessageRow(message)
-                        } else {
-                            BotMessageItem(message, viewModel, pickAttachment, captureFromCamera, state.isLiveChat, state.isConnected, state.assignedAgent)
+                    items(
+                        listRows,
+                        key = { row ->
+                            when (row) {
+                                is ChatListRow.MessageRow -> row.message.id
+                                is ChatListRow.DateSeparator -> "date_${row.dayKey}"
+                            }
+                        },
+                    ) { row ->
+                        when (row) {
+                            is ChatListRow.DateSeparator -> DateSeparatorRow(row.label)
+                            is ChatListRow.MessageRow -> {
+                                val message = row.message
+                                if (message.fromUser) {
+                                    UserMessageRow(message)
+                                } else {
+                                    BotMessageItem(message, viewModel, pickAttachment, captureFromCamera, state.isLiveChat, state.isConnected, state.assignedAgent)
+                                }
+                            }
                         }
                     }
                     if (state.isAgentTyping && features.showTypingIndicator) {
@@ -385,6 +409,30 @@ fun ChatScreen(viewModel: ChatViewModel) {
             PeriodicFeedbackDialog(onSubmit = viewModel::submitPeriodicFeedback)
         }
     }
+}
+
+/** One row of the message LazyColumn: either a real message or a date separator pill inserted
+ * between two messages sent on different calendar days. */
+private sealed interface ChatListRow {
+    data class MessageRow(val message: ChatMessage) : ChatListRow
+    data class DateSeparator(val dayKey: String, val label: String) : ChatListRow
+}
+
+/** Walks the flat message list once, inserting a [ChatListRow.DateSeparator] every time the
+ * calendar day changes - pure derivation of [messages], so it stays correct whether messages
+ * grew at the tail (live) or were prepended at the head (loadMoreHistory's older page). */
+private fun buildChatListRows(messages: List<ChatMessage>): List<ChatListRow> {
+    val rows = ArrayList<ChatListRow>(messages.size + 4)
+    var lastDayKey: String? = null
+    messages.forEach { message ->
+        val dayKey = chatDateSeparatorKey(message.timestampMs)
+        if (dayKey != lastDayKey) {
+            rows += ChatListRow.DateSeparator(dayKey, chatDateSeparatorLabel(message.timestampMs))
+            lastDayKey = dayKey
+        }
+        rows += ChatListRow.MessageRow(message)
+    }
+    return rows
 }
 
 /** Shared by the normal scroll list and the pinned-WELCOME_SCREEN slot above it. */

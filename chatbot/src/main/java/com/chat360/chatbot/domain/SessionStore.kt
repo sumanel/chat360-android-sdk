@@ -12,7 +12,10 @@ import android.content.Context
 data class PersistedSession(val roomId: String, val sessionToken: String?, val ownerId: String)
 
 interface SessionStore {
-    /** The most recently connected room - what a cold app launch resumes into. */
+    /** The most recently connected room - what reopening the chat screen resumes into, as long
+     * as the host app's process is still the one that connected it (see
+     * ChatRepository.botsConnectedThisProcess; a genuine cold app launch never consults this and
+     * always starts a fresh conversation instead). */
     fun load(botId: String): PersistedSession?
     /** Any room previously connected on this device, regardless of how long ago - what
      * switching back to an older browsed conversation resumes into. */
