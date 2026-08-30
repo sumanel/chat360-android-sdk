@@ -105,7 +105,9 @@ fun HeaderBar(
         if (sessionCreatedAtMs != null) {
             val remainingText by produceState(initialValue = formatSessionCountdown(sessionCreatedAtMs), sessionCreatedAtMs) {
                 while (true) {
-                    value = formatSessionCountdown(sessionCreatedAtMs)
+                    val text = formatSessionCountdown(sessionCreatedAtMs)
+                    value = text
+                    if (text == "00:00") break
                     delay(1_000)
                 }
             }
@@ -131,7 +133,7 @@ fun HeaderBar(
 
 private fun formatSessionCountdown(createdAtMs: Long): String {
     val elapsedSeconds = ((System.currentTimeMillis() - createdAtMs) / 1000).coerceAtLeast(0)
-    val remainingSeconds = 3_599 - (elapsedSeconds % 3_600)
+    val remainingSeconds = (3_600 - elapsedSeconds).coerceAtLeast(0)
     val minutes = remainingSeconds / 60
     val seconds = remainingSeconds % 60
     return String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)
