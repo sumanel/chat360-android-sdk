@@ -1,6 +1,7 @@
 package com.chat360.chatbot.ui.components.common
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.padding
@@ -32,7 +33,7 @@ fun InlineChoiceList(
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
-    FlowRow {
+    FlowRow(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         labels.forEachIndexed { index, label ->
             val selected = isSelected(index)
             val textColor = when {

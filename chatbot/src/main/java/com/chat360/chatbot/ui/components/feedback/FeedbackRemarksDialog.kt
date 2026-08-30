@@ -1,6 +1,5 @@
 package com.chat360.chatbot.ui.components.feedback
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,7 +15,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -88,7 +86,7 @@ fun FeedbackRemarksDialog(
             }
             Spacer(modifier = Modifier.size(6.dp))
             Text(
-                text = "Please share at least $MIN_REMARKS_LENGTH characters so we can improve.",
+                text = "Please tell us what went wrong with this response before continuing.",
                 fontFamily = typography.textFamily,
                 fontSize = 13.sp,
                 color = colors.textSecondary,
@@ -113,33 +111,21 @@ fun FeedbackRemarksDialog(
                 color = if (hasError) ActiveRed else colors.textSecondary,
             )
             Spacer(modifier = Modifier.size(16.dp))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    shape = FieldCornerRadius,
-                    border = BorderStroke(1.dp, colors.inputBorder),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textPrimary),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Cancel", fontFamily = typography.textFamily, fontWeight = FontWeight.Medium)
-                }
-                Spacer(modifier = Modifier.size(12.dp))
-                Button(
-                    onClick = {
-                        attemptedSubmit = true
-                        if (trimmedLength < MIN_REMARKS_LENGTH) return@Button
-                        onSubmit(remarks.trim())
-                    },
-                    shape = FieldCornerRadius,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.accent,
-                        contentColor = colors.accentContrast,
-                        disabledContainerColor = colors.textDisabled,
-                    ),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Submit", fontFamily = typography.textFamily, fontWeight = FontWeight.Medium)
-                }
+            Button(
+                onClick = {
+                    attemptedSubmit = true
+                    if (trimmedLength < MIN_REMARKS_LENGTH) return@Button
+                    onSubmit(remarks.trim())
+                },
+                shape = FieldCornerRadius,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accent,
+                    contentColor = colors.accentContrast,
+                    disabledContainerColor = colors.textDisabled,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Submit", fontFamily = typography.textFamily, fontWeight = FontWeight.Medium)
             }
         }
     }
