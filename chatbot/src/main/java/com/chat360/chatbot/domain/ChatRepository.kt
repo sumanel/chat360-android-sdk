@@ -28,6 +28,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -152,6 +154,27 @@ class ChatRepository(
      * chat never closes the socket out from under a reply that's still being generated
      * server-side for the room being left. */
     private var pendingReplyDeferred: CompletableDeferred<Unit>? = null
+    /** True once [establishSession]'s appearance/history/starter-content prep has finished and
+     * [sessionEverStarted]/[pendingInitJumpTargetId] hold their final values for this connection
+     * attempt - [openSocket] now fires the TCP/TLS handshake before that prep completes (to run
+     * concurrently with it, see [establishSession]), so onOpen can no longer assume prep is done
+     * just because the socket is open. Reset in [teardownForResession]; deliberately never reset
+     * in [openSocket] itself, since a reconnect of an already-established room has nothing left
+     * to wait on and should run [performPostOpenKickoff] the moment onOpen fires, same as before
+     * this change. */
+    private var sessionPrepDone = false
+    /** Set by onOpen when it fires before [sessionPrepDone] is true - tells [establishSession]'s
+     * prep step to call [performPostOpenKickoff] itself once it finishes, since onOpen won't get
+     * a second chance to. */
+    private var kickoffPending = false
+    /** Set the moment a live BotMessage frame is actually dispatched on the current connection
+     * (see [handleIncoming]) - now that [openSocket] can fire before [seedTargetContextFromHistory]/
+     * [loadConversationStarter] finish (see their call site in [establishSession]), a live frame
+     * can in principle win that race and arrive first. Both of those functions check this before
+     * (over)writing [lastBotNode]/[currentTargetId] from history, so a live frame's own (strictly
+     * more current) node always wins over stale history instead of being silently clobbered once
+     * the slower history fetch finally resolves. Reset on every fresh [openSocket] call. */
+    private var liveNodeReceivedSinceOpen = false
 
     private var onEvent: (IncomingSocketEvent) -> Unit = {}
     private var onConnected: () -> Unit = {}
@@ -309,6 +332,8 @@ class ChatRepository(
         awaitingImmediateSessionTimeCheck = false
         awaitingSessionTimeResponse = false
         pendingSessionResetOnNextBotMessage = false
+        sessionPrepDone = false
+        kickoffPending = false
     }
 
     /** [persisted] is the session offered to the backend to resume - the last-connected one from
@@ -361,38 +386,63 @@ class ChatRepository(
             }.getOrNull().orEmpty()
             onBotSettingsLoaded(shortcuts, languages)
 
-            fetchAppearance(host, onAppearanceLoaded)
-            val hadHistory = onConversationStarted(session.room_id)
-            if (hadHistory) {
-                // A resumed room already has its opening message(s) - re-jumping to targetId
-                // would re-request (and duplicate-render) the same first node on every app
-                // reopen, on top of the real history just replayed above.
-                pendingInitJumpTargetId = null
-                // The replay above only updates the ViewModel's local cache/UI, never this
-                // class's own currentTargetId/lastBotNode (those stay whatever teardownForResession
-                // just reset them to) - and session.targetId can't be trusted to fill that gap on
-                // a resumed room (see the nodeType comment above). Without this, a room whose
-                // current position is e.g. a validation_error re-prompt (which itself carries no
-                // targetId - see IncomingEnvelope's validation_error handling) reconnects with no
-                // known targetId at all, so the very next free-text reply goes out with
-                // targetId=null and the flow can't route it. Folding through the room's recent
-                // history the same way a live BotMessage would (see handleIncoming) recovers the
-                // last real targetId before the user can send anything.
-                seedTargetContextFromHistory(session.room_id)
-            } else if (loadConversationStarter(onRawIncoming)) {
-                // Conversation-starter teaser content applies when a room has no history yet:
-                // show it as the opening bubbles instead of an empty WelcomeSplash, using the
-                // exact same wire parsing as any other frame. Suppressing the pending INIT jump
-                // while starter content is shown avoids re-requesting (and re-rendering) the
-                // exact same first node the starter fetch just displayed.
-                pendingInitJumpTargetId = null
-            }
-            // A resumed room's session already exists server-side - openSocket's onOpen can ask
-            // for its session_time right away instead of waiting on a bot reply that reopening
-            // a past conversation never provokes on its own. A genuinely new room has nothing to
-            // ask about yet, so this stays false until its own first live reply sets it.
-            sessionEverStarted = hadHistory
+            // Everything openSocket() itself needs (ownerId/roomId) is already set above, so the
+            // TCP/TLS handshake can start right now instead of waiting on the appearance/history
+            // fetches below - those used to sit entirely on the critical path in front of the
+            // socket, which is what made every connect/room-switch feel like a slow websocket
+            // connection when it was really just serial REST round trips. onOpen's own kickoff
+            // (session-time request / system jump) still needs hadHistory/pendingInitJumpTargetId
+            // below, so it's deferred via sessionPrepDone/performPostOpenKickoff rather than run
+            // inline in onOpen.
             openSocket()
+            try {
+                coroutineScope {
+                    // Independent of hadHistory/history-seeding below - runs concurrently with it
+                    // rather than blocking it, same reasoning as opening the socket early above.
+                    launch { fetchAppearance(host, onAppearanceLoaded) }
+                    val hadHistory = onConversationStarted(session.room_id)
+                    if (hadHistory) {
+                        // A resumed room already has its opening message(s) - re-jumping to
+                        // targetId would re-request (and duplicate-render) the same first node on
+                        // every app reopen, on top of the real history just replayed above.
+                        pendingInitJumpTargetId = null
+                        // The replay above only updates the ViewModel's local cache/UI, never this
+                        // class's own currentTargetId/lastBotNode (those stay whatever
+                        // teardownForResession just reset them to) - and session.targetId can't be
+                        // trusted to fill that gap on a resumed room (see the nodeType comment
+                        // above). Without this, a room whose current position is e.g. a
+                        // validation_error re-prompt (which itself carries no targetId - see
+                        // IncomingEnvelope's validation_error handling) reconnects with no known
+                        // targetId at all, so the very next free-text reply goes out with
+                        // targetId=null and the flow can't route it. Folding through the room's
+                        // recent history the same way a live BotMessage would (see handleIncoming)
+                        // recovers the last real targetId before the user can send anything.
+                        seedTargetContextFromHistory(session.room_id)
+                    } else if (loadConversationStarter(onRawIncoming)) {
+                        // Conversation-starter teaser content applies when a room has no history
+                        // yet: show it as the opening bubbles instead of an empty WelcomeSplash,
+                        // using the exact same wire parsing as any other frame. Suppressing the
+                        // pending INIT jump while starter content is shown avoids re-requesting
+                        // (and re-rendering) the exact same first node the starter fetch just
+                        // displayed.
+                        pendingInitJumpTargetId = null
+                    }
+                    // A resumed room's session already exists server-side - the kickoff below can
+                    // ask for its session_time right away instead of waiting on a bot reply that
+                    // reopening a past conversation never provokes on its own. A genuinely new
+                    // room has nothing to ask about yet, so this stays false until its own first
+                    // live reply sets it.
+                    sessionEverStarted = hadHistory
+                }
+            } finally {
+                // Always runs, success or failure, so a prep error can't leave onOpen's kickoff
+                // stuck waiting forever if it already fired and set kickoffPending.
+                sessionPrepDone = true
+                if (kickoffPending) {
+                    kickoffPending = false
+                    performPostOpenKickoff()
+                }
+            }
         } catch (e: Exception) {
             onError(e)
         }
@@ -433,8 +483,16 @@ class ChatRepository(
      * failed fetch just leaves whatever session-init already provided, never blocks connecting. */
     private suspend fun seedTargetContextFromHistory(room: String) {
         if (!historyEnabled) return
+        // A live frame beat this fetch to the punch (see liveNodeReceivedSinceOpen's doc) - it's
+        // strictly more current than anything this history fold could find, so skip entirely
+        // rather than overwrite it with something stale.
+        if (liveNodeReceivedSinceOpen) return
         try {
-            apiService.getHistory(room).history.forEach { item ->
+            val history = apiService.getHistory(room).history
+            // Re-checked post-await: a live frame can just as easily land while this network call
+            // was in flight as before it started.
+            if (liveNodeReceivedSinceOpen) return
+            history.forEach { item ->
                 val event = item.toIncomingEvent()
                 if (event is IncomingSocketEvent.BotMessage) {
                     lastBotNode = event.node
@@ -455,7 +513,9 @@ class ChatRepository(
             items.forEach { item ->
                 onRawIncoming(json.encodeToString(item))
                 val event = item.toIncomingEvent()
-                if (event is IncomingSocketEvent.BotMessage) {
+                // See liveNodeReceivedSinceOpen's doc - starter content still renders below either
+                // way, but must not clobber routing state a live frame already established.
+                if (event is IncomingSocketEvent.BotMessage && !liveNodeReceivedSinceOpen) {
                     lastBotNode = event.node
                     currentTargetId = event.node.targetId ?: currentTargetId
                 }
@@ -525,6 +585,9 @@ class ChatRepository(
         awaitingSessionTimeResponse = false
         overrideNextSessionTimeWithNow = false
         awaitingImmediateSessionTimeCheck = false
+        // See liveNodeReceivedSinceOpen's doc - harmless to reset on a reconnect too, since
+        // seedTargetContextFromHistory/loadConversationStarter never run there.
+        liveNodeReceivedSinceOpen = false
         val wsScheme = if (baseUrl.startsWith("https")) "wss" else "ws"
         val host = baseUrl.substringAfter("://")
         val wsUrl = "$wsScheme://$host/ws/chat_updated/$oId/$rId"
@@ -539,24 +602,17 @@ class ChatRepository(
                 heartbeat.start()
                 reconnectManager.onConnected()
                 onConnected()
-                if (sessionEverStarted) {
-                    // A resumed room, or a reconnect of a room already past its first reply -
-                    // its session_time is safe to ask about right away. handleIncoming decides
-                    // whether the answer is fresh enough to show immediately or stale enough to
-                    // hold back - see awaitingImmediateSessionTimeCheck.
-                    Log.d(SESSION_TIME_TAG, "Session already started - requesting session time immediately to check elapsed time (room=$roomId)")
-                    awaitingImmediateSessionTimeCheck = true
-                    requestSessionTime()
+                // On a fresh connect(), openSocket() now fires before establishSession's
+                // appearance/history prep finishes (see its call site) - onOpen can win that race
+                // and fire before sessionEverStarted/pendingInitJumpTargetId hold their final
+                // values. When that happens, defer to establishSession's own prep-done step
+                // instead (see performPostOpenKickoff/sessionPrepDone). A reconnect of an
+                // already-established room has nothing left to wait on, so this runs immediately
+                // just like before.
+                if (sessionPrepDone) {
+                    performPostOpenKickoff()
                 } else {
-                    // A genuinely new room has no session_time to ask about yet - the timer must
-                    // stay hidden/not-running until the user sends something new and a bot reply
-                    // actually arrives live on this connection (see handleIncoming's BotMessage
-                    // case, which fires the request once this is consumed).
-                    awaitingFirstBotReplySessionTime = true
-                }
-                pendingInitJumpTargetId?.let { targetId ->
-                    pendingInitJumpTargetId = null
-                    sendSystemJump(targetId)
+                    kickoffPending = true
                 }
             },
             onMessage = { raw -> handleIncoming(raw, onRawIncoming) },
@@ -566,6 +622,34 @@ class ChatRepository(
                 onError(t)
             },
         )
+    }
+
+    /** The session-time request / system-jump side effects of a socket actually opening - split
+     * out of onOpen because it now depends on state ([sessionEverStarted]/
+     * [pendingInitJumpTargetId]) that isn't final until establishSession's prep finishes, which
+     * can happen after onOpen fires (see [openSocket]/[sessionPrepDone]). Called from exactly one
+     * of two places for any given connection: onOpen directly (prep was already done), or
+     * establishSession's prep-done step (onOpen already fired and set [kickoffPending]). */
+    private fun performPostOpenKickoff() {
+        if (sessionEverStarted) {
+            // A resumed room, or a reconnect of a room already past its first reply - its
+            // session_time is safe to ask about right away. handleIncoming decides whether the
+            // answer is fresh enough to show immediately or stale enough to hold back - see
+            // awaitingImmediateSessionTimeCheck.
+            Log.d(SESSION_TIME_TAG, "Session already started - requesting session time immediately to check elapsed time (room=$roomId)")
+            awaitingImmediateSessionTimeCheck = true
+            requestSessionTime()
+        } else {
+            // A genuinely new room has no session_time to ask about yet - the timer must stay
+            // hidden/not-running until the user sends something new and a bot reply actually
+            // arrives live on this connection (see handleIncoming's BotMessage case, which fires
+            // the request once this is consumed).
+            awaitingFirstBotReplySessionTime = true
+        }
+        pendingInitJumpTargetId?.let { targetId ->
+            pendingInitJumpTargetId = null
+            sendSystemJump(targetId)
+        }
     }
 
     private fun handleClosed(code: Int?, reason: String?) {
@@ -686,6 +770,7 @@ class ChatRepository(
                 lastDispatchedAt = now
                 lastBotNode = event.node
                 currentTargetId = event.node.targetId ?: currentTargetId
+                liveNodeReceivedSinceOpen = true
                 // Only a complete reply clears the pending-reply gate - a streaming
                 // (chatgpt_message) answer must keep the socket open across every chunk, not just
                 // its first one, so awaitPendingReplyBeforeTeardown waits for streamEnded.
