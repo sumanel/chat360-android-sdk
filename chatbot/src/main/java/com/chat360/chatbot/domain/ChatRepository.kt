@@ -514,6 +514,17 @@ class ChatRepository(
         // delayed async onClosed from the just-closed old socket can't slip through and
         // trigger a redundant reconnect for the room we're about to open.
         manuallyDisconnected = false
+        // A prior socket's own requestSessionTime() may still be in flight when that socket gets
+        // torn down (e.g. the app is backgrounded right after the first bot reply, killing the
+        // connection before its session_time round trip completes) - its response then simply
+        // never arrives, leaving these correlation flags stuck set. Left uncleared, the *next*
+        // socket's legitimate session_time response would wrongly be treated as the answer to
+        // that dead request - in particular overrideNextSessionTimeWithNow forcing the countdown
+        // to restart at 59:59 on a perfectly normal reconnect. Clearing them here means every new
+        // socket starts clean; onOpen below sets whichever of these it actually needs.
+        awaitingSessionTimeResponse = false
+        overrideNextSessionTimeWithNow = false
+        awaitingImmediateSessionTimeCheck = false
         val wsScheme = if (baseUrl.startsWith("https")) "wss" else "ws"
         val host = baseUrl.substringAfter("://")
         val wsUrl = "$wsScheme://$host/ws/chat_updated/$oId/$rId"
