@@ -8,6 +8,9 @@ import com.chat360.chatbot.ui.theme.Chat360Branding
 import com.chat360.chatbot.ui.theme.Chat360Colors
 import com.chat360.chatbot.ui.theme.Chat360ThemePreset
 import com.chat360.chatbot.ui.theme.Chat360Typography
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 
 private const val DEFAULT_BASE_URL = "https://app.chat360.io"
 
@@ -18,6 +21,7 @@ const val EXTRA_HISTORY_ENABLED = "extra_history_enabled"
 const val EXTRA_CLIENT_ID = "extra_client_id"
 const val EXTRA_API_KEY = "extra_api_key"
 const val EXTRA_END_USER_ID = "extra_end_user_id"
+const val EXTRA_META = "extra_meta"
 
 data class ResolvedChatConfig(
     val botId: String,
@@ -32,6 +36,10 @@ data class ResolvedChatConfig(
     val apiKey: String?,
     val endUserId: String?,
     val Chat360UIConfig: Chat360UIConfig,
+    /** Host-supplied key/value pairs seeded into the session's own `@`-variables at creation
+     * time (e.g. `{"dealer_id": "..."}` -> `@dealer_id` in the flow) - see
+     * [com.chat360.chatbot.network.rest.Chat360ApiService.getSession]. */
+    val meta: Map<String, String>?,
 )
 
 /**
@@ -57,6 +65,7 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
             apiKey = config.apiKey?.trim()?.takeIf { it.isNotEmpty() },
             endUserId = config.endUserId?.trim()?.takeIf { it.isNotEmpty() },
             Chat360UIConfig = config.Chat360UIConfig ?: Chat360UIConfig(),
+            meta = config.meta,
         )
     }
     return ResolvedChatConfig(
@@ -73,6 +82,9 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
         apiKey = extras?.getString(EXTRA_API_KEY)?.trim()?.takeIf { it.isNotEmpty() },
         endUserId = extras?.getString(EXTRA_END_USER_ID)?.trim()?.takeIf { it.isNotEmpty() },
         Chat360UIConfig = Chat360UIConfig(),
+        meta = extras?.getString(EXTRA_META)?.let {
+            runCatching { Json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), it) }.getOrNull()
+        },
     )
 }
 

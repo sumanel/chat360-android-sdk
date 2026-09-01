@@ -35,7 +35,6 @@ class MainActivity : AppCompatActivity() {
         // this app owns the URL, the request shape, and the identifiers entirely.
         private const val HYUNDAI_EMPLOYEE_AUTH_URL =
             "https://app.chat360.io/api/client_hyundai_lms/sales-executive/validate/"
-        private const val HYUNDAI_DEALER_CODE = "DLR001"
         private const val HYUNDAI_EMPLOYEE_CODE = "EMP1001"
         private const val HYUNDAI_EMPLOYEE_NAME = "Rahul Sharma"
         private const val HYUNDAI_EMPLOYEE_STATUS = "ACTIVE"
@@ -46,7 +45,8 @@ class MainActivity : AppCompatActivity() {
     private val botId = nativePocBotId
     private val flutter = false
     private val meta = mapOf(
-        "Key" to "Value",
+        "dealer_id" to "123",
+        "emp_id" to "4567",
     )
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -57,31 +57,20 @@ class MainActivity : AppCompatActivity() {
         chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,true)
 
         chat360.setBaseUrl("https://staging.chat360.io");
+        // dealer_id/emp_id reach the bot via `meta` at session-init (CoreConfigs.meta above) -
+        // this callback isn't where the flow's @variables get their values from anymore.
+        // A response still has to be returned here on every call, though: this bot's
+        // WINDOW_EVENT nodes have should_receive_data=true, so the flow stays blocked until the
+        // host answers - returning the same `meta` map (re-echoing it back) is enough to satisfy
+        // that regardless of what the node actually asked for. ChatRepository forwards a
+        // non-empty return value to the bot on its own, so calling chat360.sendEventToBot(...)
+        // here too would send it twice.
         chat360.setHandleWindowEvent { eventData ->
-            var metaMap: Map<String, String> = mapOf(
-                "dealer_id" to HYUNDAI_DEALER_CODE,
-                "emp_id" to HYUNDAI_EMPLOYEE_CODE,
-            )
-            if(eventData["type"] == "get_auth_chat360") {
-                 metaMap = metaMap + mapOf(
-                    "token" to "New Token from app",
-                )
-            } else if(eventData["type"] == "get_date") {
-                metaMap = metaMap + mapOf(
-                    "dynamic_date" to  java.time.ZonedDateTime.now().toString()
-                )
+            when (eventData["type"]) {
+                "get_auth_chat360" -> meta + mapOf("token" to "New Token from app")
+                "get_date" -> meta + mapOf("dynamic_date" to java.time.ZonedDateTime.now().toString())
+                else -> meta
             }
-
-//            Handler(Looper.getMainLooper()).postDelayed({
-//                chat360.sendEventToBot(mapOf(
-//                    "type" to "initiate_payment_chat360",
-//                    "payment_status" to "0",
-//                    "message" to "not able to payment"))
-//
-//            }, 10_000)
-            chat360.sendEventToBot(metaMap)
-
-            metaMap
         }
 
 
@@ -117,8 +106,8 @@ class MainActivity : AppCompatActivity() {
                 baseUrl = "https://staging.chat360.io",
                 themePreset = Chat360ThemePreset.DEFAULT,
                 clientId = "6344bb99-7cd7-4985-b86f-3da0a0ee1647",
-                apiKey = "sPZq65Op.oabnSyIyxWDWI5XzgjWwPx7bfXfLpW4N", 
-                endUserId = HYUNDAI_EMPLOYEE_CODE
+                apiKey = "sPZq65Op.oabnSyIyxWDWI5XzgjWwPx7bfXfLpW4N",
+                endUserId = HYUNDAI_EMPLOYEE_CODE,
             )
         }
         val hyundaiButton = findViewById<MaterialButton>(R.id.buttonOpenNativePocHyundai)

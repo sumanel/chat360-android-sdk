@@ -16,6 +16,9 @@ import com.chat360.chatbot.ui.theme.Chat360Theme
 import com.chat360.chatbot.ui.theme.Chat360ThemePreset
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.resolvedStatusBar
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 
 /**
  * Native chat host, reachable two ways: `Chat360.startBot()` (reads config already set on
@@ -27,7 +30,7 @@ class ChatComposeActivity : ComponentActivity() {
     private val config: ResolvedChatConfig by lazy { resolveChatConfig(intent) }
 
     private val viewModel: ChatViewModel by viewModels {
-        ChatViewModel.Factory(context = applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, clientId = config.clientId, apiKey = config.apiKey, endUserId = config.endUserId, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages, enablePeriodicFeedback = config.Chat360UIConfig.behavior.enablePeriodicFeedback)
+        ChatViewModel.Factory(context = applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, clientId = config.clientId, apiKey = config.apiKey, endUserId = config.endUserId, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages, enablePeriodicFeedback = config.Chat360UIConfig.behavior.enablePeriodicFeedback, meta = config.meta)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,6 +66,9 @@ class ChatComposeActivity : ComponentActivity() {
             clientId: String? = null,
             apiKey: String? = null,
             endUserId: String? = null,
+            /** Host-supplied key/value pairs seeded into the session's own `@`-variables at
+             * creation time (e.g. `{"dealer_id": "..."}` -> `@dealer_id` in the flow). */
+            meta: Map<String, String>? = null,
         ) {
             val intent = Intent(context, ChatComposeActivity::class.java)
                 .putExtra(EXTRA_BOT_ID, botId)
@@ -72,6 +78,11 @@ class ChatComposeActivity : ComponentActivity() {
                 .putExtra(EXTRA_CLIENT_ID, clientId)
                 .putExtra(EXTRA_API_KEY, apiKey)
                 .putExtra(EXTRA_END_USER_ID, endUserId)
+                .putExtra(
+                    EXTRA_META,
+                    meta?.takeIf { it.isNotEmpty() }
+                        ?.let { Json.encodeToString(MapSerializer(String.serializer(), String.serializer()), it) },
+                )
             context.startActivity(intent)
         }
     }

@@ -7,6 +7,7 @@ import com.chat360.chatbot.domain.windowevent.WindowEventBridge
 import com.chat360.chatbot.model.wire.AssignedAgent
 import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.model.wire.BotNode
+import com.chat360.chatbot.model.wire.autoAdvanceTargetIdOrNull
 import com.chat360.chatbot.model.wire.IncomingSocketEvent
 import com.chat360.chatbot.model.wire.OutgoingMessage
 import com.chat360.chatbot.model.wire.PingMessage
@@ -39,7 +40,6 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -64,6 +64,10 @@ class ChatRepository(
      * consulted by [startNewSession] (see its own doc) - that's a real user-initiated "start
      * over". */
     private val sessionStore: SessionStore? = null,
+    /** Host-supplied key/value pairs (`CoreConfigs.meta`), forwarded to session-init so the
+     * flow's `@`-variables (e.g. `@dealer_id`) are pre-seeded the same way the legacy WebView
+     * path gets for free via `/web_bot/?h=...&meta=...`. See [Chat360ApiService.getSession]. */
+    private val meta: Map<String, String>? = null,
 ) {
     // encodeDefaults is essential: most wire fields (type/user/replyType/chat_msg_id/...) are
     // Kotlin default values, and kotlinx.serialization omits defaults unless told otherwise -
@@ -353,6 +357,7 @@ class ChatRepository(
                 currentUrl = "$baseUrl/web_bot/?h=$botId",
                 roomId = persisted?.roomId,
                 sessionId = persisted?.sessionToken,
+                meta = meta,
             )
             ownerId = session.owner_id
             roomId = session.room_id
@@ -795,7 +800,17 @@ class ChatRepository(
                 // addition to whatever bubble/nothing the node's own text produces; end_session
                 // closes the socket.
                 event.node.endUrlMessage?.let { onOpenUrl(it) }
-                if (event.node.endSessionRequested) disconnect()
+                if (event.node.endSessionRequested) {
+                    disconnect()
+                } else {
+                    // A passive node (plain text, link card, download-media notice, ...) doesn't
+                    // wait on the user - the flow stays blocked server-side until the client
+                    // re-submits this node's own targetId as a system jump, same as the web
+                    // widget's auto-advance effect. Without this, a chain of several back-to-back
+                    // passive messages (e.g. right after a WINDOW_EVENT response) renders only
+                    // the first bubble and silently stalls.
+                    event.node.autoAdvanceTargetIdOrNull()?.let { sendSystemJump(it) }
+                }
             }
             is IncomingSocketEvent.Ack -> {
                 Log.d(TAG, "Ack received: chat_msg_id=${event.chatMsgId}")
@@ -827,12 +842,18 @@ class ChatRepository(
      * A WINDOW_EVENT node's shouldSend fires the host's handleWindowEvent callback; its return
      * value is fed straight back through the same "currently receiving" gate as an explicit
      * sendEventToBot() call would use.
+     *
+     * Non-WindowEvent nodes leave the gate untouched: the host's response to a window event is
+     * asynchronous (it waits on user interaction with a native dialog/WebView), so an unrelated
+     * bot frame - a typing indicator, a session-time nudge, a concurrent flow node - can easily
+     * land in between. Previously that frame flipped `receiving` back to false, so the host's
+     * eventual sendEventToBot() call silently dropped the event, stalling the flow forever
+     * (matches "no next message after a window event"). Only a *new* WindowEvent node should
+     * change who's allowed to receive, since that's the only signal that the flow has actually
+     * moved past the one currently waiting on a host response.
      */
     private fun handleWindowEventNode(content: BotContent) {
-        if (content !is BotContent.WindowEvent) {
-            WindowEventBridge.setReceiving(false)
-            return
-        }
+        if (content !is BotContent.WindowEvent) return
         WindowEventBridge.setReceiving(content.shouldReceive)
         if (content.shouldSend) {
             val response = WindowEventBridge.dispatchToHost(
@@ -843,20 +864,17 @@ class ChatRepository(
         }
     }
 
-    /** The inbound half: an event handed to the active session becomes an outgoing message
-     * carrying it as `variables`. */
+    /** The inbound half: an event handed to the active session becomes a system-jump frame
+     * carrying it as `variable_values` - the same `user: "bot"` / `data.target_id` / `curr_id` /
+     * `variable_values` shape the web widget's WindowEvent component sends (see jumpToEleBot /
+     * sendSocketMessage there), not a regular end_user chat message. The flow engine's
+     * window-event-advance handling is keyed on that shape: an end_user-authored frame (what this
+     * used to send, reusing OutgoingMessage/variables/nodeType) looks like an ordinary reply and
+     * is never recognized as "advance past this window-event node," so the bot silently acks it
+     * and never emits a next message. */
     private fun sendWindowEvent(event: Map<String, String>) {
-        val node = lastBotNode
-        val outgoing = OutgoingMessage(
-            message = JsonObject(emptyMap()),
-            bot_id = botId,
-            targetId = node?.targetId ?: currentTargetId,
-            room_id = roomId,
-            currentId = node?.nodeId,
-            nodeType = node?.nodeType,
-            variables = event,
-        )
-        sendTracked(outgoing)
+        val targetId = lastBotNode?.targetId ?: currentTargetId ?: return
+        sendSystemJump(targetId, event)
     }
 
     /** Advances the bot flow without a user-authored message - used by IFRAME's postMessage bridge. */
@@ -878,7 +896,7 @@ class ChatRepository(
         return sendTracked(outgoing)
     }
 
-    private fun sendSystemJump(targetId: String) {
+    private fun sendSystemJump(targetId: String, variableValues: Map<String, String>? = null) {
         val jump = SystemJumpMessage(
             data = SystemJumpMessage.JumpData(
                 target_id = targetId,
@@ -886,6 +904,8 @@ class ChatRepository(
             ),
             bot_id = botId,
             room_id = roomId,
+            curr_id = lastBotNode?.nodeId,
+            variable_values = variableValues,
         )
         wsClient.send(json.encodeToString(jump))
     }

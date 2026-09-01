@@ -15,6 +15,7 @@ data class SystemJumpMessage(
     val last_name: String = "Message",
     val curr_id: String? = null,
     val room_id: String? = null,
+    val variable_values: Map<String, String>? = null,
 ) {
     @Serializable
     data class JumpData(

@@ -7,6 +7,7 @@ import com.chat360.chatbot.network.rest.dto.HistoryResponse
 import com.chat360.chatbot.network.rest.dto.SessionInitResponse
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import okhttp3.Call
@@ -65,6 +66,15 @@ class Chat360ApiService(
         standalone: Boolean = true,
         roomId: String? = null,
         sessionId: String? = null,
+        /** Host-supplied key/value pairs (`CoreConfigs.meta`) seeded into the session's own
+         * variables at creation time - e.g. `{"dealer_id": "..."}` becomes `@dealer_id` in the
+         * flow. Matches the legacy WebView path, which gets this for free by loading the real
+         * `/web_bot/?h=...&meta=...` page: that page's own bootstrap forwards its `meta` query
+         * param as this same `meta` query param on this endpoint. Must be compact JSON (no
+         * spaces) - the backend's parsing of this param is whitespace-sensitive and silently
+         * no-ops (200 OK, values just never show up in `variables`) given `{"k": "v"}` instead
+         * of `{"k":"v"}", confirmed by direct testing against staging. */
+        meta: Map<String, String>? = null,
     ): SessionInitResponse {
         val url = "${baseUrl.trimEnd('/')}/api/clientwidget_updated/session/$botId".toHttpUrl()
             .newBuilder()
@@ -76,6 +86,11 @@ class Chat360ApiService(
             .apply { if (standalone) addQueryParameter("standalone", "true") }
             .apply { roomId?.let { addQueryParameter("room_id", it) } }
             .apply { sessionId?.let { addQueryParameter("session_id", it) } }
+            .apply {
+                meta?.takeIf { it.isNotEmpty() }?.let {
+                    addQueryParameter("meta", json.encodeToString(MapSerializer(String.serializer(), String.serializer()), it))
+                }
+            }
             .build()
 
         val request = Request.Builder().url(url).get().build()

@@ -1460,6 +1460,10 @@ class ChatViewModel(
         private val endUserId: String? = null,
         private val suppressInitialBotMessages: Boolean = false,
         private val enablePeriodicFeedback: Boolean = false,
+        /** Host-supplied key/value pairs (`CoreConfigs.meta`), forwarded to session-init so the
+         * flow's `@`-variables are pre-seeded the same way the legacy WebView path gets for
+         * free. See [ChatRepository] and [Chat360ApiService.getSession]. */
+        private val meta: Map<String, String>? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1479,6 +1483,7 @@ class ChatViewModel(
                     botId,
                     historyEnabled = historyEnabled,
                     sessionStore = SharedPreferencesSessionStore(context),
+                    meta = meta,
                 ),
                 botId = botId,
                 cache = cache,

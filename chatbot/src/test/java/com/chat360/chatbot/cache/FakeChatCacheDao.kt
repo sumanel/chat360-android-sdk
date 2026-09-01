@@ -48,9 +48,11 @@ class FakeChatCacheDao : ChatCacheDao {
         publish(existing.botId)
     }
 
-    override suspend fun insertMessage(message: CachedMessageEntity) = Unit
+    override suspend fun insertMessage(message: CachedMessageEntity): Long = 0L
 
     override suspend fun insertMessages(messages: List<CachedMessageEntity>) = Unit
+
+    override suspend fun setLiked(messageRowId: Long, liked: Boolean?) = Unit
 
     override suspend fun deleteMessages(conversationId: String) = Unit
 

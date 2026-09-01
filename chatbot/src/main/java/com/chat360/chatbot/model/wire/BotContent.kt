@@ -8,6 +8,11 @@ data class BotNode(
     val variable: String?,
     val text: String?,
     val content: BotContent,
+    /** The wire's own `userInput` flag - true means the flow is waiting on the user (a free-text
+     * answer, typically) even though this node's [content] doesn't otherwise signal that (e.g. a
+     * CUSTOMINPUT free-text prompt renders as [BotContent.PlainText] but still must not
+     * auto-advance). See [BotContent.autoAdvanceTargetIdOrNull]. */
+    val requiresUserInput: Boolean = false,
     /** END-node side effects (open externally / close the session) - not about rendering at all. */
     val endUrlMessage: String? = null,
     val endSessionRequested: Boolean = false,
@@ -216,4 +221,32 @@ sealed interface BotContent {
     ) : BotContent
 
     data class Unsupported(val nodeType: String?) : BotContent
+}
+
+/**
+ * A bot node that needs neither user input nor a tap to continue (a plain text bubble, a link
+ * card, a download-media notice) is only *displayed* by the server - the flow itself stays
+ * blocked server-side until the client explicitly re-submits this node's own [BotNode.targetId]
+ * as a system jump (no variables), exactly the way the web widget's `sendSocketMessage(targetId)`
+ * effect does for any message it doesn't mark `shouldPauseFlow`. Without this, a flow segment
+ * built from several back-to-back passive messages (e.g. a WINDOW_EVENT response chain) renders
+ * only its first bubble and then silently stalls, even though nothing is actually wrong - the
+ * bot is just waiting on a jump nobody sends.
+ *
+ * Returns the targetId to jump to, or null if this node should NOT auto-advance (needs input, is
+ * itself interactive, has no next node, or is a type - WINDOW_EVENT/IFRAME - already driven by
+ * its own dedicated auto-advance path).
+ */
+fun BotNode.autoAdvanceTargetIdOrNull(): String? {
+    if (requiresUserInput) return null
+    val next = targetId?.takeIf { it.isNotBlank() && it != "END" } ?: return null
+    val advances = when (content) {
+        is BotContent.PlainText,
+        is BotContent.LinkCard,
+        is BotContent.DownloadMedia,
+        -> true
+        is BotContent.Media -> content.dynamicButtons.isEmpty()
+        else -> false
+    }
+    return next.takeIf { advances }
 }

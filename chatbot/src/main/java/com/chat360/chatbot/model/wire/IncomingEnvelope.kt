@@ -305,6 +305,7 @@ fun JsonObject.toBotNode(fallbackTargetId: String? = null): BotNode {
         variable = string("variable")?.takeIf { it.isNotBlank() },
         text = text,
         content = content,
+        requiresUserInput = boolean("userInput"),
         endUrlMessage = if (nodeType == "END") string("urlMessage")?.takeIf { it.isNotBlank() } else null,
         endSessionRequested = nodeType == "END" && boolean("end_session"),
         // stream_id/end_stream are top-level envelope fields, not nested here - see
