@@ -101,7 +101,7 @@ data class ChatUiState(
      * nudges, the text input, and the timer all stay disabled for the rest of this room. */
     val sessionClosedMessage: String? = null,
     /** Set before a new chat ever connects, from the pre-connect under-maintenance GET check
-     * (see ChatViewModel.init) - true means the socket was never opened at all, so the whole
-     * chat UI is replaced by a branded fallback screen instead of a banner over an empty chat. */
-    val isUnderMaintenance: Boolean = false,
+     * (see ChatViewModel.init) - non-null (the server's own status message) means the socket was
+     * never opened at all, so MaintenanceScreen replaces the normal welcome/message area. */
+    val maintenanceMessage: String? = null,
 )

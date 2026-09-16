@@ -209,15 +209,18 @@ class ChatRepository(
     )
 
     /**
-     * Pre-connect gate, called once before the very first [connect] of a new chat. Fails open
-     * (returns false, i.e. "not under maintenance") on any network/parse error rather than
-     * blocking chat opening on this one client-specific check being reachable - matches how
+     * Pre-connect gate, called once before the very first [connect] of a new chat. Returns the
+     * server's own status message when the bot is under maintenance (to show verbatim), or null
+     * when it isn't. Fails open (null, i.e. "not under maintenance") on any network/parse error
+     * rather than blocking chat opening on this one check being reachable - matches how
      * fetchAppearance/loadHistory already degrade gracefully elsewhere in this class.
      */
-    suspend fun checkMaintenanceStatus(): Boolean = runCatching {
-        apiService.getMaintenanceStatus().is_active
+    suspend fun checkMaintenanceStatus(): String? = runCatching {
+        apiService.getMaintenanceStatus()
     }.onFailure { e -> Log.w(TAG, "Maintenance status check failed - proceeding as not-under-maintenance", e) }
-        .getOrDefault(false)
+        .getOrNull()
+        ?.also { Log.i(TAG, "Maintenance status: is_active=${it.is_active} message=${it.message}") }
+        ?.takeIf { it.is_active }?.message?.takeIf { it.isNotBlank() }
 
     suspend fun connect(
         onEvent: (IncomingSocketEvent) -> Unit,

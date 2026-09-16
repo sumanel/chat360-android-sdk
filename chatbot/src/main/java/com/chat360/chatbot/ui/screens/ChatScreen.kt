@@ -243,13 +243,16 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 }
             }
 
-            if (state.isUnderMaintenance) {
-                MaintenanceScreen(
-                    message = "Our chat assistant is temporarily under maintenance. Please check back soon.",
-                    modifier = Modifier.weight(1f),
-                )
-            } else if (state.messages.isEmpty()) {
-                WelcomeSplash(modifier = Modifier.weight(1f))
+            if (state.messages.isEmpty()) {
+                // Nothing to show from local cache (a brand-new chat, or history simply hasn't
+                // loaded yet) - under maintenance that's the branded fallback instead of the
+                // normal welcome splash, since there's no bot to actually welcome the user into.
+                val maintenanceMessage = state.maintenanceMessage
+                if (maintenanceMessage != null) {
+                    MaintenanceScreen(message = maintenanceMessage, modifier = Modifier.weight(1f))
+                } else {
+                    WelcomeSplash(modifier = Modifier.weight(1f))
+                }
             } else if (listMessages.isNotEmpty() || state.isAgentTyping) {
                 LazyColumn(
                     state = listState,
@@ -295,9 +298,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
 
             val voiceDraft = state.voiceDraft
             val sessionClosedMessage = state.sessionClosedMessage
-            if (state.isUnderMaintenance) {
-                // MaintenanceScreen above already explains why - no input/voice/dictation bar
-                // makes sense when the socket was never even opened.
+            val maintenanceMessage = state.maintenanceMessage
+            if (maintenanceMessage != null) {
+                // Previous history (if any) still shows above via the normal message list/
+                // MaintenanceScreen empty-state - only the input/voice/dictation bar is replaced,
+                // since the socket was never opened at all.
+                StatusBanner(text = maintenanceMessage, emphasized = false)
             } else if (sessionClosedMessage != null) {
                 // Terminal close_connection (dealer/SE deactivation or maintenance mode) - the
                 // input bar/voice/dictation affordances below are intentionally not reachable

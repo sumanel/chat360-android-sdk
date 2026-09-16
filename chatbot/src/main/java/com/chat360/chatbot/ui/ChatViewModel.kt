@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -143,13 +144,22 @@ class ChatViewModel(
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
         refreshRoomsList()
         viewModelScope.launch {
-            // Gates the very first connect of a new chat - if the bot is under maintenance
-            // (a shared, cross-dealer flag, not scoped to this session), the socket never
-            // opens at all and a branded full-screen fallback replaces the whole chat UI
-            // instead. Fails open (see ChatRepository.checkMaintenanceStatus's own doc), so a
-            // broken/unreachable check never blocks a chat that isn't actually under maintenance.
-            if (repository.checkMaintenanceStatus()) {
-                _uiState.update { it.copy(isUnderMaintenance = true) }
+            // Gates the very first connect of a new chat - if the bot is under maintenance (a
+            // shared, cross-dealer flag, not scoped to this session), the socket never opens at
+            // all and the input bar is replaced by a fallback message. Fails open (see
+            // ChatRepository.checkMaintenanceStatus's own doc), so a broken/unreachable check
+            // never blocks a chat that isn't actually under maintenance.
+            val maintenanceMessage = repository.checkMaintenanceStatus()
+            if (maintenanceMessage != null) {
+                _uiState.update { it.copy(maintenanceMessage = maintenanceMessage) }
+                // Still show whatever this device already has locally for this bot - only the
+                // live connection/input is blocked, not the ability to read past conversations.
+                val generation = beginLoad()
+                val mostRecent = cache.conversations(botId).first().firstOrNull()
+                if (mostRecent != null) {
+                    setActiveConversationId(mostRecent.id)
+                    replayFromCache(mostRecent.id, generation)
+                }
                 return@launch
             }
             val generation = beginLoad()
@@ -773,7 +783,7 @@ class ChatViewModel(
     /** User-triggered "refresh this chat" action - reconnects immediately instead of waiting
      * out the automatic backoff, for when a host app wants to expose a manual retry affordance. */
     fun refreshConnection() {
-        repository.reconnectNow()
+        viewModelScope.launch { reconnectUnlessUnderMaintenance() }
     }
 
     /** Called when the host screen returns to the foreground (see ChatScreen's own doc for why).
@@ -782,7 +792,18 @@ class ChatViewModel(
      * connection to recover, so this is a no-op on a completely normal resume. */
     fun onAppForegrounded() {
         if (_uiState.value.isConnected) return
-        repository.reconnectNow()
+        viewModelScope.launch { reconnectUnlessUnderMaintenance() }
+    }
+
+    /** Re-validates the shared maintenance flag before every reconnect attempt (foreground
+     * resume, manual retry) - not just init{}'s first connect - since maintenance can flip on
+     * while the app was backgrounded, or the socket dropped for an unrelated reason right as it
+     * did. Also the recovery path the other way: once the flag clears, this is what lets a
+     * stale maintenanceMessage banner (and the input bar it's hiding) come back. */
+    private suspend fun reconnectUnlessUnderMaintenance() {
+        val maintenanceMessage = repository.checkMaintenanceStatus()
+        _uiState.update { it.copy(maintenanceMessage = maintenanceMessage) }
+        if (maintenanceMessage == null) repository.reconnectNow()
     }
 
     fun updateFormField(messageId: String, fieldIndex: Int, value: String) {
@@ -1024,6 +1045,20 @@ class ChatViewModel(
     }
 
     fun startNewChat() {
+        // Gated the same as init{}'s first connect - a "new chat" the maintenance flag would
+        // immediately block is worse than no-op: it would wipe whatever conversation/history was
+        // already on screen for an empty room that can never actually connect. Checked first,
+        // before any of the resets below run, so a blocked attempt leaves the current screen
+        // (including its history) untouched and just (re)shows the banner.
+        viewModelScope.launch {
+            val maintenanceMessage = repository.checkMaintenanceStatus()
+            _uiState.update { it.copy(maintenanceMessage = maintenanceMessage) }
+            if (maintenanceMessage != null) return@launch
+            startNewChatNow()
+        }
+    }
+
+    private fun startNewChatNow() {
         val generation = beginLoad()
         val conversationId = java.util.UUID.randomUUID().toString()
         // Only the display resets immediately, for a responsive "new chat" screen. Live-frame

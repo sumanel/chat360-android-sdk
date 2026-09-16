@@ -176,10 +176,11 @@ class Chat360ApiService(
         return json.decodeFromString(BotAppearanceResponse.serializer(), body)
     }
 
-    /** Pre-connect gate for Hyundai's shared "bot under maintenance" flag - `is_active` true
-     * means the bot is blocked for every dealer, not just this session. */
+    /** Pre-connect gate for the shared "bot under maintenance" flag - `is_active` true means the
+     * bot is blocked for every dealer, not just this session. No auth header (matches every
+     * other call in this class) - confirmed against staging with a plain unauthenticated GET. */
     suspend fun getMaintenanceStatus(): MaintenanceStatusResponse {
-        val url = "${baseUrl.trimEnd('/')}/api/client_hyundai_lms/hyundai/under-maintenance/"
+        val url = "${baseUrl.trimEnd('/')}/api/third-party-tasks/maintainance"
         val body = execute(Request.Builder().url(url).get().build())
         return json.decodeFromString(MaintenanceStatusResponse.serializer(), body)
     }
