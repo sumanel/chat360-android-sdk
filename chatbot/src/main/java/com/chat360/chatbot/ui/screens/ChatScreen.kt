@@ -55,6 +55,7 @@ import com.chat360.chatbot.ui.components.chrome.DateSeparatorRow
 import com.chat360.chatbot.ui.components.chrome.chatDateSeparatorKey
 import com.chat360.chatbot.ui.components.chrome.chatDateSeparatorLabel
 import com.chat360.chatbot.ui.components.chrome.TypingIndicatorRow
+import com.chat360.chatbot.ui.components.chrome.MaintenanceScreen
 import com.chat360.chatbot.ui.components.chrome.WelcomeSplash
 import com.chat360.chatbot.ui.components.feedback.FeedbackFormDialog
 import com.chat360.chatbot.ui.components.feedback.PeriodicFeedbackDialog
@@ -242,7 +243,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 }
             }
 
-            if (state.messages.isEmpty()) {
+            if (state.isUnderMaintenance) {
+                MaintenanceScreen(
+                    message = "Our chat assistant is temporarily under maintenance. Please check back soon.",
+                    modifier = Modifier.weight(1f),
+                )
+            } else if (state.messages.isEmpty()) {
                 WelcomeSplash(modifier = Modifier.weight(1f))
             } else if (listMessages.isNotEmpty() || state.isAgentTyping) {
                 LazyColumn(
@@ -288,7 +294,16 @@ fun ChatScreen(viewModel: ChatViewModel) {
             }
 
             val voiceDraft = state.voiceDraft
-            if (state.isArchived) {
+            val sessionClosedMessage = state.sessionClosedMessage
+            if (state.isUnderMaintenance) {
+                // MaintenanceScreen above already explains why - no input/voice/dictation bar
+                // makes sense when the socket was never even opened.
+            } else if (sessionClosedMessage != null) {
+                // Terminal close_connection (dealer/SE deactivation or maintenance mode) - the
+                // input bar/voice/dictation affordances below are intentionally not reachable
+                // from here, same as the isArchived case.
+                StatusBanner(text = sessionClosedMessage, emphasized = false)
+            } else if (state.isArchived) {
                 StatusBanner(text = "This conversation has been archived due to inactivity.", emphasized = false)
             } else if (voiceRecorder.isRecording || voiceDraft != null) {
                 VoiceRecorderBar(

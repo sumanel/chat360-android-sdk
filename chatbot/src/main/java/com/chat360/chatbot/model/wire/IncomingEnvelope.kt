@@ -23,7 +23,11 @@ data class RawSocketEnvelope(
     val chat_msg_id: String? = null,
     val status: String? = null,
     val targetId: String? = null,
-    val error: String? = null,
+    /** Usually a plain string (e.g. "CONNECTION_CLOSE"), but a `close_connection` frame sent for
+     * dealer/SE deactivation or maintenance-mode activation carries `error` as a nested
+     * `{"message": "..."}` object instead - see [toIncomingEvent]'s close_connection handling,
+     * which reads both shapes. */
+    val error: JsonElement? = null,
     // chatgpt_message streaming fields live at this level, sibling to `type`/`user`, not
     // nested inside `data`.
     val stream_id: String? = null,
@@ -59,7 +63,10 @@ data class RawSocketEnvelope(
 /** Typed result of dispatching a [RawSocketEnvelope] through the dispatch chain. */
 sealed interface IncomingSocketEvent {
     data object Pong : IncomingSocketEvent
-    data class CloseConnection(val suppressReconnect: Boolean) : IncomingSocketEvent
+    /** [displayMessage] is the fallback text to show the user (dealer/SE deactivation or
+     * maintenance-mode activation) - non-null close_connection frames of this kind always also
+     * imply [suppressReconnect], since the session is being ended server-side, not merely dropped. */
+    data class CloseConnection(val suppressReconnect: Boolean, val displayMessage: String? = null) : IncomingSocketEvent
     data class Ack(val chatMsgId: String?) : IncomingSocketEvent
     /** [text] is only meaningful when replaying history (see toIncomingEvent()) - live echoes
      * only ever drive ack-tracking, since the user's own bubble was already appended
@@ -95,10 +102,16 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     if (type == "pong") return IncomingSocketEvent.Pong
 
     if (type == "close_connection") {
+        val errorString = (error as? JsonPrimitive)?.contentOrNull
+        // Dealer/SE deactivation and maintenance-mode activation both send this same frame type,
+        // with the user-facing text nested at error.message rather than top-level `message`.
+        val nestedErrorMessage = (error as? JsonObject)?.get("message")?.let { (it as? JsonPrimitive)?.contentOrNull }
         val messageText = (message as? JsonPrimitive)?.contentOrNull.orEmpty()
-        val suppress = error == "CONNECTION_CLOSE" ||
-            messageText.lowercase().contains("other window or tab")
-        return IncomingSocketEvent.CloseConnection(suppress)
+        val displayMessage = nestedErrorMessage?.takeIf { it.isNotBlank() } ?: messageText.takeIf { it.isNotBlank() }
+        val suppress = errorString == "CONNECTION_CLOSE" ||
+            messageText.lowercase().contains("other window or tab") ||
+            nestedErrorMessage != null
+        return IncomingSocketEvent.CloseConnection(suppress, displayMessage)
     }
 
     if (type == "ack" && status == "sent") {

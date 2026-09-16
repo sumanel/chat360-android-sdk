@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.chat360.chatbot.BuildConfig
 import com.chat360.chatbot.cache.CachedConversationEntity
 import com.chat360.chatbot.network.rest.dto.SessionLanguage
 import com.chat360.chatbot.ui.components.icons.AddIcon
@@ -110,6 +111,13 @@ fun ChatHistorySidebar(
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = colors.accent
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "v${BuildConfig.SDK_VERSION}",
+                fontFamily = typography.textFamily,
+                fontSize = 12.sp,
+                color = colors.textSecondary
             )
         }
 

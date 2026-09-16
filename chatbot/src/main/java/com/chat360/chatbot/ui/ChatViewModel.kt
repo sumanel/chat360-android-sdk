@@ -143,10 +143,22 @@ class ChatViewModel(
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
         refreshRoomsList()
         viewModelScope.launch {
+            // Gates the very first connect of a new chat - if the bot is under maintenance
+            // (a shared, cross-dealer flag, not scoped to this session), the socket never
+            // opens at all and a branded full-screen fallback replaces the whole chat UI
+            // instead. Fails open (see ChatRepository.checkMaintenanceStatus's own doc), so a
+            // broken/unreachable check never blocks a chat that isn't actually under maintenance.
+            if (repository.checkMaintenanceStatus()) {
+                _uiState.update { it.copy(isUnderMaintenance = true) }
+                return@launch
+            }
             val generation = beginLoad()
             repository.connect(
                 onEvent = ::handleEvent,
-                onConnected = { _uiState.update { it.copy(isConnected = true, error = null) } },
+                // A fresh socket successfully opened - if the last one was killed by a terminal
+                // close_connection (dealer/SE deactivation or maintenance mode), that's now over,
+                // so the fallback banner (and whatever it was suppressing) no longer applies.
+                onConnected = { _uiState.update { it.copy(isConnected = true, error = null, sessionClosedMessage = null) } },
                 onError = { e ->
                     // No banner here on purpose: transient drops are common and the socket
                     // already retries with backoff in the background (see ReconnectManager),
@@ -270,7 +282,17 @@ class ChatViewModel(
                 )
             }
             is IncomingSocketEvent.TypingStatus -> _uiState.update { it.copy(isAgentTyping = event.isTyping) }
-            is IncomingSocketEvent.CloseConnection -> _uiState.update { it.copy(isConnected = false) }
+            is IncomingSocketEvent.CloseConnection -> _uiState.update {
+                it.copy(
+                    isConnected = false,
+                    // Dealer/SE deactivation and maintenance-mode both end the session outright -
+                    // stop the typing indicator and the countdown timer alongside showing the
+                    // fallback message, rather than leaving them running behind it.
+                    isAgentTyping = if (event.displayMessage != null) false else it.isAgentTyping,
+                    sessionCreatedAtMs = if (event.displayMessage != null) null else it.sessionCreatedAtMs,
+                    sessionClosedMessage = event.displayMessage ?: it.sessionClosedMessage,
+                )
+            }
             is IncomingSocketEvent.AgentAssigned -> _uiState.update { it.copy(assignedAgent = event.agent) }
             is IncomingSocketEvent.LiveChatEnded -> _uiState.update { it.copy(isLiveChat = false) }
             // Only ever meaningful live - history/cache replay can surface a stored

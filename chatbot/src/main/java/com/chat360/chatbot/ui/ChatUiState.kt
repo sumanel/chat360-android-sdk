@@ -96,4 +96,12 @@ data class ChatUiState(
     val isHistoryUnavailable: Boolean = false,
     val activeConversationId: String? = null,
     val sessionCreatedAtMs: Long? = null,
+    /** Server-sent fallback text from a terminal `close_connection` frame (dealer/SE
+     * deactivation or maintenance-mode activation). Non-null means the session is over: chats,
+     * nudges, the text input, and the timer all stay disabled for the rest of this room. */
+    val sessionClosedMessage: String? = null,
+    /** Set before a new chat ever connects, from the pre-connect under-maintenance GET check
+     * (see ChatViewModel.init) - true means the socket was never opened at all, so the whole
+     * chat UI is replaced by a branded fallback screen instead of a banner over an empty chat. */
+    val isUnderMaintenance: Boolean = false,
 )

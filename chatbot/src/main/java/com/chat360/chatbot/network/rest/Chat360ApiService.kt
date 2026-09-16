@@ -4,6 +4,7 @@ import android.util.Log
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import com.chat360.chatbot.network.rest.dto.BotAppearanceResponse
 import com.chat360.chatbot.network.rest.dto.HistoryResponse
+import com.chat360.chatbot.network.rest.dto.MaintenanceStatusResponse
 import com.chat360.chatbot.network.rest.dto.SessionInitResponse
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.builtins.ListSerializer
@@ -173,6 +174,14 @@ class Chat360ApiService(
             .build()
         val body = execute(Request.Builder().url(url).get().build())
         return json.decodeFromString(BotAppearanceResponse.serializer(), body)
+    }
+
+    /** Pre-connect gate for Hyundai's shared "bot under maintenance" flag - `is_active` true
+     * means the bot is blocked for every dealer, not just this session. */
+    suspend fun getMaintenanceStatus(): MaintenanceStatusResponse {
+        val url = "${baseUrl.trimEnd('/')}/api/client_hyundai_lms/hyundai/under-maintenance/"
+        val body = execute(Request.Builder().url(url).get().build())
+        return json.decodeFromString(MaintenanceStatusResponse.serializer(), body)
     }
 
     private suspend fun execute(request: Request): String = suspendCancellableCoroutine { cont ->

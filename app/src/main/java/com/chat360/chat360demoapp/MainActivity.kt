@@ -45,8 +45,8 @@ class MainActivity : AppCompatActivity() {
     private val botId = nativePocBotId
     private val flutter = false
     private val meta = mapOf(
-        "dealer_id" to "123",
-        "emp_id" to "4567",
+        "dealer_id" to "W4300",
+        "emp_id" to "EMP1001",
     )
 
     @RequiresApi(Build.VERSION_CODES.O)

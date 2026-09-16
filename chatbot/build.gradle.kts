@@ -8,6 +8,8 @@ plugins {
     `maven-publish`
 }
 
+val sdkVersion = "2.1.3"
+
 android {
     namespace = "com.chat360.chatbot"
     compileSdk = 34
@@ -23,6 +25,7 @@ android {
         consumerProguardFiles("consumer-rules.pro")
         resValue("string", "chat360_base_url", "\"https://app.chat360.io\"")
         resValue("string", "chat360_staging_url", "\"https://app.chat360.io\"")
+        buildConfigField("String", "SDK_VERSION", "\"$sdkVersion\"")
     }
 
     buildTypes {
@@ -45,6 +48,7 @@ android {
     buildFeatures {
         viewBinding = true
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"
@@ -61,7 +65,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "com.github.chat360Mobile"
                 artifactId = "chat360_android_sdk"
-                version = "2.1.3"
+                version = sdkVersion
             }
         }
     }

@@ -208,6 +208,17 @@ class ChatRepository(
         onTimeout = { chatMsgId -> onMessageTimedOut(chatMsgId) },
     )
 
+    /**
+     * Pre-connect gate, called once before the very first [connect] of a new chat. Fails open
+     * (returns false, i.e. "not under maintenance") on any network/parse error rather than
+     * blocking chat opening on this one client-specific check being reachable - matches how
+     * fetchAppearance/loadHistory already degrade gracefully elsewhere in this class.
+     */
+    suspend fun checkMaintenanceStatus(): Boolean = runCatching {
+        apiService.getMaintenanceStatus().is_active
+    }.onFailure { e -> Log.w(TAG, "Maintenance status check failed - proceeding as not-under-maintenance", e) }
+        .getOrDefault(false)
+
     suspend fun connect(
         onEvent: (IncomingSocketEvent) -> Unit,
         onConnected: () -> Unit,
@@ -823,8 +834,23 @@ class ChatRepository(
                 ackTracker.acknowledge(event.chatMsgId)
             }
             is IncomingSocketEvent.CloseConnection -> {
-                Log.w(TAG, "Server requested close_connection (suppressReconnect=${event.suppressReconnect})")
+                Log.w(TAG, "Server requested close_connection (suppressReconnect=${event.suppressReconnect}, displayMessage=${event.displayMessage})")
                 if (event.suppressReconnect) suppressReconnect = true
+                // A displayMessage means this is a terminal close (dealer/SE deactivation or
+                // maintenance mode) - stop the current socket/heartbeat/automatic backoff so
+                // nothing keeps the dead session alive behind the fallback UI. Deliberately NOT
+                // repository.disconnect(): that cancels repoScope outright, which would also break
+                // reconnectNow() (refreshConnection()/onAppForegrounded()) - once the dealer/SE is
+                // re-enabled or maintenance ends, the host app still needs to be able to open a
+                // fresh socket on the same repository/ViewModel instance.
+                if (event.displayMessage != null) {
+                    manuallyDisconnected = true
+                    heartbeat.stop()
+                    reconnectManager.cancel()
+                    ackTracker.cancelAll()
+                    wsClient.close()
+                    pendingReplyDeferred = null
+                }
             }
             // Closes the socket outright unless the session is configured to ask for
             // post-chat feedback afterward, in which case the prompt surfaces immediately
