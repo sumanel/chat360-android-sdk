@@ -8,7 +8,7 @@ plugins {
     `maven-publish`
 }
 
-val sdkVersion = "2.1.3"
+val sdkVersion = "2.1.8"
 
 android {
     namespace = "com.chat360.chatbot"
