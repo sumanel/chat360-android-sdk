@@ -56,4 +56,16 @@ class ReconnectManagerTest {
         advanceTimeBy(10_000)
         assertEquals(0, reconnectCount)
     }
+
+    @Test
+    fun `scheduling again replaces the pending reconnect instead of stacking a second one`() = runTest {
+        var reconnectCount = 0
+        val manager = ReconnectManager(scope = this, baseDelayMs = 1000, reconnect = { reconnectCount++ })
+
+        manager.scheduleReconnect(suppress = false) // fires at 1000
+        manager.scheduleReconnect(suppress = false) // replaces it: fires at 2000
+        advanceTimeBy(5000)
+
+        assertEquals("two timers fired two reconnects", 1, reconnectCount)
+    }
 }

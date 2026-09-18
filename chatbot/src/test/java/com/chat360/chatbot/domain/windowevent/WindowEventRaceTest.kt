@@ -32,6 +32,9 @@ import org.junit.Test
  */
 class WindowEventRaceTest {
 
+    @get:org.junit.Rule
+    val mainDispatcher = com.chat360.chatbot.MainDispatcherRule()
+
     @After
     fun tearDown() {
         WindowEventBridge.unregisterSession()

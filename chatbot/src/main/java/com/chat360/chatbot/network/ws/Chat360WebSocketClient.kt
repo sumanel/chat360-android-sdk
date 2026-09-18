@@ -15,8 +15,19 @@ import okhttp3.WebSocketListener
  */
 class Chat360WebSocketClient(
     private val client: OkHttpClient = OkHttpClient(),
+    /** Hops a callback onto the main thread - a seam so tests can run it inline. */
+    private val postToMain: (Runnable) -> Unit = Handler(Looper.getMainLooper()).let { handler -> { r -> handler.post(r) } },
 ) {
     private var webSocket: WebSocket? = null
+
+    /** Identifies the current socket. Bumped by every [connect] and [close]; a callback carries
+     * the value from when its socket was created and is dropped unless it still matches. Without
+     * this, the late close/failure event of a socket that was already replaced (or intentionally
+     * closed) was delivered as if the *live* socket had died - marking it closed, stopping its
+     * heartbeat and scheduling a reconnect, which closed the healthy socket and started the cycle
+     * over. Checked twice: on OkHttp's thread, and again when the posted callback actually runs on
+     * the main thread, since the socket can be replaced in between. */
+    @Volatile private var generation = 0
     // OkHttp delivers WebSocketListener callbacks on its own internal dispatcher thread, never
     // the caller's thread - but every downstream consumer (ChatRepository's session/room state,
     // ChatViewModel's UI state) is written from plain, unsynchronized vars and assumes single-
@@ -26,7 +37,10 @@ class Chat360WebSocketClient(
     // downstream var - confines the whole callback chain to the main thread, matching what its
     // callers already assume. A single Handler preserves OkHttp's own per-socket callback
     // ordering, since it dispatches posted Runnables strictly in the order they were posted.
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private fun deliver(socketGeneration: Int, callback: () -> Unit) {
+        if (socketGeneration != generation) return
+        postToMain(Runnable { if (socketGeneration == generation) callback() })
+    }
 
     fun connect(
         wsUrl: String,
@@ -36,26 +50,37 @@ class Chat360WebSocketClient(
         onFailure: (Throwable) -> Unit,
     ) {
         Log.d(TAG, "Connecting -> $wsUrl")
+        // Never leave the previous socket running underneath the new one.
+        webSocket?.close(1000, "replaced")
+        val socketGeneration = ++generation
         val request = Request.Builder().url(wsUrl).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "Socket OPEN (code=${response.code}) -> $wsUrl")
-                mainHandler.post { onOpen() }
+                deliver(socketGeneration) { onOpen() }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 Log.d(TAG, "<< RECEIVED: $text")
-                mainHandler.post { onMessage(text) }
+                deliver(socketGeneration) { onMessage(text) }
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                // The server started a clean close. OkHttp only reports "closing" and waits for us
+                // to complete the handshake - without this, onClosed never fired for a
+                // server-initiated close, so the app kept a dead socket and never reconnected.
+                Log.w(TAG, "Socket CLOSING by server (code=$code, reason=$reason)")
+                webSocket.close(code, reason)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.w(TAG, "Socket CLOSED (code=$code, reason=$reason)")
-                mainHandler.post { onClosed(code, reason) }
+                deliver(socketGeneration) { onClosed(code, reason) }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "Socket FAILURE (response=${response?.code}): ${t.message}", t)
-                mainHandler.post { onFailure(t) }
+                deliver(socketGeneration) { onFailure(t) }
             }
         })
     }
@@ -72,6 +97,7 @@ class Chat360WebSocketClient(
 
     fun close() {
         Log.i(TAG, "Closing socket (client requested)")
+        generation++
         webSocket?.close(1000, "client closed")
         webSocket = null
     }

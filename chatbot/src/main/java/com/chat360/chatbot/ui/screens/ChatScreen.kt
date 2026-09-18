@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -200,7 +201,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
         }
 
         Box(modifier = Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(baseColors.resolvedStatusBar))
-        Box(modifier = Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
+        // navigationBarsPadding sits before imePadding so the IME inset only adds what the nav bar
+        // doesn't already cover (no double gap above the keyboard). The background between them
+        // paints the nav-bar strip in the chat colour rather than the window's.
+        Box(modifier = Modifier.fillMaxSize().statusBarsPadding().background(baseColors.background).navigationBarsPadding().imePadding()) {
             Column(modifier = Modifier.fillMaxSize().background(baseColors.background)) {
                 sdkConfig.ui.header?.invoke() ?: run {
                     if (features.showMenu || features.showNewChat) {

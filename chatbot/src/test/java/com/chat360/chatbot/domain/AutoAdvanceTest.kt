@@ -17,6 +17,9 @@ import org.junit.Test
  */
 class AutoAdvanceTest {
 
+    @get:org.junit.Rule
+    val mainDispatcher = com.chat360.chatbot.MainDispatcherRule()
+
     private fun invokeHandleIncoming(repo: ChatRepository, raw: String) {
         val method = ChatRepository::class.java.getDeclaredMethod(
             "handleIncoming",

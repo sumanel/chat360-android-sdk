@@ -34,6 +34,9 @@ class ReconnectManager(
         val delayMs = baseDelayMs * intervalCount
         intervalCount *= 2
         Log.w(TAG, "Reconnect scheduled in ${delayMs}ms (nextBackoffMultiplier=$intervalCount)")
+        // Replaces, never stacks: two live timers both fired a reconnect, each closing the socket
+        // the other had just opened.
+        job?.cancel()
         job = scope.launch {
             delay(delayMs)
             Log.i(TAG, "Reconnecting now")

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.chat360.chatbot.cache.CachedConversationEntity
 import com.chat360.chatbot.cache.ChatCacheDatabase
 import com.chat360.chatbot.cache.ChatCacheRepository
+import com.chat360.chatbot.domain.BlankRoomRegistry
 import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.SharedPreferencesSessionStore
 import com.chat360.chatbot.domain.thirdparty.ChatHistoryRepository
@@ -81,6 +82,14 @@ class ChatViewModel(
      * held here instead of hitting the DB (which would require a conversation row to exist -
      * see [conversationPersisted]) until [ensureConversationPersisted] flushes them. */
     private val pendingRawEnvelopes = mutableListOf<String>()
+    /** A room the server already created for this user that has never received a user message
+     * (see [conversationPersisted]) and that the socket has since moved away from - stashed so
+     * "New chat" can go back to it instead of asking the server for yet another room, which is
+     * what used to leave one empty ghost room behind per tap. [envelopes] is its buffered opener
+     * ([pendingRawEnvelopes] at the time it was left). Cleared once the user sends anything in it
+     * ([ensureConversationPersisted]). */
+    private class BlankRoom(val conversationId: String, val roomId: String, val envelopes: List<String>)
+    private var blankRoom: BlankRoom? = null
     /** True only while Room entries are being replayed; cached messages are never “initial” UI. */
     private var restoringFromCache = false
     /** While [restoringFromCache] is true, whether the bot messages currently being replayed are
@@ -133,9 +142,21 @@ class ChatViewModel(
     /** Mirrors [activeConversationId] into [ChatUiState] so the history sidebar can highlight
      * whichever conversation is currently open - the plain `var` above is read-only from the UI. */
     private fun setActiveConversationId(id: String?) {
+        val previous = activeConversationId
+        // Unsent text belongs to the room it was typed in: parked under that room when leaving it
+        // and restored on return, instead of the one shared input box carrying it into whichever
+        // room is opened next. The very first activation (no previous room yet) is left alone so
+        // text typed while the first connection was still coming up isn't wiped.
+        val switching = previous != null && previous != id
+        if (switching) drafts[previous!!] = _uiState.value.inputText
         activeConversationId = id
-        _uiState.update { it.copy(activeConversationId = id) }
+        _uiState.update {
+            it.copy(activeConversationId = id, inputText = if (switching) id?.let(drafts::get).orEmpty() else it.inputText)
+        }
     }
+
+    /** Unsent input text per conversation id - see [setActiveConversationId]. */
+    private val drafts = mutableMapOf<String, String>()
 
     init {
         // Local Room cache is the primary source for the sidebar; when a third-party
@@ -1066,7 +1087,90 @@ class ChatViewModel(
         }
     }
 
-    private fun startNewChatNow() {
+    /** "New chat" while an untouched room already exists: shows that room again instead of
+     * creating another. Returns false when there isn't one (or it can no longer be resumed), so
+     * the caller creates a real new room as usual.
+     *
+     * Two shapes: the socket is still on the blank room (only the display had wandered off to a
+     * browsed conversation), so nothing has to reconnect; or the socket moved on to another room
+     * and the blank one is resumed via its saved session, exactly like opening any older
+     * conversation. */
+    private fun reuseBlankRoom(): Boolean {
+        val connectedId = connectedConversationId
+        if (connectedId != null && connectedRoomId != null && !conversationPersisted) {
+            showBlankRoom(connectedId, pendingRawEnvelopes.toList(), beginLoad(), clearSessionTimer = false)
+            return true
+        }
+        val blank = blankRoom ?: return false
+        val generation = beginLoad()
+        showBlankRoom(blank.conversationId, blank.envelopes, generation, clearSessionTimer = true)
+        _uiState.update { it.copy(isConnected = false) }
+        viewModelScope.launch {
+            val switched = repository.switchToRoom(blank.roomId) { resumedRoomId ->
+                connectedConversationId = blank.conversationId
+                connectedRoomId = resumedRoomId
+                conversationPersisted = false
+                pendingRawEnvelopes.clear()
+                blankRoom = null
+                if (resumedRoomId == blank.roomId) {
+                    pendingRawEnvelopes += blank.envelopes
+                    // The opener is already on screen from the stash; reporting history keeps the
+                    // repository from re-jumping to the first node and duplicating it.
+                    blank.envelopes.isNotEmpty()
+                } else {
+                    // The server handed back a different room (the saved one was gone): the
+                    // stashed opener belongs to a room that no longer exists, so let this fresh
+                    // room render its own.
+                    _uiState.update { it.copy(messages = emptyList()) }
+                    false
+                }
+            }
+            if (!switched) {
+                blankRoom = null
+                startNewChatNow(allowReuse = false)
+            }
+        }
+        return true
+    }
+
+    private fun showBlankRoom(conversationId: String, envelopes: List<String>, generation: Int, clearSessionTimer: Boolean) {
+        setActiveConversationId(conversationId)
+        previousHistoryCursor = null
+        streamRawText.clear()
+        hasStartedConversation = false
+        botMessagesSinceFeedback = 0
+        nextPeriodicFeedbackThreshold = (3..5).random()
+        _uiState.update {
+            it.copy(
+                messages = emptyList(),
+                isAgentTyping = false,
+                isLiveChat = false,
+                assignedAgent = null,
+                isArchived = false,
+                voiceDraft = null,
+                showFeedbackPrompt = false,
+                showPeriodicFeedbackPrompt = false,
+                pendingUrlToOpen = null,
+                hasMoreHistory = false,
+                sessionCreatedAtMs = if (clearSessionTimer) null else it.sessionCreatedAtMs,
+            )
+        }
+        if (!isCurrentLoad(generation)) return
+        restoringFromCache = true
+        suppressLeadingReplayBotMessages = true
+        try {
+            envelopes.forEach { raw ->
+                runCatching { cacheJson.decodeFromString<RawSocketEnvelope>(raw).toIncomingEvent() }
+                    .getOrNull()?.let(::handleEvent)
+            }
+        } finally {
+            restoringFromCache = false
+            suppressLeadingReplayBotMessages = false
+        }
+    }
+
+    private fun startNewChatNow(allowReuse: Boolean = true) {
+        if (allowReuse && reuseBlankRoom()) return
         val generation = beginLoad()
         val conversationId = java.util.UUID.randomUUID().toString()
         // Only the display resets immediately, for a responsive "new chat" screen. Live-frame
@@ -1085,7 +1189,6 @@ class ChatViewModel(
         _uiState.update {
             it.copy(
                 messages = emptyList(),
-                inputText = "",
                 isAgentTyping = false,
                 isConnected = false,
                 isLiveChat = false,
@@ -1181,7 +1284,12 @@ class ChatViewModel(
         // one stays unpersisted (and its pre-send bot envelopes buffered, not written) until the
         // user sends something - see ensureConversationPersisted.
         conversationPersisted = hasCachedMessages
-        if (!hasCachedMessages) pendingRawEnvelopes.clear()
+        if (hasCachedMessages) {
+            BlankRoomRegistry.clear(botId, roomId)
+        } else {
+            pendingRawEnvelopes.clear()
+            BlankRoomRegistry.set(botId, roomId)
+        }
         // Only the on-screen rendering below is allowed to bail on staleness: cache.activateForRoom
         // is a suspending DB call - a newer switch (openConversation, startNewChat, ...) may have
         // already bumped loadGeneration while this was in flight. Bailing here instead of finishing
@@ -1413,6 +1521,8 @@ class ChatViewModel(
         val conversationId = connectedConversationId ?: return
         cache.ensureConversationPersisted(botId, conversationId, connectedRoomId)
         conversationPersisted = true
+        if (blankRoom?.conversationId == conversationId) blankRoom = null
+        BlankRoomRegistry.clear(botId, connectedRoomId)
         pendingRawEnvelopes.forEach { raw -> cache.cacheRaw(conversationId, raw) }
         pendingRawEnvelopes.clear()
     }
@@ -1496,6 +1606,13 @@ class ChatViewModel(
             return
         }
         val targetRoomId = _conversations.value.firstOrNull { it.id == active }?.roomId ?: return
+        // Leaving a room nobody has typed in: remember it so "New chat" can come back to it
+        // rather than creating another empty room (see [blankRoom]).
+        val leavingId = connectedConversationId
+        val leavingRoomId = connectedRoomId
+        if (leavingId != null && leavingRoomId != null && !conversationPersisted) {
+            blankRoom = BlankRoom(leavingId, leavingRoomId, pendingRawEnvelopes.toList())
+        }
         // Mirrors startNewChat()'s own isConnected=false - the input bar is wired to it
         // (see ChatScreen's ChatInputBar `enabled`) so nothing can be typed/sent into a room
         // mid-switch. onConnected() flips it back true once the new socket is actually up;

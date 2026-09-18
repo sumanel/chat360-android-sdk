@@ -18,7 +18,18 @@ class FakeChatCacheDao : ChatCacheDao {
     }
 
     override suspend fun findConversation(botId: String, roomId: String): CachedConversationEntity? =
-        conversations.values.firstOrNull { it.botId == botId && it.roomId == roomId }
+        conversations.values.filter { it.botId == botId && it.roomId == roomId }
+            .sortedBy { it.id.startsWith("agent-room:") }.firstOrNull()
+
+    override suspend fun findOtherConversationForRoom(botId: String, roomId: String, excludeId: String): CachedConversationEntity? =
+        conversations.values.filter { it.botId == botId && it.roomId == roomId && it.id != excludeId }
+            .sortedBy { it.id.startsWith("agent-room:") }.firstOrNull()
+
+    override suspend fun bumpUpdatedAt(conversationId: String, updatedAt: Long) {
+        val existing = conversations[conversationId] ?: return
+        conversations[conversationId] = existing.copy(updatedAt = maxOf(existing.updatedAt, updatedAt))
+        publish(existing.botId)
+    }
 
     override fun observeConversations(botId: String): Flow<List<CachedConversationEntity>> {
         publish(botId)
@@ -44,7 +55,7 @@ class FakeChatCacheDao : ChatCacheDao {
 
     override suspend fun updateRemoteConversation(conversationId: String, roomId: String, title: String, updatedAt: Long) {
         val existing = conversations[conversationId] ?: return
-        conversations[conversationId] = existing.copy(roomId = roomId, title = title, updatedAt = updatedAt)
+        conversations[conversationId] = existing.copy(roomId = roomId, title = title, updatedAt = maxOf(existing.updatedAt, updatedAt))
         publish(existing.botId)
     }
 

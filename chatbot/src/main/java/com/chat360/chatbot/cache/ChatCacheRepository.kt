@@ -63,15 +63,22 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
         return rooms
             .filterNot { it.status.equals("inactive", ignoreCase = true) }
             .mapIndexed { index, room ->
+                // The server's own timestamps drive the sidebar order - falling back to the
+                // response position only when a room carries none, so the order can never depend
+                // on whichever way the API happens to return its rooms.
+                val positional = fetchedAt - index
+                val created = parseServerTimestampMs(room.createdAt)
+                val updated = parseServerTimestampMs(room.updatedAt) ?: created
                 CachedConversationEntity(
                     id = "agent-room:${room.roomId}",
                     botId = botId,
                     roomId = room.roomId,
-                    title = room.roomName.trim().ifEmpty { "Conversation" },
-                    createdAt = fetchedAt - index,
-                    updatedAt = fetchedAt - index,
+                    title = room.roomName.trim().ifEmpty { UNNAMED_ROOM_TITLE },
+                    createdAt = created ?: positional,
+                    updatedAt = updated ?: positional,
                 )
             }
+            .sortedByDescending { it.updatedAt }
     }
 
     /** Replaces a conversation's server-sourced messages wholesale - the caller re-reads
@@ -156,4 +163,32 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
         val title = text.trim().replace(Regex("\\s+"), " ").take(80)
         if (title.isNotBlank()) dao.touchAndSetTitleIfUnset(conversationId, title, now) else dao.touch(conversationId, now)
     }
+}
+
+/** Parses a `rooms/list` timestamp - epoch seconds/millis or ISO-8601 (with or without
+ * fractional seconds / zone) - to epoch millis; null when absent or unrecognised. */
+internal fun parseServerTimestampMs(raw: String?): Long? {
+    val value = raw?.trim().orEmpty()
+    if (value.isEmpty()) return null
+    value.toDoubleOrNull()?.let { n ->
+        // Below ~1e11 it can only be seconds (that's year 5138 in millis).
+        return if (n < 1e11) (n * 1000).toLong() else n.toLong()
+    }
+    val normalized = value.replace(Regex("(\\.\\d{3})\\d+"), "$1")
+        .replace(Regex("Z$"), "+0000")
+        .replace(Regex("([+-]\\d{2}):(\\d{2})$"), "$1$2")
+    val patterns = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss.SSSZ", "yyyy-MM-dd'T'HH:mm:ssZ",
+        "yyyy-MM-dd HH:mm:ss.SSSZ", "yyyy-MM-dd HH:mm:ssZ",
+        "yyyy-MM-dd'T'HH:mm:ss.SSS", "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd HH:mm:ss.SSS", "yyyy-MM-dd HH:mm:ss",
+    )
+    for (pattern in patterns) {
+        val format = java.text.SimpleDateFormat(pattern, java.util.Locale.US)
+        // Zone-less values are treated as UTC, the usual server default.
+        format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val parsed = runCatching { format.parse(normalized) }.getOrNull()
+        if (parsed != null) return parsed.time
+    }
+    return null
 }

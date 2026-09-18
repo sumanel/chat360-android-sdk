@@ -1,6 +1,7 @@
 package com.chat360.chatbot.domain.thirdparty
 
 import android.util.Log
+import kotlinx.coroutines.flow.first
 import com.chat360.chatbot.cache.CachedConversationEntity
 import com.chat360.chatbot.cache.ChatCacheRepository
 import com.chat360.chatbot.network.rest.thirdparty.ThirdPartyHttpException
@@ -36,7 +37,10 @@ class ChatHistoryRepository(
             .getOrNull() ?: return null
         val conversations = cache.thirdPartyRoomConversations(botId, response.rooms)
         cache.syncAgentRooms(botId, conversations)
-        return conversations
+        // Read back from the DB (already ORDER BY updatedAt DESC) rather than returning the raw
+        // server mapping: it carries the merged newest-wins timestamps, so a chat just sent from
+        // this device isn't demoted by a response that hasn't caught up with it yet.
+        return cache.conversations(botId).first()
     }
 
     /** Best-effort remote rename - failure never blocks the local rename the caller already applied. */

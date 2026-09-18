@@ -25,6 +25,7 @@ import com.chat360.chatbot.network.ws.Chat360WebSocketClient
 import com.chat360.chatbot.network.ws.HeartbeatManager
 import com.chat360.chatbot.network.ws.ReconnectManager
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -68,6 +69,9 @@ class ChatRepository(
      * flow's `@`-variables (e.g. `@dealer_id`) are pre-seeded the same way the legacy WebView
      * path gets for free via `/web_bot/?h=...&meta=...`. See [Chat360ApiService.getSession]. */
     private val meta: Map<String, String>? = null,
+    /** Where the heartbeat, reconnect backoff and ack-retry timers run. Must be the thread the rest
+     * of this class assumes it is confined to (see [repoScope]); a seam so tests can drive time. */
+    timerDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
 ) {
     // encodeDefaults is essential: most wire fields (type/user/replyType/chat_msg_id/...) are
     // Kotlin default values, and kotlinx.serialization omits defaults unless told otherwise -
@@ -78,7 +82,21 @@ class ChatRepository(
         encodeDefaults = true
         explicitNulls = false
     }
-    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Confined to the main thread, like everything else in this class. It used to be
+    // Dispatchers.Default, so the timers it hosts - each ack-tracker resend (which calls
+    // ensureReconnecting), each backoff reconnect (openSocket) and each heartbeat - ran on a pool
+    // thread while the socket callbacks and the view model touched the same plain, unsynchronised
+    // state (isSocketOpen, reconnectPending, manuallyDisconnected, the room/owner ids, the ack
+    // tracker's timer map) from the main thread: no locks, no @Volatile, and nothing making one
+    // thread's writes visible to the other. Keeping the timers here means all of that state has a
+    // single owner thread, with no locking to get wrong. Nothing this scope runs blocks: sends and
+    // socket opens are just enqueued by OkHttp.
+    private val repoScope = CoroutineScope(SupervisorJob() + timerDispatcher)
+    // Set by disconnect(), which is final for this repository (it also cancels repoScope).
+    // establishSession awaits the network before it opens the socket, so without this a session
+    // still in flight when the chat closed would finish afterwards and open a live socket nobody
+    // is listening to.
+    @Volatile private var disconnected = false
     // Serializes connect()/startNewSession()/switchToRoom() end to end (teardown through
     // openSocket()) - without this, two of them can interleave at a suspension point (e.g. both
     // awaiting apiService.getSession()) and race on ownerId/roomId/sessionId/etc below, so
@@ -266,7 +284,11 @@ class ChatRepository(
         // resume it, since by then it really is "the conversation that's still active" - see
         // botsConnectedThisProcess's own doc.
         val isColdProcessStart = botsConnectedThisProcess.add(botId)
-        val persisted = if (isColdProcessStart) null else sessionStore?.load(botId)
+        // A same-process reopen prefers the untouched room (see BlankRoomRegistry) over whichever
+        // room was connected last, so a chat nobody typed in is never abandoned for a new one.
+        val persisted = if (isColdProcessStart) null else {
+            BlankRoomRegistry.roomId(botId)?.let { sessionStore?.loadForRoom(botId, it) } ?: sessionStore?.load(botId)
+        }
         sessionMutex.withLock { establishSession(onConversationStarted, persisted) }
     }
 
@@ -586,6 +608,10 @@ class ChatRepository(
     }
 
     private fun openSocket() {
+        if (disconnected) {
+            Log.i(TAG, "Not opening a socket - repository was disconnected")
+            return
+        }
         val oId = ownerId ?: return
         val rId = roomId ?: return
         // Only meaningful when startNewSession() left it set - a plain connect() call
@@ -701,7 +727,20 @@ class ChatRepository(
         openSocket()
     }
 
+    /** Entry point for every socket frame. It runs on the main thread (see
+     * [Chat360WebSocketClient]), so an exception escaping it would take the whole host app down -
+     * and a bot reply this parser can't read (a proxy's HTML error page, a shape it doesn't know
+     * yet) is exactly the kind of input that must never do that. A frame that can't be handled is
+     * logged and dropped; the connection and the rest of the chat carry on. */
     private fun handleIncoming(raw: String, onRawIncoming: (String) -> Unit) {
+        try {
+            handleIncomingFrame(raw, onRawIncoming)
+        } catch (e: Exception) {
+            Log.e(TAG, "Dropping a frame that could not be handled: ${e.javaClass.simpleName}: ${e.message} - raw=${raw.take(500)}", e)
+        }
+    }
+
+    private fun handleIncomingFrame(raw: String, onRawIncoming: (String) -> Unit) {
         // Logged before the room-drop check below (and under its own tag) so the response is
         // always visible via `adb logcat -s Chat360SessionTime`, regardless of which room it
         // ends up matching - see requestSessionTime().
@@ -1348,6 +1387,7 @@ class ChatRepository(
 
     fun disconnect() {
         Log.i(TAG, "Disconnecting (manual, final) - room=$roomId")
+        disconnected = true
         manuallyDisconnected = true
         heartbeat.stop()
         reconnectManager.cancel()

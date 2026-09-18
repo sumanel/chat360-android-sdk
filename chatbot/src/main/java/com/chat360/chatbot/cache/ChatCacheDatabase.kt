@@ -48,9 +48,14 @@ data class CachedMessageEntity(
     val liked: Boolean? = null,
 )
 
+/** Title a server room gets when `rooms/list` returns it with no name. */
+const val UNNAMED_ROOM_TITLE = "Conversation"
+
 @Dao
 interface ChatCacheDao {
-    @Query("SELECT * FROM chat_conversations WHERE botId = :botId AND roomId = :roomId LIMIT 1")
+    // A room can briefly have both a local row and a synced `agent-room:` one (see
+    // replaceAgentRoomConversations) - the local one owns the cached messages, so it wins.
+    @Query("SELECT * FROM chat_conversations WHERE botId = :botId AND roomId = :roomId ORDER BY (id LIKE 'agent-room:%') ASC LIMIT 1")
     suspend fun findConversation(botId: String, roomId: String): CachedConversationEntity?
 
     @Query("SELECT * FROM chat_conversations WHERE botId = :botId ORDER BY updatedAt DESC")
@@ -68,9 +73,25 @@ interface ChatCacheDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertConversationIfMissing(conversation: CachedConversationEntity)
 
-    @Query("UPDATE chat_conversations SET roomId = :roomId, title = :title, updatedAt = :updatedAt WHERE id = :conversationId")
+    // MAX keeps a newer local send (touch/cacheUserMessage) from being rolled back by a sync
+    // whose server timestamp hasn't caught up with it yet.
+    @Query("UPDATE chat_conversations SET roomId = :roomId, title = :title, updatedAt = MAX(updatedAt, :updatedAt) WHERE id = :conversationId")
     suspend fun updateRemoteConversation(conversationId: String, roomId: String, title: String, updatedAt: Long)
 
+    /** Any *other* row already bound to [roomId] (a locally created conversation for it). */
+    @Query("SELECT * FROM chat_conversations WHERE botId = :botId AND roomId = :roomId AND id != :excludeId ORDER BY (id LIKE 'agent-room:%') ASC LIMIT 1")
+    suspend fun findOtherConversationForRoom(botId: String, roomId: String, excludeId: String): CachedConversationEntity?
+
+    @Query("UPDATE chat_conversations SET updatedAt = MAX(updatedAt, :updatedAt) WHERE id = :conversationId")
+    suspend fun bumpUpdatedAt(conversationId: String, updatedAt: Long)
+
+    /** Merges the server's rooms into the local list without ever creating a second row for a
+     * room this device already has one for: a synced `agent-room:` row next to the local one
+     * used to show the same chat twice (the second as a placeholder "Conversation" with no
+     * messages), let a room lookup land on the empty twin - so its history seemed to vanish - and,
+     * stamped with "now", reshuffle the list. A known room only has its recency raised; a stale
+     * twin left over from before is deleted. A server-only room with no name is one nobody ever
+     * typed in (an abandoned empty room), so it is not listed at all. */
     @Transaction
     suspend fun replaceAgentRoomConversations(botId: String, conversations: List<CachedConversationEntity>) {
         val refreshedIds = conversations.mapTo(mutableSetOf()) { it.id }
@@ -78,13 +99,19 @@ interface ChatCacheDao {
             .filterNot(refreshedIds::contains)
             .forEach { deleteConversation(it) }
         conversations.forEach { conversation ->
-            insertConversationIfMissing(conversation)
-            updateRemoteConversation(
-                conversation.id,
-                conversation.roomId.orEmpty(),
-                conversation.title,
-                conversation.updatedAt,
-            )
+            val roomId = conversation.roomId.orEmpty()
+            val known = if (roomId.isEmpty()) null else findOtherConversationForRoom(botId, roomId, conversation.id)
+            when {
+                known != null -> {
+                    bumpUpdatedAt(known.id, conversation.updatedAt)
+                    deleteConversation(conversation.id)
+                }
+                conversation.title == UNNAMED_ROOM_TITLE -> deleteConversation(conversation.id)
+                else -> {
+                    insertConversationIfMissing(conversation)
+                    updateRemoteConversation(conversation.id, roomId, conversation.title, conversation.updatedAt)
+                }
+            }
         }
     }
 
