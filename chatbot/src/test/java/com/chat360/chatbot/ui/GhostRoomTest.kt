@@ -15,9 +15,16 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -46,6 +53,29 @@ class GhostRoomTest {
         }
     }
 
+    /** Drives virtual time for the view model's `delay`s (the missed-reply polling); advanced while a test waits. */
+    private val scheduler = TestCoroutineScheduler()
+    private val historyRequestsByRoom = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    @Volatile private var historyWithoutReply = 0
+    @Volatile private var userMessageAgeSeconds = 0L
+    private val roomUnderTest = "room-a"
+    private fun historyFetches() = historyRequestsByRoom[roomUnderTest] ?: 0
+
+    /** History as the server returns it: only the room under test has any (the user's message, then the reply). */
+    private fun historyJson(room: String, includeReply: Boolean): String {
+        if (room != roomUnderTest) return """{"history":[],"previous_cursor":null}"""
+        val json = Json { explicitNulls = false }
+        val now = System.currentTimeMillis() / 1000
+        val user = RawSocketEnvelope(user = "end_user", message = JsonPrimitive("Tell me about Hyundai Venue features"), chat_msg_id = "user-1", timestamp_int = (now - userMessageAgeSeconds).toString())
+        val bot = RawSocketEnvelope(
+            user = "bot",
+            data = buildJsonObject { put("nodeType", "TEXT"); put("id", "reply-1"); put("questionText", "Venue features reply") },
+            timestamp_int = now.toString(),
+        )
+        val rows = (listOf(user) + if (includeReply) listOf(bot) else emptyList()).joinToString(",") { json.encodeToString(RawSocketEnvelope.serializer(), it) }
+        return """{"history":[$rows],"previous_cursor":null}"""
+    }
+
     private lateinit var server: MockWebServer
     private lateinit var dao: FakeChatCacheDao
     private lateinit var sessionStore: InMemorySessionStore
@@ -58,11 +88,16 @@ class GhostRoomTest {
 
     @Before
     fun setUp() {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        Dispatchers.setMain(UnconfinedTestDispatcher(scheduler))
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.requestUrl?.encodedPath.orEmpty()
+                if (path.contains("/chatbox/messages/")) {
+                    val room = path.substringAfterLast('/')
+                    val count = historyRequestsByRoom.merge(room, 1, Int::plus)!!
+                    return MockResponse().setBody(historyJson(room, includeReply = room == roomUnderTest && count > historyWithoutReply))
+                }
                 if (!path.contains("/session/")) return MockResponse().setResponseCode(404)
                 val requested = request.requestUrl?.queryParameter("room_id")
                 sessionRequests += requested
@@ -91,6 +126,7 @@ class GhostRoomTest {
 
     @After
     fun tearDown() {
+        ChatViewModel.missedReplyPollIntervalMs = 3_000L
         server.shutdown()
         Dispatchers.resetMain()
     }
@@ -99,11 +135,14 @@ class GhostRoomTest {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (!condition()) {
             if (System.currentTimeMillis() > deadline) fail("Timed out waiting for: $what (session requests=$sessionRequests)")
+            scheduler.advanceTimeBy(200)
             Thread.sleep(20)
         }
     }
 
-    private fun settle() = Thread.sleep(400)
+    private fun settle() {
+        repeat(20) { scheduler.advanceTimeBy(200); Thread.sleep(20) }
+    }
 
     @Test
     fun `tapping New chat repeatedly after visiting another room reuses the blank room instead of creating ghosts`() {
@@ -206,5 +245,102 @@ class GhostRoomTest {
         viewModel.openConversation("conv-old")
         settle()
         assertEquals("typed in the old room", viewModel.uiState.value.inputText)
+    }
+
+    // --- a reply generated while away ---
+    // The server stores a reply ~14s after the send whether or not a socket is connected, but only pushes it
+    // to a socket connected to that room at that moment. Returning sooner found nothing on the one history
+    // fetch and nothing ever looked again.
+
+    private fun seedRoomWithPendingReply() {
+        kotlinx.coroutines.runBlocking {
+            dao.upsertConversation(CachedConversationEntity(id = "conv-a", botId = botId, roomId = roomUnderTest, title = "Venue", createdAt = 1, updatedAt = 1))
+            dao.upsertConversation(CachedConversationEntity(id = "conv-b", botId = botId, roomId = "room-b", title = "Other", createdAt = 1, updatedAt = 1))
+        }
+        awaitUntil("conversations listed") { viewModel.conversations.value.any { it.id == "conv-a" } && viewModel.conversations.value.any { it.id == "conv-b" } }
+    }
+
+    private fun transcript() = viewModel.uiState.value.messages.map { it.text }
+
+    @Test
+    fun `a reply stored after the first check on return still appears`() {
+        ChatViewModel.missedReplyPollIntervalMs = 30
+        historyWithoutReply = 2 // the first two checks find only the user's message
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        seedRoomWithPendingReply()
+
+        viewModel.openConversation("conv-a")
+
+        awaitUntil("the reply to appear") { transcript().contains("Venue features reply") }
+        assertTrue("it never looked again after the first check: ${historyFetches()} fetches", historyFetches() >= 3)
+        assertEquals("the typing indicator was left on after the reply arrived", false, viewModel.uiState.value.isAgentTyping)
+    }
+
+    @Test
+    fun `polling stops once the reply has been found`() {
+        ChatViewModel.missedReplyPollIntervalMs = 30
+        historyWithoutReply = 1
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        seedRoomWithPendingReply()
+
+        viewModel.openConversation("conv-a")
+        awaitUntil("the reply to appear") { transcript().contains("Venue features reply") }
+        settle()
+        val once = historyFetches()
+        settle()
+
+        assertEquals("kept polling after the reply was found", once, historyFetches())
+    }
+
+    @Test
+    fun `it gives up after the ceiling instead of polling forever, and clears the typing indicator`() {
+        ChatViewModel.missedReplyPollIntervalMs = 5
+        historyWithoutReply = Int.MAX_VALUE // the reply never shows up
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        seedRoomWithPendingReply()
+
+        viewModel.openConversation("conv-a")
+        awaitUntil("polling to run its course") { historyFetches() >= 31 }
+        settle()
+        val fetches = historyFetches()
+        settle()
+
+        assertEquals("polled past the ceiling", fetches, historyFetches())
+        assertTrue("unbounded polling: $fetches fetches", fetches <= 32)
+        assertEquals(false, viewModel.uiState.value.isAgentTyping)
+    }
+
+    @Test
+    fun `polling stops when the user moves to another room`() {
+        ChatViewModel.missedReplyPollIntervalMs = 30
+        historyWithoutReply = Int.MAX_VALUE
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        seedRoomWithPendingReply()
+
+        viewModel.openConversation("conv-a")
+        awaitUntil("polling under way") { historyFetches() >= 3 }
+        viewModel.openConversation("conv-b")
+        settle()
+        val fetches = historyFetches()
+        settle()
+
+        assertEquals("kept polling room A after the user left it", fetches, historyFetches())
+        assertEquals("room A's typing indicator leaked into room B", false, viewModel.uiState.value.isAgentTyping)
+    }
+
+    @Test
+    fun `an old unanswered message is not polled for`() {
+        ChatViewModel.missedReplyPollIntervalMs = 30
+        historyWithoutReply = Int.MAX_VALUE
+        userMessageAgeSeconds = 600 // sent ten minutes ago - the flow simply ended
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        seedRoomWithPendingReply()
+
+        viewModel.openConversation("conv-a")
+        awaitUntil("room A to load") { transcript().contains("Tell me about Hyundai Venue features") }
+        settle()
+        settle()
+
+        assertEquals("polled for a message that was never going to be answered", 1, historyFetches())
     }
 }

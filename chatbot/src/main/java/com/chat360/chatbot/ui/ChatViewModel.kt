@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.decodeFromString
@@ -1300,6 +1302,7 @@ class ChatViewModel(
         previousHistoryCursor = null
         if (hasCachedMessages) replayFromCache(conversationId, generation)
         val refreshedFromServer = refreshConversationHistory(conversationId, roomId, generation)
+        if (isCurrentLoad(generation)) startMissedReplyPolling(conversationId, roomId, generation)
         return hasCachedMessages || refreshedFromServer
     }
 
@@ -1557,6 +1560,49 @@ class ChatViewModel(
         replayFromCache(conversationId, generation)
         if (roomId != null && isCurrentLoad(generation)) {
             refreshConversationHistory(conversationId, roomId, generation)
+            if (isCurrentLoad(generation)) startMissedReplyPolling(conversationId, roomId, generation)
+        }
+    }
+
+    private var missedReplyPollJob: Job? = null
+
+    /**
+     * A message sent just before switching rooms (or leaving the screen) still gets its reply: the server
+     * generates it (~14s for a knowledge-base answer) and stores it in history whether or not any socket is
+     * connected. It only *pushes* it to a socket connected to that room at that moment, though. Coming back
+     * sooner than that, the one history fetch on entry finds nothing yet, the reconnect delivers nothing
+     * (the reply was generated while this device was on another room), and nothing ever looked again - the
+     * room sat at "connected" with the reply missing until it was reopened.
+     *
+     * So when the room's last message is the user's own and recent, keep checking history in the
+     * background until the newest row is a bot reply (then re-render from it), a live frame delivers the
+     * reply first (the last message is no longer the user's), this load is superseded, or
+     * [MISSED_REPLY_MAX_POLLS] checks have gone by. Launched, never awaited: the callers sit on the
+     * connect path and must not wait on this.
+     */
+    private fun startMissedReplyPolling(conversationId: String, roomId: String, generation: Int) {
+        val last = _uiState.value.messages.lastOrNull() ?: return
+        if (!last.fromUser || _uiState.value.isLiveChat) return
+        // An old message nobody ever answered (e.g. the flow simply ended) is not worth waiting on.
+        if (System.currentTimeMillis() - last.timestampMs > MISSED_REPLY_WINDOW_MS) return
+        missedReplyPollJob?.cancel()
+        missedReplyPollJob = viewModelScope.launch {
+            _uiState.update { it.copy(isAgentTyping = true) }
+            try {
+                repeat(MISSED_REPLY_MAX_POLLS) {
+                    delay(missedReplyPollIntervalMs)
+                    if (!isCurrentLoad(generation) || _uiState.value.messages.lastOrNull()?.fromUser != true) return@launch
+                    val response = runCatching { repository.fetchHistory(roomId) }.getOrNull() ?: return@repeat
+                    val newest = response.history.lastOrNull()?.let { runCatching { it.toIncomingEvent() }.getOrNull() }
+                    if (newest is IncomingSocketEvent.BotMessage) {
+                        refreshConversationHistory(conversationId, roomId, generation)
+                        return@launch
+                    }
+                }
+            } finally {
+                // Only the load that started the wait may end it - a newer one manages its own indicator.
+                if (isCurrentLoad(generation)) _uiState.update { it.copy(isAgentTyping = false) }
+            }
         }
     }
 
@@ -1639,6 +1685,15 @@ class ChatViewModel(
     override fun onCleared() {
         super.onCleared()
         repository.disconnect()
+    }
+
+    companion object {
+        /** Gap between background history checks for a reply that was generated while away. */
+        internal var missedReplyPollIntervalMs = 3_000L
+        /** 30 checks at the default 3s is about 90s, the same give-up point iOS uses. */
+        private const val MISSED_REPLY_MAX_POLLS = 30
+        /** A message older than this is treated as one nobody is going to answer. */
+        private const val MISSED_REPLY_WINDOW_MS = 90_000L
     }
 
     class Factory(

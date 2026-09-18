@@ -36,7 +36,14 @@ class FakeChatCacheDao : ChatCacheDao {
         return flowFor(botId).asStateFlow()
     }
 
-    override suspend fun messages(conversationId: String): List<CachedMessageEntity> = emptyList()
+    // Real storage, like the Room table: the view model renders fetched history from the rows it has just
+    // written, so a fake that dropped them left every transcript empty.
+    private val messageLock = Any()
+    private val storedMessages = mutableListOf<CachedMessageEntity>()
+    private var nextMessageId = 1L
+
+    override suspend fun messages(conversationId: String): List<CachedMessageEntity> =
+        synchronized(messageLock) { storedMessages.filter { it.conversationId == conversationId }.sortedBy { it.id } }
 
     override suspend fun agentRoomConversationIds(botId: String): List<String> =
         conversations.values.filter { it.botId == botId && it.id.startsWith("agent-room:") }.map { it.id }
@@ -59,13 +66,23 @@ class FakeChatCacheDao : ChatCacheDao {
         publish(existing.botId)
     }
 
-    override suspend fun insertMessage(message: CachedMessageEntity): Long = 0L
+    override suspend fun insertMessage(message: CachedMessageEntity): Long {
+        synchronized(messageLock) {
+            val id = nextMessageId++
+            storedMessages += message.copy(id = id)
+            return id
+        }
+    }
 
-    override suspend fun insertMessages(messages: List<CachedMessageEntity>) = Unit
+    override suspend fun insertMessages(messages: List<CachedMessageEntity>) {
+        synchronized(messageLock) { messages.forEach { storedMessages += it.copy(id = nextMessageId++) } }
+    }
 
     override suspend fun setLiked(messageRowId: Long, liked: Boolean?) = Unit
 
-    override suspend fun deleteMessages(conversationId: String) = Unit
+    override suspend fun deleteMessages(conversationId: String) {
+        synchronized(messageLock) { storedMessages.removeAll { it.conversationId == conversationId } }
+    }
 
     override suspend fun setRoom(conversationId: String, roomId: String, updatedAt: Long) {
         val existing = conversations[conversationId] ?: return
