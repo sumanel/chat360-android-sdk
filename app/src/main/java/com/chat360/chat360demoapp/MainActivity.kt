@@ -35,18 +35,20 @@ class MainActivity : AppCompatActivity() {
         // this app owns the URL, the request shape, and the identifiers entirely.
         private const val HYUNDAI_EMPLOYEE_AUTH_URL =
             "https://app.chat360.io/api/client_hyundai_lms/sales-executive/validate/"
-        private const val HYUNDAI_EMPLOYEE_CODE = "EMP1001"
         private const val HYUNDAI_EMPLOYEE_NAME = "Rahul Sharma"
         private const val HYUNDAI_EMPLOYEE_STATUS = "ACTIVE"
     }
 
     private val httpClient = OkHttpClient()
-    private val nativePocBotId = "0f22919b-fa77-4ddf-a26e-2dace99e3f83"
+    // Sourced from the active build flavor (dev = staging POC bot, prod = the live production
+    // bot) - see app/build.gradle.kts's productFlavors. The demo app builds from "prod" by
+    // default.
+    private val nativePocBotId = BuildConfig.BOT_ID
     private val botId = nativePocBotId
     private val flutter = false
     private val meta = mapOf(
-        "dealer_id" to "W4300",
-        "emp_id" to "EMP1001",
+        "dealer_id" to BuildConfig.DEALER_ID,
+        "emp_id" to BuildConfig.EMP_ID,
     )
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -56,7 +58,7 @@ class MainActivity : AppCompatActivity() {
         val chat360 = Chat360().getInstance()
         chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false,true)
 
-        chat360.setBaseUrl("https://staging.chat360.io");
+        chat360.setBaseUrl(BuildConfig.BASE_URL);
         // dealer_id/emp_id reach the bot via `meta` at session-init (CoreConfigs.meta above) -
         // this callback isn't where the flow's @variables get their values from anymore.
         // A response still has to be returned here on every call, though: this bot's
@@ -103,11 +105,12 @@ class MainActivity : AppCompatActivity() {
             ChatComposeActivity.launch(
                 this,
                 botId = nativePocBotId,
-                baseUrl = "https://staging.chat360.io",
+                baseUrl = BuildConfig.BASE_URL,
                 themePreset = Chat360ThemePreset.DEFAULT,
-                clientId = "6344bb99-7cd7-4985-b86f-3da0a0ee1647",
-                apiKey = "sPZq65Op.oabnSyIyxWDWI5XzgjWwPx7bfXfLpW4N",
-                endUserId = HYUNDAI_EMPLOYEE_CODE,
+                clientId = BuildConfig.CLIENT_ID,
+                apiKey = BuildConfig.API_KEY,
+                endUserId = BuildConfig.EMP_ID,
+                meta = meta,
             )
         }
         val hyundaiButton = findViewById<MaterialButton>(R.id.buttonOpenNativePocHyundai)
@@ -122,9 +125,9 @@ class MainActivity : AppCompatActivity() {
                         customTypography = HyundaiTypography
                         customBranding = HyundaiBranding
                         Chat360UIConfig = HyundaiConfig
-                        apiKey = "sPZq65Op.oabnSyIyxWDWI5XzgjWwPx7bfXfLpW4N"
-                        clientId = "6344bb99-7cd7-4985-b86f-3da0a0ee1647"
-                        endUserId = HYUNDAI_EMPLOYEE_CODE
+                        apiKey = BuildConfig.API_KEY
+                        clientId = BuildConfig.CLIENT_ID
+                        endUserId = BuildConfig.EMP_ID
             }
             chat360.startBot(this)
 

@@ -799,9 +799,17 @@ class ChatViewModel(
      * resume, manual retry) - not just init{}'s first connect - since maintenance can flip on
      * while the app was backgrounded, or the socket dropped for an unrelated reason right as it
      * did. Also the recovery path the other way: once the flag clears, this is what lets a
-     * stale maintenanceMessage banner (and the input bar it's hiding) come back. */
-    private suspend fun reconnectUnlessUnderMaintenance() {
+     * stale maintenanceMessage banner (and the input bar it's hiding) come back.
+     *
+     * [generation], when supplied, re-checks [isCurrentLoad] after the maintenance round trip
+     * before touching uiState/reconnecting - callers driven by a specific room load (e.g.
+     * [switchToActiveRoomIfResumable]) pass their own generation so a stale invocation can't yank
+     * the socket back off whatever newer room the user has since switched to. The unguarded
+     * foreground-resume/manual-retry callers below aren't tied to a particular room load, so they
+     * leave this null and keep their existing unconditional behavior. */
+    private suspend fun reconnectUnlessUnderMaintenance(generation: Int? = null) {
         val maintenanceMessage = repository.checkMaintenanceStatus()
+        if (generation != null && !isCurrentLoad(generation)) return
         _uiState.update { it.copy(maintenanceMessage = maintenanceMessage) }
         if (maintenanceMessage == null) repository.reconnectNow()
     }
@@ -1477,7 +1485,16 @@ class ChatViewModel(
      * existed. */
     private suspend fun switchToActiveRoomIfResumable(generation: Int = loadGeneration) {
         val active = activeConversationId ?: return
-        if (active == connectedConversationId) return
+        if (active == connectedConversationId) {
+            // Same room the ViewModel believes it's bound to - but the live socket may have
+            // been torn down since without connectedConversationId ever being cleared (e.g. a
+            // maintenance close_connection event while this room was open, see ChatRepository's
+            // CloseConnection handling). Re-validate maintenance and reconnect in that case,
+            // the same way a manual retry/foreground resume would; if the socket is genuinely
+            // still live this stays a no-op.
+            if (!_uiState.value.isConnected) reconnectUnlessUnderMaintenance(generation)
+            return
+        }
         val targetRoomId = _conversations.value.firstOrNull { it.id == active }?.roomId ?: return
         // Mirrors startNewChat()'s own isConnected=false - the input bar is wired to it
         // (see ChatScreen's ChatInputBar `enabled`) so nothing can be typed/sent into a room
