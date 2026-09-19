@@ -12,6 +12,9 @@ import com.chat360.chatbot.domain.BlankRoomRegistry
 import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.SharedPreferencesSessionStore
 import com.chat360.chatbot.domain.thirdparty.ChatHistoryRepository
+import com.chat360.chatbot.domain.thirdparty.SalesExecutiveGate
+import com.chat360.chatbot.domain.thirdparty.SharedPreferencesWelcomeTextStore
+import com.chat360.chatbot.domain.thirdparty.WelcomeTextRepository
 import com.chat360.chatbot.domain.thirdparty.MessageFeedbackRepository
 import com.chat360.chatbot.domain.thirdparty.ThirdPartyTokenManager
 import com.chat360.chatbot.network.rest.thirdparty.ThirdPartyTasksApiService
@@ -33,10 +36,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
@@ -46,6 +52,8 @@ class ChatViewModel(
     private val cache: ChatCacheRepository,
     private val chatHistoryRepository: ChatHistoryRepository? = null,
     private val messageFeedbackRepository: MessageFeedbackRepository? = null,
+    private val welcomeTextRepository: WelcomeTextRepository? = null,
+    private val salesExecutiveGate: SalesExecutiveGate? = null,
     private val suppressInitialBotMessages: Boolean = false,
     private val enablePeriodicFeedback: Boolean = false,
 ) : ViewModel() {
@@ -166,14 +174,16 @@ class ChatViewModel(
         // overwrite this with the live agent-room list instead.
         viewModelScope.launch { cache.conversations(botId).collect { _conversations.value = it } }
         refreshRoomsList()
+        loadWelcomeText()
         viewModelScope.launch {
             // Gates the very first connect of a new chat - if the bot is under maintenance (a
             // shared, cross-dealer flag, not scoped to this session), the socket never opens at
             // all and the input bar is replaced by a fallback message. Fails open (see
             // ChatRepository.checkMaintenanceStatus's own doc), so a broken/unreachable check
             // never blocks a chat that isn't actually under maintenance.
-            val maintenanceMessage = repository.checkMaintenanceStatus()
+            val maintenanceMessage = checkAccess()
             if (maintenanceMessage != null) {
+                neverConnected = true
                 _uiState.update { it.copy(maintenanceMessage = maintenanceMessage) }
                 // Still show whatever this device already has locally for this bot - only the
                 // live connection/input is blocked, not the ability to read past conversations.
@@ -185,47 +195,70 @@ class ChatViewModel(
                 }
                 return@launch
             }
-            val generation = beginLoad()
-            repository.connect(
-                onEvent = ::handleEvent,
-                // A fresh socket successfully opened - if the last one was killed by a terminal
-                // close_connection (dealer/SE deactivation or maintenance mode), that's now over,
-                // so the fallback banner (and whatever it was suppressing) no longer applies.
-                onConnected = { _uiState.update { it.copy(isConnected = true, error = null, sessionClosedMessage = null) } },
-                onError = { e ->
-                    // No banner here on purpose: transient drops are common and the socket
-                    // already retries with backoff in the background (see ReconnectManager),
-                    // same as message sends now retry silently (see AckTracker) instead of
-                    // nagging the user - a message only ever surfaces as "Not delivered" once
-                    // every retry has genuinely failed.
-                    Log.e("Chat360", "Chat connection failed: ${e.message}", e)
-                    _uiState.update { it.copy(isConnected = false, isAgentTyping = false) }
-                },
-                onSlowConnectionChanged = { slow -> _uiState.update { it.copy(isSlowConnection = slow) } },
-                onMessageTimedOut = ::handleMessageTimedOut,
-                onAppearanceLoaded = { details, chatboxName ->
-                    _uiState.update {
-                        it.copy(
-                            colorOverrides = details?.toColorOverrides(),
-                            logoOverride = details?.toLogoOverride(),
-                            botTitleOverride = chatboxName?.takeIf { name -> name.isNotBlank() },
-                            feedbackConfig = details?.feedback_config ?: it.feedbackConfig,
-                        )
-                    }
-                },
-                onConversationStarted = { roomId -> activateConversation(roomId, generation) },
-                onRawIncoming = ::cacheIncomingEnvelope,
-                onOpenUrl = { url -> _uiState.update { it.copy(pendingUrlToOpen = url) } },
-                onSessionResumed = { takeover, agent ->
-                    _uiState.update { it.copy(isLiveChat = takeover, assignedAgent = agent ?: it.assignedAgent) }
-                },
-                onFeedbackRequested = { _uiState.update { it.copy(showFeedbackPrompt = true) } },
-                onBotSettingsLoaded = { shortcuts, languages ->
-                    _shortcuts.value = shortcuts
-                    _languages.value = languages
-                },
-            )
+            connectFirstTime()
         }
+    }
+
+    /** True while the chat was closed at startup (maintenance, or the sales executive being inactive), so no
+     * socket has ever been opened and no callbacks registered. Clearing the block must then do the first connect,
+     * not a reconnect - `reconnectNow` has no room to reconnect to, and `startNewSession` would open a socket with
+     * nothing listening. */
+    private var neverConnected = false
+
+    /**
+     * Whether the chat is closed right now, and why: the shared maintenance flag, or the sales executive being
+     * INACTIVE. The two checks run side by side so the extra one adds no start-up latency, and maintenance wins
+     * when both apply. Both fail open. The message is null when the chat may run; it is shown through the same
+     * state maintenance uses, so the screen needs no changes.
+     */
+    private suspend fun checkAccess(): String? = coroutineScope {
+        val maintenance = async { repository.checkMaintenanceStatus() }
+        val executive = async { salesExecutiveGate?.blockedMessage() }
+        maintenance.await() ?: executive.await()
+    }
+
+    /** Opens the very first connection of this view model - see [neverConnected]. */
+    private suspend fun connectFirstTime() {
+        val generation = beginLoad()
+        repository.connect(
+            onEvent = ::handleEvent,
+            // A fresh socket successfully opened - if the last one was killed by a terminal
+            // close_connection (dealer/SE deactivation or maintenance mode), that's now over,
+            // so the fallback banner (and whatever it was suppressing) no longer applies.
+            onConnected = { _uiState.update { it.copy(isConnected = true, error = null, sessionClosedMessage = null) } },
+            onError = { e ->
+                // No banner here on purpose: transient drops are common and the socket
+                // already retries with backoff in the background (see ReconnectManager),
+                // same as message sends now retry silently (see AckTracker) instead of
+                // nagging the user - a message only ever surfaces as "Not delivered" once
+                // every retry has genuinely failed.
+                Log.e("Chat360", "Chat connection failed: ${e.message}", e)
+                _uiState.update { it.copy(isConnected = false, isAgentTyping = false) }
+            },
+            onSlowConnectionChanged = { slow -> _uiState.update { it.copy(isSlowConnection = slow) } },
+            onMessageTimedOut = ::handleMessageTimedOut,
+            onAppearanceLoaded = { details, chatboxName ->
+                _uiState.update {
+                    it.copy(
+                        colorOverrides = details?.toColorOverrides(),
+                        logoOverride = details?.toLogoOverride(),
+                        botTitleOverride = chatboxName?.takeIf { name -> name.isNotBlank() },
+                        feedbackConfig = details?.feedback_config ?: it.feedbackConfig,
+                    )
+                }
+            },
+            onConversationStarted = { roomId -> activateConversation(roomId, generation) },
+            onRawIncoming = ::cacheIncomingEnvelope,
+            onOpenUrl = { url -> _uiState.update { it.copy(pendingUrlToOpen = url) } },
+            onSessionResumed = { takeover, agent ->
+                _uiState.update { it.copy(isLiveChat = takeover, assignedAgent = agent ?: it.assignedAgent) }
+            },
+            onFeedbackRequested = { _uiState.update { it.copy(showFeedbackPrompt = true) } },
+            onBotSettingsLoaded = { shortcuts, languages ->
+                _shortcuts.value = shortcuts
+                _languages.value = languages
+            },
+        )
     }
 
     private fun handleEvent(event: IncomingSocketEvent) {
@@ -797,6 +830,7 @@ class ChatViewModel(
                 isLiveChat = false,
                 assignedAgent = null,
                 isArchived = false,
+                needsNewSession = false,
                 showFeedbackPrompt = false,
             )
         }
@@ -831,10 +865,16 @@ class ChatViewModel(
      * foreground-resume/manual-retry callers below aren't tied to a particular room load, so they
      * leave this null and keep their existing unconditional behavior. */
     private suspend fun reconnectUnlessUnderMaintenance(generation: Int? = null) {
-        val maintenanceMessage = repository.checkMaintenanceStatus()
+        val maintenanceMessage = checkAccess()
         if (generation != null && !isCurrentLoad(generation)) return
         _uiState.update { it.copy(maintenanceMessage = maintenanceMessage) }
-        if (maintenanceMessage == null) repository.reconnectNow()
+        if (maintenanceMessage != null) return
+        if (neverConnected) {
+            neverConnected = false
+            connectFirstTime()
+        } else {
+            repository.reconnectNow()
+        }
     }
 
     fun updateFormField(messageId: String, fieldIndex: Int, value: String) {
@@ -1066,6 +1106,19 @@ class ChatViewModel(
      * is logged under [ThirdPartyTasksApiService.ROOMS_LOG_TAG] - filter logcat by that tag
      * (`adb logcat -s Chat360RoomsApi`) to inspect it. No-op when no [chatHistoryRepository] is
      * configured. */
+    /**
+     * Shows the last known server-configured welcome copy straight away, then refreshes it in the
+     * background. Runs beside the connect and never gates it; any failure just leaves the welcome screen
+     * on the host app's own text (or the theme default).
+     */
+    private fun loadWelcomeText() {
+        val repo = welcomeTextRepository ?: return
+        repo.cached()?.let { cached -> _uiState.update { it.copy(welcomeOverride = cached) } }
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.refresh().onSuccess { fresh -> _uiState.update { it.copy(welcomeOverride = fresh) } }
+        }
+    }
+
     fun refreshRoomsList() {
         val repo = chatHistoryRepository ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -1082,10 +1135,15 @@ class ChatViewModel(
         // before any of the resets below run, so a blocked attempt leaves the current screen
         // (including its history) untouched and just (re)shows the banner.
         viewModelScope.launch {
-            val maintenanceMessage = repository.checkMaintenanceStatus()
+            val maintenanceMessage = checkAccess()
             _uiState.update { it.copy(maintenanceMessage = maintenanceMessage) }
             if (maintenanceMessage != null) return@launch
-            startNewChatNow()
+            if (neverConnected) {
+                neverConnected = false
+                connectFirstTime()
+            } else {
+                startNewChatNow()
+            }
         }
     }
 
@@ -1149,6 +1207,7 @@ class ChatViewModel(
                 isLiveChat = false,
                 assignedAgent = null,
                 isArchived = false,
+                needsNewSession = false,
                 voiceDraft = null,
                 showFeedbackPrompt = false,
                 showPeriodicFeedbackPrompt = false,
@@ -1196,6 +1255,7 @@ class ChatViewModel(
                 isLiveChat = false,
                 assignedAgent = null,
                 isArchived = false,
+                needsNewSession = false,
                 voiceDraft = null,
                 showFeedbackPrompt = false,
                 showPeriodicFeedbackPrompt = false,
@@ -1541,7 +1601,7 @@ class ChatViewModel(
             // whatever was connected before must not leak into this view either way. Same for
             // sessionCreatedAtMs - otherwise the previous conversation's timer stays on screen
             // until this room's own SessionTime event arrives.
-            _uiState.update { it.copy(isArchived = false, isLiveChat = false, assignedAgent = null, isAgentTyping = false, sessionCreatedAtMs = null) }
+            _uiState.update { it.copy(isArchived = false, needsNewSession = false, isLiveChat = false, assignedAgent = null, isAgentTyping = false, sessionCreatedAtMs = null) }
             val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
             restoreConversation(conversationId, roomId, generation)
             // Reconnect the live socket to this room right away (when this device can resume it -
@@ -1608,6 +1668,10 @@ class ChatViewModel(
 
     fun sendMessage() {
         val text = _uiState.value.inputText.trim()
+        if (_uiState.value.needsNewSession) {
+            sendInNewSession(text)
+            return
+        }
         // The empty-message guard only applies outside live chat; live chat allows an empty
         // submit through.
         if (text.isEmpty() && !_uiState.value.isLiveChat) return
@@ -1627,6 +1691,23 @@ class ChatViewModel(
             val chatMsgId = repository.sendFreeText(text)
             appendMessage(ChatMessage(chatMsgId = chatMsgId, text = text, fromUser = true))
             showAgentTyping()
+        }
+    }
+
+    /** The user sent from an older room with no saved session. It can't be rejoined (the backend ignores a
+     * bare `room_id` and allocates a fresh room), and sending into whichever room happens to be connected
+     * would merge two chats - so start a new session, wait for it, and send the text there. */
+    private fun sendInNewSession(text: String) {
+        if (text.isEmpty()) return
+        _uiState.update { it.copy(inputText = "") }
+        startNewChatNow()
+        val generation = loadGeneration
+        viewModelScope.launch {
+            val connected = withTimeoutOrNull(NEW_SESSION_SEND_TIMEOUT_MS) { _uiState.first { it.isConnected } } != null
+            if (!isCurrentLoad(generation)) return@launch
+            // Put the text back either way: sent below on success, kept for the user to retry on failure.
+            _uiState.update { it.copy(inputText = text) }
+            if (connected) sendMessage()
         }
     }
 
@@ -1679,7 +1760,10 @@ class ChatViewModel(
             conversationPersisted = true
             true
         }
-        if (!switched && isCurrentLoad(generation)) _uiState.update { it.copy(isConnected = true) }
+        // No saved session for this room (e.g. a chat from another device): there is no way to rejoin it, and
+        // anything sent from here used to be routed into whichever room *is* connected - merging two chats into
+        // one. Sending instead starts a fresh session (see sendMessage), so the room stays a view of its history.
+        if (!switched && isCurrentLoad(generation)) _uiState.update { it.copy(isConnected = true, needsNewSession = true) }
     }
 
     override fun onCleared() {
@@ -1692,6 +1776,8 @@ class ChatViewModel(
         internal var missedReplyPollIntervalMs = 3_000L
         /** 30 checks at the default 3s is about 90s, the same give-up point iOS uses. */
         private const val MISSED_REPLY_MAX_POLLS = 30
+        /** How long a send from an unresumable old room waits for its fresh session to connect. */
+        private const val NEW_SESSION_SEND_TIMEOUT_MS = 20_000L
         /** A message older than this is treated as one nobody is going to answer. */
         private const val MISSED_REPLY_WINDOW_MS = 90_000L
     }
@@ -1706,6 +1792,8 @@ class ChatViewModel(
         private val endUserId: String? = null,
         private val suppressInitialBotMessages: Boolean = false,
         private val enablePeriodicFeedback: Boolean = false,
+        /** See [com.chat360.chatbot.common.CoreConfigs.salesExecutive]. */
+        private val salesExecutive: Map<String, String>? = null,
         /** Host-supplied key/value pairs (`CoreConfigs.meta`), forwarded to session-init so the
          * flow's `@`-variables are pre-seeded the same way the legacy WebView path gets for
          * free. See [ChatRepository] and [Chat360ApiService.getSession]. */
@@ -1723,6 +1811,15 @@ class ChatViewModel(
             val thirdParty = buildThirdPartyAuth(trimmedClientId, trimmedApiKey)
             val chatHistoryRepository = buildChatHistoryRepository(cache, thirdParty, trimmedClientId, trimmedApiKey, trimmedEndUserId)
             val messageFeedbackRepository = thirdParty?.let { (api, tokenManager) -> MessageFeedbackRepository(api, tokenManager) }
+            // Needs only the client id (no api key / bearer token), so it works for hosts that never set up history.
+            // Needs only the client id (like the welcome text) - no api key or bearer token.
+            val salesExecutiveGate = trimmedClientId?.let { id ->
+                salesExecutive?.takeIf { !it["dealer_code"].isNullOrBlank() && !it["emp_code"].isNullOrBlank() }
+                    ?.let { SalesExecutiveGate(ThirdPartyTasksApiService(baseUrl), id, it) }
+            }
+            val welcomeTextRepository = trimmedClientId?.let {
+                WelcomeTextRepository(ThirdPartyTasksApiService(baseUrl), it, SharedPreferencesWelcomeTextStore(context))
+            }
             return ChatViewModel(
                 repository = ChatRepository(
                     baseUrl,
@@ -1735,6 +1832,8 @@ class ChatViewModel(
                 cache = cache,
                 chatHistoryRepository = chatHistoryRepository,
                 messageFeedbackRepository = messageFeedbackRepository,
+                welcomeTextRepository = welcomeTextRepository,
+                salesExecutiveGate = salesExecutiveGate,
                 suppressInitialBotMessages = suppressInitialBotMessages,
                 enablePeriodicFeedback = enablePeriodicFeedback,
             ) as T

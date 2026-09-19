@@ -68,6 +68,7 @@ import com.chat360.chatbot.ui.components.messages.BotMessageRow
 import com.chat360.chatbot.ui.components.messages.UserMessageRow
 import com.chat360.chatbot.ui.components.messages.content.BotContentActions
 import com.chat360.chatbot.ui.theme.LocalChat360Branding
+import com.chat360.chatbot.ui.theme.withWelcome
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.resolvedStatusBar
 import com.chat360.chatbot.ui.theme.applyOverrides
@@ -102,7 +103,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
     val effectiveBranding = baseBranding.copy(
         botTitle = state.botTitleOverride ?: baseBranding.botTitle,
         logo = state.logoOverride ?: baseBranding.logo,
-    )
+    ).withWelcome(state.welcomeOverride)
 
 //    val state by viewModel.uiState.collectAsState()
 

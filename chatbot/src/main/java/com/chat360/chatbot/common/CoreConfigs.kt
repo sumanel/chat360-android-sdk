@@ -41,6 +41,12 @@ public class CoreConfigs(botId: String, applicationContext: Context, flutter: Bo
      * host app isn't using history. Identifies this host app/integration to the backend - ask
      * Chat360 for this value, it is not the same as [botId]. */
     var clientId: String? = null
+    /** The sales executive using the chat, as key/value pairs sent as the JSON body of `third-party-tasks/sales-exectives`:
+     * `dealer_code` and `emp_code` are required, `name` and anything else the server accepts is optional. When set
+     * (together with [clientId]) and the server reports this executive INACTIVE, the chat is closed with the
+     * server's message, the same way maintenance mode closes it. A check that fails for any reason never blocks
+     * the chat. Leave null to skip the check. */
+    var salesExecutive: Map<String, String>? = null
     /** `x-api-key` header used once to exchange [clientId] for a short-lived bearer token (see
      * [clientId] for the all-or-nothing rule with [endUserId]). Sent from the device on every
      * token refresh - treat it like any other client-side API key (fine for a mobile client

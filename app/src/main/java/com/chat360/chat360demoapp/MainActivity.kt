@@ -50,6 +50,13 @@ class MainActivity : AppCompatActivity() {
         "dealer_id" to BuildConfig.DEALER_ID,
         "emp_id" to BuildConfig.EMP_ID,
     )
+    // The sales executive using the chat, sent as the JSON body of `third-party-tasks/sales-exectives`. If the server
+    // reports them INACTIVE the chat closes with its message; any failure of the check lets the chat run as normal.
+    // Watch it with: adb logcat -s Chat360SalesExec
+    private val salesExecutive = mapOf(
+        "dealer_code" to BuildConfig.SALES_DEALER_CODE,
+        "emp_code" to BuildConfig.SALES_EMP_CODE,
+    )
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,6 +118,7 @@ class MainActivity : AppCompatActivity() {
                 apiKey = BuildConfig.API_KEY,
                 endUserId = BuildConfig.EMP_ID,
                 meta = meta,
+                salesExecutive = salesExecutive,
             )
         }
         val hyundaiButton = findViewById<MaterialButton>(R.id.buttonOpenNativePocHyundai)
@@ -128,6 +136,7 @@ class MainActivity : AppCompatActivity() {
                         apiKey = BuildConfig.API_KEY
                         clientId = BuildConfig.CLIENT_ID
                         endUserId = BuildConfig.EMP_ID
+                        salesExecutive = this@MainActivity.salesExecutive
             }
             chat360.startBot(this)
 

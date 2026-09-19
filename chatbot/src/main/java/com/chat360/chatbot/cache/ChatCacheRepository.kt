@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import com.chat360.chatbot.network.rest.dto.thirdparty.RoomDto
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
+import com.chat360.chatbot.model.wire.serverTimestampMs
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.UUID
@@ -62,6 +63,10 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
         val fetchedAt = System.currentTimeMillis()
         return rooms
             .filterNot { it.status.equals("inactive", ignoreCase = true) }
+            // Nobody typed in it: a server session_count of 0 is an empty room. A room the server gives
+            // neither a name nor a count for is treated the same (an abandoned one), as before. An
+            // unnamed room that does have sessions is a real chat and is listed as "Conversation".
+            .filterNot { it.sessionCount == 0 || (it.sessionCount == null && it.roomName.isBlank()) }
             .mapIndexed { index, room ->
                 // The server's own timestamps drive the sidebar order - falling back to the
                 // response position only when a room carries none, so the order can never depend
@@ -79,6 +84,25 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
                 )
             }
             .sortedByDescending { it.updatedAt }
+    }
+
+    /** Applies what the server says about rooms this device already has a local conversation for:
+     * a room the server marks inactive (deleted elsewhere) is removed here too, and a name the
+     * server holds replaces a differing local title. Without this the local row - which owns the
+     * room and so shields it from the `agent-room:` sync - never changed after it was created.
+     * Call only with a complete rooms list. */
+    suspend fun syncLocalConversations(botId: String, rooms: List<RoomDto>) {
+        if (!ENABLED) return
+        rooms.forEach { room ->
+            val local = dao.findConversation(botId, room.roomId)?.takeUnless { it.id.startsWith("agent-room:") } ?: return@forEach
+            if (room.status.equals("inactive", ignoreCase = true)) {
+                dao.deleteMessages(local.id)
+                dao.deleteConversation(local.id)
+                return@forEach
+            }
+            val name = room.roomName.trim()
+            if (name.isNotEmpty() && name != local.title) dao.updateTitle(local.id, name, local.updatedAt)
+        }
     }
 
     /** Replaces a conversation's server-sourced messages wholesale - the caller re-reads
@@ -126,7 +150,34 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
         // always renders as the most recent message - the only case this preserves is exactly
         // that: something sent after everything the server just returned. id reset to 0 since
         // these are reinserted as new rows once dao.replaceMessages deletes the old ones.
-        dao.replaceMessages(conversationId, historyRows + notYetIndexedUserMessages.map { it.copy(id = 0) })
+        dao.replaceMessages(conversationId, mergeByTime(historyRows, history, notYetIndexedUserMessages.map { it.copy(id = 0) }))
+    }
+
+    /** Places each carried-forward local send at its real position among [historyRows] (by the
+     * server timestamp each history frame carries) instead of always after them: a send the
+     * backend never matched by id, from earlier in the chat, otherwise rendered below newer
+     * replies - "10:06" above "10:01". A send newer than everything in history still lands last.
+     * A history frame with no timestamp inherits the previous one's, so relative order is kept. */
+    private fun mergeByTime(
+        historyRows: List<CachedMessageEntity>,
+        history: List<RawSocketEnvelope>,
+        carried: List<CachedMessageEntity>,
+    ): List<CachedMessageEntity> {
+        if (carried.isEmpty()) return historyRows
+        var last = Long.MIN_VALUE
+        val times = history.map { envelope ->
+            val t = envelope.serverTimestampMs()
+            if (t != null) last = maxOf(last, t)
+            last
+        }
+        val result = historyRows.toMutableList()
+        val resultTimes = times.toMutableList()
+        carried.sortedBy { it.createdAt }.forEach { row ->
+            val at = resultTimes.indexOfFirst { it > row.createdAt }.let { if (it == -1) result.size else it }
+            result.add(at, row)
+            resultTimes.add(at, row.createdAt)
+        }
+        return result
     }
 
     suspend fun renameConversation(conversationId: String, title: String) {

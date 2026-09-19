@@ -85,6 +85,10 @@ sealed interface IncomingSocketEvent {
     data class Unhandled(val raw: RawSocketEnvelope) : IncomingSocketEvent
 }
 
+/** The frame's server send time in epoch ms - [RawSocketEnvelope.timestamp_int] when present, else the parsed `time`; null if neither. */
+internal fun RawSocketEnvelope.serverTimestampMs(): Long? =
+    timestamp_int?.toDoubleOrNull()?.let { (it * 1000).toLong() } ?: time.parseServerTimestamp()
+
 /**
  * Handler chain order matters here, since e.g. a close_connection or ack frame must never fall
  * through and get misread as bot content: close_connection -> ack -> echoed end_user ->
@@ -92,7 +96,7 @@ sealed interface IncomingSocketEvent {
  * other msgType the same frame carries) -> bot/agent content.
  */
 fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
-    val timestampMs = timestamp_int?.toDoubleOrNull()?.let { (it * 1000).toLong() } ?: time.parseServerTimestamp()
+    val timestampMs = serverTimestampMs()
 
     if (data_type == "session_time_hyundai") {
         val createdAtMs = session?.string("created_at")?.parseIsoUtcTimestamp()

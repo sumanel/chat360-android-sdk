@@ -22,6 +22,7 @@ const val EXTRA_CLIENT_ID = "extra_client_id"
 const val EXTRA_API_KEY = "extra_api_key"
 const val EXTRA_END_USER_ID = "extra_end_user_id"
 const val EXTRA_META = "extra_meta"
+const val EXTRA_SALES_EXECUTIVE = "extra_sales_executive"
 
 data class ResolvedChatConfig(
     val botId: String,
@@ -40,6 +41,8 @@ data class ResolvedChatConfig(
      * time (e.g. `{"dealer_id": "..."}` -> `@dealer_id` in the flow) - see
      * [com.chat360.chatbot.network.rest.Chat360ApiService.getSession]. */
     val meta: Map<String, String>?,
+    /** See [com.chat360.chatbot.common.CoreConfigs.salesExecutive]. */
+    val salesExecutive: Map<String, String>?,
 )
 
 /**
@@ -66,6 +69,7 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
             endUserId = config.endUserId?.trim()?.takeIf { it.isNotEmpty() },
             Chat360UIConfig = config.Chat360UIConfig ?: Chat360UIConfig(),
             meta = config.meta,
+            salesExecutive = config.salesExecutive,
         )
     }
     return ResolvedChatConfig(
@@ -83,6 +87,9 @@ fun resolveChatConfig(extras: Bundle?): ResolvedChatConfig {
         endUserId = extras?.getString(EXTRA_END_USER_ID)?.trim()?.takeIf { it.isNotEmpty() },
         Chat360UIConfig = Chat360UIConfig(),
         meta = extras?.getString(EXTRA_META)?.let {
+            runCatching { Json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), it) }.getOrNull()
+        },
+        salesExecutive = extras?.getString(EXTRA_SALES_EXECUTIVE)?.let {
             runCatching { Json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), it) }.getOrNull()
         },
     )

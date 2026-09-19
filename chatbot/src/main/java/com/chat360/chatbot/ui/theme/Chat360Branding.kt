@@ -1,5 +1,7 @@
 package com.chat360.chatbot.ui.theme
 
+import com.chat360.chatbot.domain.thirdparty.WelcomeText
+
 import androidx.compose.runtime.staticCompositionLocalOf
 
 /**
@@ -21,6 +23,16 @@ data class Chat360Branding(
     val welcomeHeading: String = botTitle,
     val disclaimerText: String = "$botTitle can make mistakes. Verify important information.",
     val inputPlaceholder: String = "Type a message…",
+)
+
+/**
+ * Puts the server-configured welcome copy over this branding's welcome heading and subtitle. The order is
+ * server value, then whatever this branding already resolved to (the host app's `welcomeTitle` /
+ * `welcomeSubtitle`, then the theme default). A missing or blank server field leaves that line alone.
+ */
+fun Chat360Branding.withWelcome(welcome: WelcomeText?): Chat360Branding = copy(
+    welcomeHeading = welcome?.heading?.takeIf { it.isNotBlank() } ?: welcomeHeading,
+    disclaimerText = welcome?.text?.takeIf { it.isNotBlank() } ?: disclaimerText,
 )
 
 /** The library's own brand-neutral default: no logo image, a generic assistant title. */

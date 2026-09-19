@@ -10,7 +10,14 @@ import com.chat360.chatbot.network.rest.dto.thirdparty.RoomStatusResponse
 import com.chat360.chatbot.network.rest.dto.thirdparty.TokenEnvelope
 import com.chat360.chatbot.network.rest.dto.thirdparty.TokenResponse
 import kotlinx.coroutines.suspendCancellableCoroutine
+import com.chat360.chatbot.domain.thirdparty.SalesExecutiveResult
+import com.chat360.chatbot.domain.thirdparty.WelcomeText
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.Call
@@ -37,6 +44,10 @@ class ThirdPartyTasksApiService(
          * request/response traffic - e.g. `adb logcat -s Chat360RoomsApi`, or type it into
          * Android Studio's Logcat search/tag filter. */
         const val ROOMS_LOG_TAG = "Chat360RoomsApi"
+
+        /** Filter logcat by this tag to see the sales-executive check: the request sent, the reply, and whether it
+         * blocked the chat - `adb logcat -s Chat360SalesExec`. */
+        const val SALES_EXEC_LOG_TAG = "Chat360SalesExec"
 
         /** Logcat truncates a single log line at ~4KB, which silently cuts off long response
          * bodies. Split into fixed-size chunks (numbered when there's more than one) so the
@@ -107,6 +118,61 @@ class ThirdPartyTasksApiService(
             Log.d(ROOMS_LOG_TAG, "room room_id=${room.roomId} room_name=${room.roomName} status=${room.status} created_at=${room.createdAt} updated_at=${room.updatedAt} session_count=${room.sessionCount}")
         }
         return response
+    }
+
+    /**
+     * `GET third-party-tasks/welcome-text`, identified by a `Client-Id` header (no bearer token). The hyphenated
+     * spelling is the one the server reads - `client_id` with an underscore is rejected with a 400, so the
+     * request would silently fall back to the defaults. Returns
+     * the configured heading/text, or null when neither is set. Accepts the fields at the top level, in a
+     * `data` object, or in a `data` list of such objects.
+     * Throws on any non-2xx (a 404 while the endpoint isn't deployed) or an unreadable body - the caller
+     * treats every failure the same way, by keeping what it already has.
+     */
+    suspend fun fetchWelcomeText(clientId: String): WelcomeText? {
+        val url = "${baseUrl.trimEnd('/')}/api/third-party-tasks/welcome-text"
+        val body = execute(Request.Builder().url(url).addHeader("Client-Id", clientId).get().build())
+        val root = json.parseToJsonElement(body) as? JsonObject ?: throw ThirdPartyMalformedResponseException("welcome-text")
+        // `data` is either the welcome object itself or a list of them (an empty list when nothing is set).
+        // Fields at the top level also work. With a list, the first entry that actually has a heading or text wins.
+        val candidates: List<JsonObject> = when (val data = root["data"]) {
+            is JsonObject -> listOf(data)
+            is JsonArray -> data.filterIsInstance<JsonObject>()
+            else -> listOf(root)
+        }
+        return candidates.firstNotNullOfOrNull { entry ->
+            fun field(name: String) = (entry[name] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+            WelcomeText(heading = field("heading"), text = field("text")).takeUnless { it.isEmpty }
+        }
+    }
+
+    /**
+     * `POST third-party-tasks/sales-exectives` (the misspelling is the server's real route), identified by a
+     * `Client-Id` header. [details] goes out as the JSON body exactly as given. It must be sent as
+     * `application/json` - without that content type the server ignores the body and answers that both
+     * `dealer_code` and `emp_code` are required.
+     *
+     * Throws on any non-2xx (the server answers 400 with `{"success":false,...}` for validation errors and an
+     * unconfigured client) or an unreadable body; [SalesExecutiveGate] treats every failure as "let them through".
+     */
+    suspend fun checkSalesExecutive(clientId: String, details: Map<String, String>): SalesExecutiveResult {
+        val url = "${baseUrl.trimEnd('/')}/api/third-party-tasks/sales-exectives"
+        val body = buildJsonObject { details.forEach { (key, value) -> put(key, value) } }.toString().toRequestBody(jsonMediaType)
+        Log.d(SALES_EXEC_LOG_TAG, "request POST $url Client-Id=$clientId body=${details}")
+        val reply = try {
+            execute(Request.Builder().url(url).addHeader("Client-Id", clientId).post(body).build())
+        } catch (e: Exception) {
+            Log.w(SALES_EXEC_LOG_TAG, "request failed: ${e.javaClass.simpleName}: ${e.message}")
+            throw e
+        }
+        logChunked(SALES_EXEC_LOG_TAG, "response body=$reply")
+        val root = json.parseToJsonElement(reply) as? JsonObject ?: throw ThirdPartyMalformedResponseException("sales-exectives")
+        val executive = root["sales_executive"] as? JsonObject
+        return SalesExecutiveResult(
+            success = (root["success"] as? JsonPrimitive)?.booleanOrNull ?: false,
+            message = (root["message"] as? JsonPrimitive)?.contentOrNull,
+            status = (executive?.get("status") as? JsonPrimitive)?.contentOrNull,
+        )
     }
 
     suspend fun updateRoom(

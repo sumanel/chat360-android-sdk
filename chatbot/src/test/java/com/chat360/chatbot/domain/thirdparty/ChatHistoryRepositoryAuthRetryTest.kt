@@ -94,7 +94,7 @@ class ChatHistoryRepositoryAuthRetryTest {
         """
         {"success":true,"data":{"client_id":"client-1","bot_id":"bot-1","rooms":[
             {"room_id":"room-1","room_name":"Test Room","agent_id":"agent-1","status":"active",
-             "session_ids":[],"session_count":0}
+             "session_ids":["s1"],"session_count":1}
         ],"total_count":1,"has_more":false}}
         """.trimIndent(),
     )

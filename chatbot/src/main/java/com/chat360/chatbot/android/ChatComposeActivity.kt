@@ -30,7 +30,7 @@ class ChatComposeActivity : ComponentActivity() {
     private val config: ResolvedChatConfig by lazy { resolveChatConfig(intent) }
 
     private val viewModel: ChatViewModel by viewModels {
-        ChatViewModel.Factory(context = applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, clientId = config.clientId, apiKey = config.apiKey, endUserId = config.endUserId, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages, enablePeriodicFeedback = config.Chat360UIConfig.behavior.enablePeriodicFeedback, meta = config.meta)
+        ChatViewModel.Factory(context = applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, clientId = config.clientId, apiKey = config.apiKey, endUserId = config.endUserId, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages, enablePeriodicFeedback = config.Chat360UIConfig.behavior.enablePeriodicFeedback, meta = config.meta, salesExecutive = config.salesExecutive)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +69,8 @@ class ChatComposeActivity : ComponentActivity() {
             /** Host-supplied key/value pairs seeded into the session's own `@`-variables at
              * creation time (e.g. `{"dealer_id": "..."}` -> `@dealer_id` in the flow). */
             meta: Map<String, String>? = null,
+            /** See [com.chat360.chatbot.common.CoreConfigs.salesExecutive]. */
+            salesExecutive: Map<String, String>? = null,
         ) {
             val intent = Intent(context, ChatComposeActivity::class.java)
                 .putExtra(EXTRA_BOT_ID, botId)
@@ -81,6 +83,11 @@ class ChatComposeActivity : ComponentActivity() {
                 .putExtra(
                     EXTRA_META,
                     meta?.takeIf { it.isNotEmpty() }
+                        ?.let { Json.encodeToString(MapSerializer(String.serializer(), String.serializer()), it) },
+                )
+                .putExtra(
+                    EXTRA_SALES_EXECUTIVE,
+                    salesExecutive?.takeIf { it.isNotEmpty() }
                         ?.let { Json.encodeToString(MapSerializer(String.serializer(), String.serializer()), it) },
                 )
             context.startActivity(intent)

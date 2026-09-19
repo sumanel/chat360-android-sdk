@@ -27,5 +27,6 @@ data class RoomDto(
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
     @SerialName("session_ids") val sessionIds: List<String> = emptyList(),
-    @SerialName("session_count") val sessionCount: Int = 0,
+    /** How many sessions (chats with a user message) the room has; null when the server omits it. 0 means an empty, never-used room. */
+    @SerialName("session_count") val sessionCount: Int? = null,
 )

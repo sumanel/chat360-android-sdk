@@ -90,8 +90,8 @@ interface ChatCacheDao {
      * used to show the same chat twice (the second as a placeholder "Conversation" with no
      * messages), let a room lookup land on the empty twin - so its history seemed to vanish - and,
      * stamped with "now", reshuffle the list. A known room only has its recency raised; a stale
-     * twin left over from before is deleted. A server-only room with no name is one nobody ever
-     * typed in (an abandoned empty room), so it is not listed at all. */
+     * twin left over from before is deleted. Empty server rooms never reach here - the mapping
+     * drops them (see thirdPartyRoomConversations). */
     @Transaction
     suspend fun replaceAgentRoomConversations(botId: String, conversations: List<CachedConversationEntity>) {
         val refreshedIds = conversations.mapTo(mutableSetOf()) { it.id }
@@ -106,7 +106,6 @@ interface ChatCacheDao {
                     bumpUpdatedAt(known.id, conversation.updatedAt)
                     deleteConversation(conversation.id)
                 }
-                conversation.title == UNNAMED_ROOM_TITLE -> deleteConversation(conversation.id)
                 else -> {
                     insertConversationIfMissing(conversation)
                     updateRemoteConversation(conversation.id, roomId, conversation.title, conversation.updatedAt)

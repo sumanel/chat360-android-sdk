@@ -4,6 +4,7 @@ import com.chat360.chatbot.model.wire.AssignedAgent
 import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.model.wire.FeedbackConfig
+import com.chat360.chatbot.domain.thirdparty.WelcomeText
 import com.chat360.chatbot.ui.theme.Chat360ColorOverrides
 import com.chat360.chatbot.ui.theme.Chat360Logo
 import java.text.SimpleDateFormat
@@ -83,6 +84,8 @@ data class ChatUiState(
     val colorOverrides: Chat360ColorOverrides? = null,
     val logoOverride: Chat360Logo? = null,
     val botTitleOverride: String? = null,
+    /** The server-configured welcome copy, when there is one - applied over the host app's own. */
+    val welcomeOverride: WelcomeText? = null,
     val pendingUrlToOpen: String? = null,
     val isLiveChat: Boolean = false,
     val assignedAgent: AssignedAgent? = null,
@@ -91,6 +94,8 @@ data class ChatUiState(
     val showFeedbackPrompt: Boolean = false,
     val showPeriodicFeedbackPrompt: Boolean = false,
     val isArchived: Boolean = false,
+    /** Set while browsing an older room this device has no saved session for, so it can't be rejoined: sending from it starts a fresh session (see ChatViewModel.sendMessage). */
+    val needsNewSession: Boolean = false,
     val hasMoreHistory: Boolean = false,
     val isLoadingMoreHistory: Boolean = false,
     val isHistoryUnavailable: Boolean = false,

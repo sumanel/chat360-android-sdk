@@ -3,6 +3,11 @@ package com.chat360.chatbot.ui
 import com.chat360.chatbot.cache.CachedConversationEntity
 import com.chat360.chatbot.cache.ChatCacheRepository
 import com.chat360.chatbot.cache.FakeChatCacheDao
+import com.chat360.chatbot.domain.thirdparty.SalesExecutiveGate
+import com.chat360.chatbot.domain.thirdparty.WelcomeText
+import com.chat360.chatbot.domain.thirdparty.WelcomeTextRepository
+import com.chat360.chatbot.domain.thirdparty.WelcomeTextStore
+import com.chat360.chatbot.network.rest.thirdparty.ThirdPartyTasksApiService
 import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.PersistedSession
 import com.chat360.chatbot.domain.SessionStore
@@ -23,7 +28,9 @@ import kotlinx.serialization.json.put
 import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -76,6 +83,24 @@ class GhostRoomTest {
         return """{"history":[$rows],"previous_cursor":null}"""
     }
 
+    // Server-configured welcome copy: what the stub returns, and the client_id header of every request.
+    @Volatile private var welcomeStatus = 200
+    @Volatile private var welcomeBody = """{"heading":"Server heading","text":"Server subtitle","client_id":"client-1"}"""
+    @Volatile private var welcomeDelayMs = 0L
+    private val welcomeClientIds = CopyOnWriteArrayList<String?>()
+
+    private class MemoryWelcomeStore(var saved: WelcomeText? = null) : WelcomeTextStore {
+        override fun load(clientId: String) = saved
+        override fun save(clientId: String, welcomeText: WelcomeText?) { saved = welcomeText }
+    }
+
+    // The sales-executive check and the maintenance flag: what each stub returns, and what the app sent.
+    @Volatile private var salesStatus = 200
+    @Volatile private var salesBody = ACTIVE_EXECUTIVE
+    @Volatile private var salesDelayMs = 0L
+    private val salesRequests = CopyOnWriteArrayList<Pair<String?, String>>() // Client-Id header to JSON body
+    @Volatile private var maintenanceBody = """{"is_active":false}"""
+
     private lateinit var server: MockWebServer
     private lateinit var dao: FakeChatCacheDao
     private lateinit var sessionStore: InMemorySessionStore
@@ -93,6 +118,17 @@ class GhostRoomTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.requestUrl?.encodedPath.orEmpty()
+                if (path.endsWith("/api/third-party-tasks/sales-exectives")) {
+                    salesRequests += request.getHeader("Client-Id") to request.body.readUtf8()
+                    return MockResponse().setResponseCode(salesStatus).setBody(salesBody)
+                        .setBodyDelay(salesDelayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                }
+                if (path.endsWith("/api/third-party-tasks/maintainance")) return MockResponse().setBody(maintenanceBody)
+                if (path.endsWith("/api/third-party-tasks/welcome-text")) {
+                    welcomeClientIds += request.getHeader("Client-Id")
+                    return MockResponse().setResponseCode(welcomeStatus).setBody(welcomeBody)
+                        .setBodyDelay(welcomeDelayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                }
                 if (path.contains("/chatbox/messages/")) {
                     val room = path.substringAfterLast('/')
                     val count = historyRequestsByRoom.merge(room, 1, Int::plus)!!
@@ -115,13 +151,13 @@ class GhostRoomTest {
     }
 
     /** A fresh view model over the same cache/session store - what reopening the chat screen builds. */
-    private fun makeViewModel(): ChatViewModel {
+    private fun makeViewModel(welcome: WelcomeTextRepository? = null, gate: SalesExecutiveGate? = null): ChatViewModel {
         val repository = ChatRepository(
             baseUrl = server.url("/").toString().trimEnd('/'),
             botId = botId,
             sessionStore = sessionStore,
         )
-        return ChatViewModel(repository = repository, botId = botId, cache = ChatCacheRepository(dao))
+        return ChatViewModel(repository = repository, botId = botId, cache = ChatCacheRepository(dao), welcomeTextRepository = welcome, salesExecutiveGate = gate)
     }
 
     @After
@@ -247,6 +283,64 @@ class GhostRoomTest {
         assertEquals("typed in the old room", viewModel.uiState.value.inputText)
     }
 
+    // --- an older room this device can't reconnect to ---
+    // Sending from one used to be routed into whichever room was connected, so chats done in two different
+    // older rooms ended up together in a single room. It now starts a fresh session instead.
+
+    private fun seedOtherDeviceRoom() {
+        kotlinx.coroutines.runBlocking {
+            dao.upsertConversation(CachedConversationEntity(id = "conv-other", botId = botId, roomId = "room-other", title = "From elsewhere", createdAt = 1, updatedAt = 1))
+        }
+        awaitUntil("conversation listed") { viewModel.conversations.value.any { it.id == "conv-other" } }
+    }
+
+    @Test
+    fun `sending from a room with no saved session starts a fresh session and sends there, not into the connected room`() {
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        // Make the connected room a real chat, so a new chat can't just reuse it as a blank room.
+        viewModel.onInputChange("first chat message")
+        viewModel.sendMessage()
+        settle()
+        val before = sessionRequests.size
+        seedOtherDeviceRoom()
+
+        viewModel.openConversation("conv-other")
+        awaitUntil("marked as needing a new session") { viewModel.uiState.value.needsNewSession }
+
+        viewModel.onInputChange("hello from the old room")
+        viewModel.sendMessage()
+
+        awaitUntil("a fresh session to be created") { sessionRequests.size == before + 1 }
+        assertNotEquals("the old room can't be rejoined by id", "room-other", sessionRequests.last())
+        awaitUntil("the message to be sent in the fresh session") { transcript().contains("hello from the old room") }
+        assertEquals("the flag clears once on a real session", false, viewModel.uiState.value.needsNewSession)
+        assertEquals("the connected room's earlier chat is not mixed in", false, transcript().contains("first chat message"))
+    }
+
+    @Test
+    fun `needing a new session ends when moving to a room that can be resumed, or to a new chat`() {
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        seedOtherDeviceRoom()
+        viewModel.openConversation("conv-other")
+        awaitUntil("marked as needing a new session") { viewModel.uiState.value.needsNewSession }
+
+        sessionStore.save(botId, PersistedSession("room-old", "tok-room-old", "owner-1"))
+        kotlinx.coroutines.runBlocking {
+            dao.upsertConversation(CachedConversationEntity(id = "conv-old", botId = botId, roomId = "room-old", title = "Old chat", createdAt = 1, updatedAt = 1))
+        }
+        awaitUntil("old conversation listed") { viewModel.conversations.value.any { it.id == "conv-old" } }
+        viewModel.openConversation("conv-old")
+        awaitUntil("old room resumed") { "room-old" in sessionRequests }
+        settle()
+        assertEquals(false, viewModel.uiState.value.needsNewSession)
+
+        viewModel.openConversation("conv-other")
+        awaitUntil("marked again") { viewModel.uiState.value.needsNewSession }
+        viewModel.startNewChat()
+        settle()
+        assertEquals(false, viewModel.uiState.value.needsNewSession)
+    }
+
     // --- a reply generated while away ---
     // The server stores a reply ~14s after the send whether or not a socket is connected, but only pushes it
     // to a socket connected to that room at that moment. Returning sooner found nothing on the one history
@@ -342,5 +436,219 @@ class GhostRoomTest {
         settle()
 
         assertEquals("polled for a message that was never going to be answered", 1, historyFetches())
+    }
+
+    // --- server-configured welcome text ---
+
+    private fun welcomeRepository(store: WelcomeTextStore = MemoryWelcomeStore()) =
+        WelcomeTextRepository(ThirdPartyTasksApiService(server.url("/").toString().trimEnd('/')), "client-1", store)
+
+    @Test
+    fun `the server's welcome text reaches the screen state, asked for with the client id`() {
+        viewModel = makeViewModel(welcomeRepository())
+
+        awaitUntil("the welcome text to load") { viewModel.uiState.value.welcomeOverride != null }
+
+        assertEquals(WelcomeText("Server heading", "Server subtitle"), viewModel.uiState.value.welcomeOverride)
+        assertEquals(listOf<String?>("client-1"), welcomeClientIds.toList())
+    }
+
+    @Test
+    fun `the cached welcome text is there immediately, before the server has answered`() {
+        welcomeDelayMs = 1_500
+        viewModel = makeViewModel(welcomeRepository(MemoryWelcomeStore(WelcomeText("Cached heading", "Cached subtitle"))))
+
+        // No waiting: this is the very first paint.
+        assertEquals(WelcomeText("Cached heading", "Cached subtitle"), viewModel.uiState.value.welcomeOverride)
+
+        awaitUntil("the fresh text to replace it") { viewModel.uiState.value.welcomeOverride?.heading == "Server heading" }
+    }
+
+    @Test
+    fun `an endpoint that is not deployed leaves the defaults and does not get in the chat's way`() {
+        welcomeStatus = 404
+        welcomeBody = "<!DOCTYPE html><html>Page not found</html>"
+        viewModel = makeViewModel(welcomeRepository())
+
+        awaitUntil("the welcome request") { welcomeClientIds.isNotEmpty() }
+        settle()
+
+        assertNull(viewModel.uiState.value.welcomeOverride)
+        awaitUntil("the chat to connect regardless") { sessionRequests.size >= 2 && viewModel.uiState.value.activeConversationId != null }
+    }
+
+    @Test
+    fun `a failure keeps a previously cached welcome text on screen`() {
+        welcomeStatus = 500
+        viewModel = makeViewModel(welcomeRepository(MemoryWelcomeStore(WelcomeText("Cached heading", "Cached subtitle"))))
+
+        awaitUntil("the welcome request") { welcomeClientIds.isNotEmpty() }
+        settle()
+
+        assertEquals(WelcomeText("Cached heading", "Cached subtitle"), viewModel.uiState.value.welcomeOverride)
+    }
+
+    @Test
+    fun `the server clearing its welcome text removes the override`() {
+        welcomeBody = """{"heading":"","text":""}"""
+        viewModel = makeViewModel(welcomeRepository(MemoryWelcomeStore(WelcomeText("Old heading", "Old subtitle"))))
+
+        awaitUntil("the empty reply to clear it") { viewModel.uiState.value.welcomeOverride == null }
+    }
+
+    @Test
+    fun `a host without a client id never asks the server`() {
+        viewModel = makeViewModel(null)
+        awaitUntil("the chat to connect") { viewModel.uiState.value.activeConversationId != null }
+        settle()
+
+        assertTrue("asked anyway: $welcomeClientIds", welcomeClientIds.isEmpty())
+        assertNull(viewModel.uiState.value.welcomeOverride)
+    }
+
+    // --- sales-executive gate ---
+    // Closed like maintenance: no socket, the server's message in place of the input bar. Anything other than a
+    // clear INACTIVE lets the chat run untouched.
+
+    /** The gate under test. The timeout is long because the harness's virtual clock runs faster than real time. */
+    private fun gate(timeoutMs: Long = 60_000) =
+        SalesExecutiveGate(ThirdPartyTasksApiService(server.url("/").toString().trimEnd('/')), "client-1", mapOf("dealer_code" to "W4300", "emp_code" to "EMP1101"), timeoutMs)
+
+    /** A view model started fresh with the gate, plus how many rooms had already been created before it. */
+    private fun startGated(gate: SalesExecutiveGate? = gate()): Int {
+        awaitUntil("the harness's own room") { sessionRequests.size == 1 }
+        val before = sessionRequests.size
+        viewModel = makeViewModel(gate = gate)
+        return before
+    }
+
+    @Test
+    fun `an INACTIVE executive gets the server's message and no socket is ever opened`() {
+        salesBody = INACTIVE_EXECUTIVE
+        val before = startGated()
+
+        awaitUntil("the block to show") { viewModel.uiState.value.maintenanceMessage != null }
+        settle()
+
+        assertEquals("Sales Executive onboarded as INACTIVE.", viewModel.uiState.value.maintenanceMessage)
+        assertEquals("a room was created for a blocked executive: $sessionRequests", before, sessionRequests.size)
+        assertEquals("client-1", salesRequests.single().first)
+        assertTrue(salesRequests.single().second.contains("\"emp_code\":\"EMP1101\""))
+    }
+
+    @Test
+    fun `an ACTIVE executive connects normally with no block`() {
+        val before = startGated()
+
+        awaitUntil("the chat to connect") { sessionRequests.size == before + 1 }
+
+        assertNull(viewModel.uiState.value.maintenanceMessage)
+    }
+
+    @Test
+    fun `a failing check never blocks - errors, an undeployed endpoint and a slow server all let the chat connect`() {
+        for ((status, body) in listOf(500 to "", 404 to "<html>Page not found</html>", 400 to """{"success":false,"errors":{"emp_code":["This field is required."]}}""", 200 to "<html>proxy</html>")) {
+            salesStatus = status
+            salesBody = body
+            val before = sessionRequests.size.coerceAtLeast(1)
+            viewModel = makeViewModel(gate = gate())
+
+            awaitUntil("the chat to connect despite HTTP $status") { sessionRequests.size > before }
+            assertNull("blocked on HTTP $status", viewModel.uiState.value.maintenanceMessage)
+        }
+    }
+
+    @Test
+    fun `a slow server does not hold the chat back`() {
+        salesBody = INACTIVE_EXECUTIVE
+        salesDelayMs = 2_000 // answers far too late (kept under MockWebServer's 5s shutdown wait)
+        val before = startGated(gate(timeoutMs = 400))
+
+        awaitUntil("the chat to connect without waiting for the check") { sessionRequests.size == before + 1 }
+
+        assertNull(viewModel.uiState.value.maintenanceMessage)
+    }
+
+    @Test
+    fun `once the executive is activated, returning to the app starts the chat that was never opened`() {
+        salesBody = INACTIVE_EXECUTIVE
+        val before = startGated()
+        awaitUntil("the block to show") { viewModel.uiState.value.maintenanceMessage != null }
+        assertEquals(before, sessionRequests.size)
+
+        salesBody = ACTIVE_EXECUTIVE // an admin activates them
+        viewModel.onAppForegrounded()
+
+        awaitUntil("the chat to start") { sessionRequests.size == before + 1 }
+        assertNull("the block should have cleared", viewModel.uiState.value.maintenanceMessage)
+    }
+
+    @Test
+    fun `starting a new chat after being blocked at startup does the first connect properly`() {
+        salesBody = INACTIVE_EXECUTIVE
+        val before = startGated()
+        awaitUntil("the block to show") { viewModel.uiState.value.maintenanceMessage != null }
+
+        salesBody = ACTIVE_EXECUTIVE
+        viewModel.startNewChat()
+
+        awaitUntil("the chat to start") { sessionRequests.size == before + 1 }
+        awaitUntil("the room to be shown") { viewModel.uiState.value.activeConversationId != null }
+        assertNull(viewModel.uiState.value.maintenanceMessage)
+    }
+
+    @Test
+    fun `an executive who is still INACTIVE stays blocked when returning to the app`() {
+        salesBody = INACTIVE_EXECUTIVE
+        val before = startGated()
+        awaitUntil("the block to show") { viewModel.uiState.value.maintenanceMessage != null }
+
+        viewModel.onAppForegrounded()
+        settle()
+
+        assertEquals("Sales Executive onboarded as INACTIVE.", viewModel.uiState.value.maintenanceMessage)
+        assertEquals(before, sessionRequests.size)
+    }
+
+    @Test
+    fun `once active the check is not repeated when returning to the app`() {
+        val before = startGated()
+        awaitUntil("the chat to connect") { sessionRequests.size == before + 1 }
+
+        viewModel.onAppForegrounded()
+        viewModel.onAppForegrounded()
+        settle()
+
+        assertEquals("re-checked on every foreground: ${salesRequests.size} requests", 1, salesRequests.size)
+    }
+
+    @Test
+    fun `maintenance mode takes priority over an inactive executive`() {
+        // Only after the harness's own view model has started - it would see maintenance too.
+        awaitUntil("the harness's own room") { sessionRequests.size == 1 }
+        maintenanceBody = """{"is_active":true,"message":"Down for maintenance"}"""
+        salesBody = INACTIVE_EXECUTIVE
+        val before = startGated()
+
+        awaitUntil("the block to show") { viewModel.uiState.value.maintenanceMessage != null }
+        settle()
+
+        assertEquals("Down for maintenance", viewModel.uiState.value.maintenanceMessage)
+        assertEquals(before, sessionRequests.size)
+    }
+
+    @Test
+    fun `a host that configures no sales executive never calls the endpoint`() {
+        val before = startGated(gate = null)
+
+        awaitUntil("the chat to connect") { sessionRequests.size == before + 1 }
+        settle()
+
+        assertTrue("asked anyway: $salesRequests", salesRequests.isEmpty())
+    }
+
+    private companion object {
+        const val INACTIVE_EXECUTIVE = """{"success":true,"message":"Sales Executive onboarded as INACTIVE.","is_new":true,"status_downgraded_to_inactive":false,"sales_executive":{"id":12,"emp_code":"EMP1101","name":"","role":null,"dealer_code":"W4300","dealer_name":"Hindustan Hyundai","status":"INACTIVE"}}"""
+        const val ACTIVE_EXECUTIVE = """{"success":true,"message":"Sales Executive validated successfully.","is_new":false,"status_downgraded_to_inactive":false,"sales_executive":{"id":12,"emp_code":"EMP1101","name":"","role":"Trainer","dealer_code":"W4300","dealer_name":"Hindustan Hyundai","status":"ACTIVE"}}"""
     }
 }

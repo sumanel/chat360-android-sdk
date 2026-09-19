@@ -38,6 +38,7 @@ class ChatHistoryRepository(
         val rooms = runCatching { fetchAllRooms() }
             .onFailure { error -> Log.e("Chat360", "third-party-tasks rooms/list failed: ${error.message}", error) }
             .getOrNull() ?: return null
+        cache.syncLocalConversations(botId, rooms)
         val conversations = cache.thirdPartyRoomConversations(botId, rooms)
         cache.syncAgentRooms(botId, conversations)
         // Read back from the DB (already ORDER BY updatedAt DESC) rather than returning the raw
