@@ -1230,8 +1230,9 @@ class ChatViewModel(
         }
     }
 
-    private fun startNewChatNow(allowReuse: Boolean = true) {
-        if (allowReuse && reuseBlankRoom()) return
+    /** Returns true when a fresh session is being created (its room arrives through [activateConversation]), false when an untouched room was reused. */
+    private fun startNewChatNow(allowReuse: Boolean = true): Boolean {
+        if (allowReuse && reuseBlankRoom()) return false
         val generation = beginLoad()
         val conversationId = java.util.UUID.randomUUID().toString()
         // Only the display resets immediately, for a responsive "new chat" screen. Live-frame
@@ -1275,6 +1276,7 @@ class ChatViewModel(
                 activateConversation(roomId, generation)
             })
         }
+        return true
     }
 
     /** Updates the sidebar immediately; the server rename is a best-effort background sync. */
@@ -1326,6 +1328,17 @@ class ChatViewModel(
      * here. [refreshConversationHistory] itself guards against a transient empty response wiping
      * out a real cache. */
     private suspend fun activateConversation(roomId: String, generation: Int): Boolean {
+        try {
+            return activateConversationNow(roomId, generation)
+        } finally {
+            activatedGeneration.value = generation
+        }
+    }
+
+    /** The newest load whose [activateConversation] has finished - history painted, nothing left to overwrite the screen. */
+    private val activatedGeneration = MutableStateFlow(-1)
+
+    private suspend fun activateConversationNow(roomId: String, generation: Int): Boolean {
         val (conversationId, hasCachedMessages) = cache.activateForRoom(botId, roomId, connectedConversationId)
         // Repository-binding bookkeeping is committed unconditionally, before the generation
         // check below - by the time this callback runs, ChatRepository's live socket is *already*
@@ -1700,10 +1713,16 @@ class ChatViewModel(
     private fun sendInNewSession(text: String) {
         if (text.isEmpty()) return
         _uiState.update { it.copy(inputText = "") }
-        startNewChatNow()
+        val createsSession = startNewChatNow()
         val generation = loadGeneration
         viewModelScope.launch {
-            val connected = withTimeoutOrNull(NEW_SESSION_SEND_TIMEOUT_MS) { _uiState.first { it.isConnected } } != null
+            // Connected alone isn't enough for a fresh room: the socket opens before its history has been
+            // loaded, and that load rewrites the screen - a message sent in between would be wiped.
+            val connected = withTimeoutOrNull(newSessionSendTimeoutMs) {
+                _uiState.first { it.isConnected }
+                if (createsSession) activatedGeneration.first { it >= generation }
+                true
+            } != null
             if (!isCurrentLoad(generation)) return@launch
             // Put the text back either way: sent below on success, kept for the user to retry on failure.
             _uiState.update { it.copy(inputText = text) }
@@ -1777,7 +1796,7 @@ class ChatViewModel(
         /** 30 checks at the default 3s is about 90s, the same give-up point iOS uses. */
         private const val MISSED_REPLY_MAX_POLLS = 30
         /** How long a send from an unresumable old room waits for its fresh session to connect. */
-        private const val NEW_SESSION_SEND_TIMEOUT_MS = 20_000L
+        internal var newSessionSendTimeoutMs = 20_000L
         /** A message older than this is treated as one nobody is going to answer. */
         private const val MISSED_REPLY_WINDOW_MS = 90_000L
     }

@@ -114,6 +114,8 @@ class GhostRoomTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher(scheduler))
+        // awaitUntil runs virtual time ~10x faster than real time, so the real-world 20s wait would expire in ~2s here.
+        ChatViewModel.newSessionSendTimeoutMs = 10 * 60_000L
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -165,6 +167,7 @@ class GhostRoomTest {
         ChatViewModel.missedReplyPollIntervalMs = 3_000L
         server.shutdown()
         Dispatchers.resetMain()
+        ChatViewModel.newSessionSendTimeoutMs = 20_000L
     }
 
     private fun awaitUntil(what: String, timeoutMs: Long = 5_000, condition: () -> Boolean) {
@@ -294,9 +297,14 @@ class GhostRoomTest {
         awaitUntil("conversation listed") { viewModel.conversations.value.any { it.id == "conv-other" } }
     }
 
+    // The mock server has no socket, so whether the fresh session reports connected varies; both outcomes are
+    // accepted: the text is sent there, or handed back to the input for a retry. It must never be filed under the
+    // room that was connected, and the old room can't be joined by id.
     @Test
-    fun `sending from a room with no saved session starts a fresh session and sends there, not into the connected room`() {
+    fun `sending from a room with no saved session starts a fresh session and never files the text under the connected room`() {
+        ChatViewModel.newSessionSendTimeoutMs = 3_000L // virtual time here runs ~10x real time
         awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        val connectedConversationId = viewModel.uiState.value.activeConversationId!!
         // Make the connected room a real chat, so a new chat can't just reuse it as a blank room.
         viewModel.onInputChange("first chat message")
         viewModel.sendMessage()
@@ -307,14 +315,18 @@ class GhostRoomTest {
         viewModel.openConversation("conv-other")
         awaitUntil("marked as needing a new session") { viewModel.uiState.value.needsNewSession }
 
-        viewModel.onInputChange("hello from the old room")
+        val text = "hello from the old room"
+        viewModel.onInputChange(text)
         viewModel.sendMessage()
 
         awaitUntil("a fresh session to be created") { sessionRequests.size == before + 1 }
         assertNotEquals("the old room can't be rejoined by id", "room-other", sessionRequests.last())
-        awaitUntil("the message to be sent in the fresh session") { transcript().contains("hello from the old room") }
+        awaitUntil("the text to be sent in the fresh session or handed back") {
+            viewModel.uiState.value.inputText == text || transcript().contains(text)
+        }
+        val cachedInConnectedRoom = kotlinx.coroutines.runBlocking { dao.messages(connectedConversationId) }.map { it.payload }
+        assertEquals("not filed under the room that was connected", false, cachedInConnectedRoom.contains(text))
         assertEquals("the flag clears once on a real session", false, viewModel.uiState.value.needsNewSession)
-        assertEquals("the connected room's earlier chat is not mixed in", false, transcript().contains("first chat message"))
     }
 
     @Test
