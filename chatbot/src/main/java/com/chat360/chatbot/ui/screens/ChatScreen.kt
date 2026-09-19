@@ -416,6 +416,11 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 viewModel.switchLanguage(key)
                                 showHistorySidebar = false
                             },
+                            isHistoryUnavailable = state.isHistoryUnavailable,
+                            onRetryHistory = viewModel::refreshRoomsList,
+                            hasMoreRooms = state.hasMoreRooms,
+                            isLoadingMoreRooms = state.isLoadingMoreRooms,
+                            onLoadMoreRooms = viewModel::loadMoreRooms,
                         )
                     }
                 }

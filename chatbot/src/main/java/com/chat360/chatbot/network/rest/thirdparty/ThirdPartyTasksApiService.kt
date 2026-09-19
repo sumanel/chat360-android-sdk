@@ -36,7 +36,9 @@ class ThirdPartyTasksApiService(
     private val baseUrl: String,
     private val client: OkHttpClient = OkHttpClient(),
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
+    // coerceInputValues: the server sends `"room_name": null` for a room that was never named, which
+    // would otherwise fail the whole `rooms/list` decode; a null now falls back to the field's default.
+    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
     private val jsonMediaType = "application/json".toMediaTypeOrNull()
 
     companion object {
@@ -80,12 +82,11 @@ class ThirdPartyTasksApiService(
             ?: throw ThirdPartyMalformedResponseException("auth/token")
     }
 
-    /** [clientId] and [agentId] must both be non-blank - there is no partial/best-effort mode
-     * for identifying who the rooms belong to. `bot_id` is deliberately never sent: the backend
+    /** [agentId] must be non-blank. The client is identified by the bearer token, so `client_id` is
+     * not sent. `bot_id` is deliberately never sent: the backend
      * rejects the request outright (400) whenever it's present, regardless of its value -
      * omitting it returns all of this client+agent's rooms across bots instead. */
     suspend fun fetchRoomsList(
-        clientId: String,
         bearerToken: String,
         agentId: String,
         limit: Int? = null,
@@ -93,7 +94,6 @@ class ThirdPartyTasksApiService(
     ): RoomsListResponse {
         val url = "${baseUrl.trimEnd('/')}/api/third-party-tasks/rooms/list".toHttpUrl()
             .newBuilder()
-            .addQueryParameter("client_id", clientId)
             .addQueryParameter("agent_id", agentId)
             .apply { limit?.let { addQueryParameter("limit", it.toString()) } }
             .apply { offset?.let { addQueryParameter("offset", it.toString()) } }

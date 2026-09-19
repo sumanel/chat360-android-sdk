@@ -39,11 +39,11 @@ class RoomServerSyncTest {
     }
 
     @Test
-    fun `a local chat the server marks inactive is removed`() = runTest {
+    fun `a local chat the server marks inactive is kept`() = runTest {
         val dao = FakeChatCacheDao()
         dao.upsertConversation(CachedConversationEntity("local-1", "bot", "r1", "old chat", 1, 5))
         val list = sync(dao, listOf(room("r1", name = "old chat", status = "INACTIVE")))
-        assertEquals(emptyList<String>(), list.map { it.id })
+        assertEquals(listOf("local-1"), list.map { it.id })
     }
 
     @Test

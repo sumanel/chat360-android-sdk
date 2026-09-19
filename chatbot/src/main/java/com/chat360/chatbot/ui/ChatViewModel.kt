@@ -1124,7 +1124,20 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val refreshed = repo.refreshRooms()
             if (refreshed != null) _conversations.value = refreshed
-            _uiState.update { it.copy(isHistoryUnavailable = refreshed == null) }
+            _uiState.update {
+                it.copy(isHistoryUnavailable = refreshed == null, hasMoreRooms = if (refreshed != null) repo.hasMoreRooms else it.hasMoreRooms)
+            }
+        }
+    }
+
+    /** Loads the next page of older rooms into the history list ("Load more"). */
+    fun loadMoreRooms() {
+        val repo = chatHistoryRepository ?: return
+        if (_uiState.value.isLoadingMoreRooms) return
+        _uiState.update { it.copy(isLoadingMoreRooms = true) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = repo.loadMoreRooms()
+            _uiState.update { it.copy(isLoadingMoreRooms = false, hasMoreRooms = repo.hasMoreRooms, isHistoryUnavailable = if (ok) false else it.isHistoryUnavailable) }
         }
     }
 

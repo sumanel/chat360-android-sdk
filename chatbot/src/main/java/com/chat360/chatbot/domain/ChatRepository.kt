@@ -315,21 +315,68 @@ class ChatRepository(
      * instead of the room [connect]/[startNewSession] last established. Unlike those, this
      * *resumes* [targetRoomId]'s own history/session rather than allocating a new room.
      *
-     * There is no way to resume a room without its session token - confirmed against the live
-     * API, `room_id` alone is silently ignored and a fresh room gets allocated instead - so this
-     * is a no-op (returns false) for any room this device never actually connected to itself
-     * (e.g. one only ever seen in another device's history). Callers should fall back to
-     * whatever they'd otherwise do when this returns false.
+     * A room this device has a saved session token for is resumed through the session endpoint. Any
+     * other room (one seen only in the rooms list - another device, a reinstall, an older room)
+     * can't be resumed that way: confirmed against the live API, `room_id` alone is rejected
+     * ("Session ID not sent") and an unknown/expired token gets a different room allocated. The web
+     * widget doesn't need a token to be in a room either - its socket is just
+     * `ws/chat_updated/{ownerId}/{roomId}` - so that is what is used here: the socket joins the same
+     * room and the flow starts again from the bot's opening node, which begins a new session inside
+     * the room and keeps its history. Returns false only when there is no owner id to connect with
+     * (no session has ever been established), so callers can fall back.
      */
     suspend fun switchToRoom(targetRoomId: String, onConversationStarted: suspend (roomId: String) -> Boolean = { false }): Boolean {
-        val persisted = sessionStore?.loadForRoom(botId, targetRoomId) ?: return false
+        val persisted = sessionStore?.loadForRoom(botId, targetRoomId)
+        if (persisted != null) {
+            sessionMutex.withLock {
+                Log.i(TAG, "Switching to room=$targetRoomId (tearing down room=$roomId)")
+                awaitPendingReplyBeforeTeardown()
+                teardownForResession()
+                establishSession(onConversationStarted, persisted)
+            }
+            return true
+        }
+        val owner = ownerId ?: sessionStore?.load(botId)?.ownerId ?: return false
         sessionMutex.withLock {
-            Log.i(TAG, "Switching to room=$targetRoomId (tearing down room=$roomId)")
+            Log.i(TAG, "Joining room=$targetRoomId directly, no saved session (tearing down room=$roomId)")
             awaitPendingReplyBeforeTeardown()
             teardownForResession()
-            establishSession(onConversationStarted, persisted)
+            ownerId = owner
+            roomId = targetRoomId
+            // No session id is known for a room joined this way; the same fallback the feedback API gets elsewhere.
+            sessionId = targetRoomId
+            try {
+                onConversationStarted(targetRoomId)
+                seedOpeningNode()
+                // The room already exists server-side, so its session_time can be asked for on open.
+                sessionEverStarted = true
+                openSocket()
+            } finally {
+                sessionPrepDone = true
+                if (kickoffPending) {
+                    kickoffPending = false
+                    performPostOpenKickoff()
+                }
+            }
         }
         return true
+    }
+
+    /** Points [currentTargetId]/[lastBotNode] at the bot's opening node, without showing it: the next
+     * message sent goes out as the first message of a fresh session. Best-effort - on failure the
+     * position is left empty, like [loadConversationStarter]. */
+    private suspend fun seedOpeningNode() {
+        try {
+            apiService.getFirstMessages(botId).forEach { item ->
+                val event = item.toIncomingEvent()
+                if (event is IncomingSocketEvent.BotMessage) {
+                    lastBotNode = event.node
+                    currentTargetId = event.node.targetId ?: currentTargetId
+                }
+            }
+        } catch (e: Exception) {
+            // Non-fatal - see doc above.
+        }
     }
 
     /** Waits for [pendingReplyDeferred] (if any) to complete - i.e. for the bot's reply to the

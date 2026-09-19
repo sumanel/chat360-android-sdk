@@ -55,14 +55,18 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
         dao.replaceAgentRoomConversations(botId, conversations)
     }
 
+    suspend fun mergeAgentRooms(botId: String, conversations: List<CachedConversationEntity>) {
+        if (!ENABLED) return
+        dao.mergeAgentRoomConversations(botId, conversations)
+    }
+
     /** Maps the third-party-tasks `rooms/list` result onto the same observable list as local
-     * chats, without replacing cached messages. Rooms already marked inactive (soft-deleted via
-     * `room/update/status`) are dropped so a background refresh can't resurrect a conversation
-     * the user just deleted. Pure mapping, no DB access - unaffected by [ENABLED]. */
+     * chats, without replacing cached messages. Rooms marked inactive (soft-deleted via
+     * `room/update/status`) are listed like any other, so the history shows every room the server
+     * holds. Pure mapping, no DB access - unaffected by [ENABLED]. */
     fun thirdPartyRoomConversations(botId: String, rooms: List<RoomDto>): List<CachedConversationEntity> {
         val fetchedAt = System.currentTimeMillis()
         return rooms
-            .filterNot { it.status.equals("inactive", ignoreCase = true) }
             // Nobody typed in it: a server session_count of 0 is an empty room. A room the server gives
             // neither a name nor a count for is treated the same (an abandoned one), as before. An
             // unnamed room that does have sessions is a real chat and is listed as "Conversation".
@@ -87,19 +91,14 @@ class ChatCacheRepository(private val dao: ChatCacheDao) {
     }
 
     /** Applies what the server says about rooms this device already has a local conversation for:
-     * a room the server marks inactive (deleted elsewhere) is removed here too, and a name the
-     * server holds replaces a differing local title. Without this the local row - which owns the
+     * a name the server holds replaces a differing local title (a room the server marks inactive
+     * is kept, as inactive rooms are listed). Without this the local row - which owns the
      * room and so shields it from the `agent-room:` sync - never changed after it was created.
      * Call only with a complete rooms list. */
     suspend fun syncLocalConversations(botId: String, rooms: List<RoomDto>) {
         if (!ENABLED) return
         rooms.forEach { room ->
             val local = dao.findConversation(botId, room.roomId)?.takeUnless { it.id.startsWith("agent-room:") } ?: return@forEach
-            if (room.status.equals("inactive", ignoreCase = true)) {
-                dao.deleteMessages(local.id)
-                dao.deleteConversation(local.id)
-                return@forEach
-            }
             val name = room.roomName.trim()
             if (name.isNotEmpty() && name != local.title) dao.updateTitle(local.id, name, local.updatedAt)
         }

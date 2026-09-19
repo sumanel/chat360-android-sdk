@@ -98,6 +98,12 @@ interface ChatCacheDao {
         agentRoomConversationIds(botId)
             .filterNot(refreshedIds::contains)
             .forEach { deleteConversation(it) }
+        mergeAgentRoomConversations(botId, conversations)
+    }
+
+    /** Adds/updates synced rooms without removing any - used when a further page of rooms is loaded. */
+    @Transaction
+    suspend fun mergeAgentRoomConversations(botId: String, conversations: List<CachedConversationEntity>) {
         conversations.forEach { conversation ->
             val roomId = conversation.roomId.orEmpty()
             val known = if (roomId.isEmpty()) null else findOtherConversationForRoom(botId, roomId, conversation.id)

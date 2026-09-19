@@ -29,50 +29,55 @@ class ChatHistoryRepository(
      * Required - see class doc. */
     private val endUserId: String,
 ) {
-    /** Fetches the rooms list and merges it into the cache. Returns the refreshed conversations
-     * list on success, or null on any failure (caller should keep showing whatever it already has). */
+    // How many rooms the server has handed over so far (the next page's offset), and whether it says
+    // there are more. Counted as returned by the server, not as shown: empty rooms are dropped from the
+    // list, and a server may cap a page below the size asked for.
+    @Volatile private var loadedCount = 0
+    @Volatile var hasMoreRooms = false
+        private set
+
+    /** Fetches the newest rooms and merges them into the cache. Returns the refreshed conversations
+     * list on success, or null on any failure (caller should keep showing whatever it already has).
+     *
+     * One request, from the top of the list: a page, or as many rooms as were already loaded so that a
+     * refresh doesn't collapse a list the user had scrolled through. Older rooms come in through
+     * [loadMoreRooms] instead of being fetched up front. */
     suspend fun refreshRooms(): List<CachedConversationEntity>? {
-        // Every page or nothing: the sync below deletes cached rooms that are missing from what it is
-        // given, so a fetch that got only the first pages must fail outright rather than hand over a
-        // partial list that would wipe the rooms on the pages that never loaded.
-        val rooms = runCatching { fetchAllRooms() }
+        val page = runCatching {
+            val limit = maxOf(ROOMS_PAGE_SIZE, loadedCount)
+            withAuthRetry { token -> apiService.fetchRoomsList(token, agentId = endUserId, limit = limit, offset = 0) }
+        }
             .onFailure { error -> Log.e("Chat360", "third-party-tasks rooms/list failed: ${error.message}", error) }
             .getOrNull() ?: return null
-        cache.syncLocalConversations(botId, rooms)
-        val conversations = cache.thirdPartyRoomConversations(botId, rooms)
-        cache.syncAgentRooms(botId, conversations)
+        loadedCount = page.rooms.size
+        hasMoreRooms = page.hasMore && page.rooms.isNotEmpty()
+        cache.syncLocalConversations(botId, page.rooms)
+        // Replaces the synced rooms: any cached one missing from the top of the list is dropped, and
+        // reappears once its page is loaded again.
+        cache.syncAgentRooms(botId, cache.thirdPartyRoomConversations(botId, page.rooms))
         // Read back from the DB (already ORDER BY updatedAt DESC) rather than returning the raw
         // server mapping: it carries the merged newest-wins timestamps, so a chat just sent from
         // this device isn't demoted by a response that hasn't caught up with it yet.
         return cache.conversations(botId).first()
     }
 
-    /**
-     * Walks `rooms/list` page by page until the server reports no more. Called with no `limit` the
-     * server returns only its default page (20 rooms) and says `has_more`; the list is newest-first
-     * and soft-deleted rooms count toward the page, so as deleted and abandoned rooms piled up the
-     * real, older chats fell off the end of the history list.
-     *
-     * The next offset is the number of rooms the server actually returned, not [ROOMS_PAGE_SIZE], in
-     * case it caps a page lower than asked. Stops early on a page that adds nothing new, so a server
-     * that ignores `offset` and repeats one page can't loop forever, and after [ROOMS_MAX_PAGES] as a
-     * hard ceiling.
-     */
-    private suspend fun fetchAllRooms(): List<RoomDto> {
-        val rooms = mutableListOf<RoomDto>()
-        val seen = mutableSetOf<String>()
-        var offset = 0
-        repeat(ROOMS_MAX_PAGES) {
-            val page = withAuthRetry { token ->
-                apiService.fetchRoomsList(clientId, token, agentId = endUserId, limit = ROOMS_PAGE_SIZE, offset = offset)
-            }
-            val fresh = page.rooms.filter { seen.add(it.roomId) }
-            rooms += fresh
-            if (!page.hasMore || fresh.isEmpty()) return rooms
-            offset += page.rooms.size
+    /** Fetches the next page of older rooms and adds them to the cache. Returns false on failure (the
+     * list is left as it was and the caller can offer a retry); true otherwise, after which
+     * [hasMoreRooms] says whether another page is available. */
+    suspend fun loadMoreRooms(): Boolean {
+        if (!hasMoreRooms) return true
+        val page = runCatching {
+            withAuthRetry { token -> apiService.fetchRoomsList(token, agentId = endUserId, limit = ROOMS_PAGE_SIZE, offset = loadedCount) }
         }
-        Log.w("Chat360", "third-party-tasks rooms/list hit the $ROOMS_MAX_PAGES-page ceiling with more still available")
-        return rooms
+            .onFailure { error -> Log.e("Chat360", "third-party-tasks rooms/list (more) failed: ${error.message}", error) }
+            .getOrNull() ?: return false
+        loadedCount += page.rooms.size
+        // A page with nothing in it ends the list even if the server still claims more, so a server
+        // that misreports has_more can't keep the button alive forever.
+        hasMoreRooms = page.hasMore && page.rooms.isNotEmpty()
+        cache.syncLocalConversations(botId, page.rooms)
+        cache.mergeAgentRooms(botId, cache.thirdPartyRoomConversations(botId, page.rooms))
+        return true
     }
 
     /** Best-effort remote rename - failure never blocks the local rename the caller already applied. */
@@ -88,8 +93,7 @@ class ChatHistoryRepository(
     }
 
     internal companion object {
-        const val ROOMS_PAGE_SIZE = 100
-        const val ROOMS_MAX_PAGES = 50
+        const val ROOMS_PAGE_SIZE = 50
     }
 
     private suspend fun <T> withAuthRetry(block: suspend (token: String) -> T): T {

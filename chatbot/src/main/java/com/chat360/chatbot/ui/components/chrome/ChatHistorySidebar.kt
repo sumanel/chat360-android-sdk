@@ -60,6 +60,7 @@ import com.chat360.chatbot.ui.components.icons.PersonIcon
 import com.chat360.chatbot.ui.components.icons.TrainingIcon
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
+import androidx.compose.ui.text.style.TextAlign
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -83,6 +84,11 @@ fun ChatHistorySidebar(
     onConversationDeleted: (String) -> Unit = {},
     languages: List<SessionLanguage> = emptyList(),
     onLanguageSelected: (String) -> Unit = {},
+    isHistoryUnavailable: Boolean = false,
+    onRetryHistory: () -> Unit = {},
+    hasMoreRooms: Boolean = false,
+    isLoadingMoreRooms: Boolean = false,
+    onLoadMoreRooms: () -> Unit = {},
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -156,6 +162,20 @@ fun ChatHistorySidebar(
             }
             Spacer(Modifier.height(28.dp))
 
+            // The server list failed to load, so only chats cached on this device are shown.
+            if (isHistoryUnavailable) {
+                Text(
+                    "Couldn't load your older chats. Tap to retry.",
+                    fontFamily = typography.textFamily,
+                    fontSize = 13.sp,
+                    color = colors.textSecondary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onRetryHistory)
+                        .padding(bottom = 16.dp)
+                )
+            }
+
             if (conversations.isEmpty()) {
                 Text(
                     "No saved conversations yet",
@@ -170,6 +190,9 @@ fun ChatHistorySidebar(
                     onConversationSelected = onConversationSelected,
                     onConversationRenamed = onConversationRenamed,
                     onConversationDeleted = onConversationDeleted,
+                    hasMoreRooms = hasMoreRooms,
+                    isLoadingMoreRooms = isLoadingMoreRooms,
+                    onLoadMoreRooms = onLoadMoreRooms,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -319,6 +342,9 @@ private fun HistoryTimeline(
     onConversationSelected: (String) -> Unit,
     onConversationRenamed: (String, String) -> Unit,
     onConversationDeleted: (String) -> Unit,
+    hasMoreRooms: Boolean,
+    isLoadingMoreRooms: Boolean,
+    onLoadMoreRooms: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalChat360Colors.current
@@ -349,6 +375,22 @@ private fun HistoryTimeline(
                     onSelected = { onConversationSelected(conversation.id) },
                     onRenamed = { onConversationRenamed(conversation.id, it) },
                     onDeleted = { onConversationDeleted(conversation.id) },
+                )
+            }
+        }
+        if (hasMoreRooms) {
+            item(key = "load_more") {
+                Text(
+                    if (isLoadingMoreRooms) "Loading…" else "Load more",
+                    fontFamily = typography.textFamily,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.accent,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isLoadingMoreRooms, onClick = onLoadMoreRooms)
+                        .padding(vertical = 16.dp)
                 )
             }
         }

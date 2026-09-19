@@ -286,9 +286,10 @@ class GhostRoomTest {
         assertEquals("typed in the old room", viewModel.uiState.value.inputText)
     }
 
-    // --- an older room this device can't reconnect to ---
-    // Sending from one used to be routed into whichever room was connected, so chats done in two different
-    // older rooms ended up together in a single room. It now starts a fresh session instead.
+    // --- an older room this device has no saved session for ---
+    // A room only ever seen in the rooms list (another device, a reinstall) can't be resumed through the
+    // session endpoint - it ignores the room id and allocates a different room. Like the web widget, the socket
+    // joins the room directly instead, so chatting in it continues that same room rather than starting a new one.
 
     private fun seedOtherDeviceRoom() {
         kotlinx.coroutines.runBlocking {
@@ -297,12 +298,8 @@ class GhostRoomTest {
         awaitUntil("conversation listed") { viewModel.conversations.value.any { it.id == "conv-other" } }
     }
 
-    // The mock server has no socket, so whether the fresh session reports connected varies; both outcomes are
-    // accepted: the text is sent there, or handed back to the input for a retry. It must never be filed under the
-    // room that was connected, and the old room can't be joined by id.
     @Test
-    fun `sending from a room with no saved session starts a fresh session and never files the text under the connected room`() {
-        ChatViewModel.newSessionSendTimeoutMs = 3_000L // virtual time here runs ~10x real time
+    fun `sending from a room with no saved session stays in that room and creates no new one`() {
         awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
         val connectedConversationId = viewModel.uiState.value.activeConversationId!!
         // Make the connected room a real chat, so a new chat can't just reuse it as a blank room.
@@ -313,28 +310,28 @@ class GhostRoomTest {
         seedOtherDeviceRoom()
 
         viewModel.openConversation("conv-other")
-        awaitUntil("marked as needing a new session") { viewModel.uiState.value.needsNewSession }
+        settle()
+        assertEquals("joining the room must not be treated as needing a new session", false, viewModel.uiState.value.needsNewSession)
 
         val text = "hello from the old room"
         viewModel.onInputChange(text)
         viewModel.sendMessage()
 
-        awaitUntil("a fresh session to be created") { sessionRequests.size == before + 1 }
-        assertNotEquals("the old room can't be rejoined by id", "room-other", sessionRequests.last())
-        awaitUntil("the text to be sent in the fresh session or handed back") {
-            viewModel.uiState.value.inputText == text || transcript().contains(text)
-        }
+        awaitUntil("the text to appear in the old room's transcript") { transcript().contains(text) }
+        assertEquals("a new room was created: $sessionRequests", before, sessionRequests.size)
         val cachedInConnectedRoom = kotlinx.coroutines.runBlocking { dao.messages(connectedConversationId) }.map { it.payload }
-        assertEquals("not filed under the room that was connected", false, cachedInConnectedRoom.contains(text))
-        assertEquals("the flag clears once on a real session", false, viewModel.uiState.value.needsNewSession)
+        assertEquals("filed under the room that was connected before", false, cachedInConnectedRoom.contains(text))
+        val cachedInOldRoom = kotlinx.coroutines.runBlocking { dao.messages("conv-other") }.map { it.payload }
+        assertEquals("not filed under the old room", true, cachedInOldRoom.contains(text))
     }
 
     @Test
-    fun `needing a new session ends when moving to a room that can be resumed, or to a new chat`() {
+    fun `moving between a room joined directly and a resumable room never asks for a new session`() {
         awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
         seedOtherDeviceRoom()
         viewModel.openConversation("conv-other")
-        awaitUntil("marked as needing a new session") { viewModel.uiState.value.needsNewSession }
+        settle()
+        assertEquals(false, viewModel.uiState.value.needsNewSession)
 
         sessionStore.save(botId, PersistedSession("room-old", "tok-room-old", "owner-1"))
         kotlinx.coroutines.runBlocking {
@@ -347,10 +344,9 @@ class GhostRoomTest {
         assertEquals(false, viewModel.uiState.value.needsNewSession)
 
         viewModel.openConversation("conv-other")
-        awaitUntil("marked again") { viewModel.uiState.value.needsNewSession }
-        viewModel.startNewChat()
         settle()
         assertEquals(false, viewModel.uiState.value.needsNewSession)
+        assertEquals("a room was created along the way: $sessionRequests", 1, sessionRequests.count { it == null })
     }
 
     // --- a reply generated while away ---

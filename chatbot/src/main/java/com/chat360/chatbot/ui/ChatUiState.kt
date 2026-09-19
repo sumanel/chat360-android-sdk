@@ -99,6 +99,9 @@ data class ChatUiState(
     val hasMoreHistory: Boolean = false,
     val isLoadingMoreHistory: Boolean = false,
     val isHistoryUnavailable: Boolean = false,
+    /** The server has older rooms than the history list holds so far; the sidebar offers "Load more". */
+    val hasMoreRooms: Boolean = false,
+    val isLoadingMoreRooms: Boolean = false,
     val activeConversationId: String? = null,
     val sessionCreatedAtMs: Long? = null,
     /** Server-sent fallback text from a terminal `close_connection` frame (dealer/SE

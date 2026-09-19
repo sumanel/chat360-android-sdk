@@ -11,6 +11,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -19,10 +20,9 @@ import org.junit.Test
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Regression tests for the history list silently dropping older chats. `rooms/list` called with no
- * `limit` returns only the server's default page (20 rooms, newest first) and sets `has_more`; the SDK
- * never asked for the rest. Soft-deleted rooms count toward that page, so as they piled up the real,
- * older chats fell off the end of the list.
+ * Paging of the history list. `rooms/list` is newest-first and soft-deleted rooms count toward a page,
+ * so the real, older chats can sit behind many empty ones. The first page loads on refresh and older
+ * pages come in one at a time through "Load more" while the server reports `has_more`.
  */
 class ChatHistoryRepositoryPagingTest {
 
@@ -83,26 +83,53 @@ class ChatHistoryRepositoryPagingTest {
     private fun named(count: Int, prefix: String = "Chat") = (1..count).map { Room("$prefix-$it", "$prefix $it") }
 
     @Test
-    fun `every page is fetched, not just the server's default first page`() = runTest {
-        roomsServer.rooms = named(250)
+    fun `refresh fetches only the first page and reports that more is available`() = runTest {
+        roomsServer.rooms = named(120)
 
         val result = repository.refreshRooms()
 
-        assertNotNull(result)
-        assertEquals("only part of the list was fetched", 250, result!!.size)
-        assertEquals(listOf<Pair<String?, String?>>("100" to "0", "100" to "100", "100" to "200"), roomsServer.requests.toList())
+        assertEquals(50, result!!.size)
+        assertTrue(repository.hasMoreRooms)
+        assertEquals(listOf<Pair<String?, String?>>("50" to "0"), roomsServer.requests.toList())
     }
 
     @Test
-    fun `an older real chat behind many deleted rooms still shows up`() = runTest {
-        // The reported shape: newest-first, the front of the list is soft-deleted/abandoned rooms and the
-        // real conversation sits past the server's default page of 20.
-        val deleted = (1..110).map { Room("gone-$it", "Deleted $it", status = "INACTIVE") }
-        roomsServer.rooms = deleted + Room("old-real", "Creta is a good car")
+    fun `load more adds the next page until the server says there is no more`() = runTest {
+        roomsServer.rooms = named(120)
+        repository.refreshRooms()
 
-        val result = repository.refreshRooms()
+        assertTrue(repository.loadMoreRooms())
+        assertEquals(100, cache.conversations("bot-1").first().size)
+        assertTrue(repository.hasMoreRooms)
 
-        assertEquals(listOf("Creta is a good car"), result!!.map { it.title })
+        assertTrue(repository.loadMoreRooms())
+        assertEquals(120, cache.conversations("bot-1").first().size)
+        assertFalse(repository.hasMoreRooms)
+        assertEquals(listOf<String?>("0", "50", "100"), roomsServer.requests.map { it.second })
+    }
+
+    @Test
+    fun `a single page of rooms offers no load more`() = runTest {
+        roomsServer.rooms = named(5)
+
+        assertEquals(5, repository.refreshRooms()!!.size)
+
+        assertFalse(repository.hasMoreRooms)
+        assertEquals(1, roomsServer.requests.size)
+    }
+
+    @Test
+    fun `an older chat behind many empty rooms is reached by loading more`() = runTest {
+        // Newest-first, the front of the list is empty (never-used) rooms and the real conversation
+        // sits past the first page.
+        val empty = (1..110).map { Room("empty-$it", "Empty $it", sessions = 0) }
+        roomsServer.rooms = empty + Room("old-real", "Creta is a good car")
+
+        assertTrue(repository.refreshRooms()!!.isEmpty())
+        repository.loadMoreRooms()
+        repository.loadMoreRooms()
+
+        assertEquals(listOf("Creta is a good car"), cache.conversations("bot-1").first().map { it.title })
     }
 
     @Test
@@ -110,55 +137,79 @@ class ChatHistoryRepositoryPagingTest {
         roomsServer.serverMaxPage = 3
         roomsServer.rooms = named(7)
 
-        val result = repository.refreshRooms()
+        repository.refreshRooms()
+        repository.loadMoreRooms()
+        repository.loadMoreRooms()
 
-        assertEquals(7, result!!.size)
+        assertEquals(7, cache.conversations("bot-1").first().size)
         assertEquals(listOf<String?>("0", "3", "6"), roomsServer.requests.map { it.second })
     }
 
     @Test
-    fun `a single page makes a single request`() = runTest {
-        roomsServer.rooms = named(5)
-
-        val result = repository.refreshRooms()
-
-        assertEquals(5, result!!.size)
-        assertEquals(1, roomsServer.requests.size)
-    }
-
-    @Test
-    fun `a server that ignores offset and repeats one page cannot loop forever`() = runTest {
+    fun `a server that ignores offset and repeats one page cannot keep load more alive`() = runTest {
         roomsServer.ignoreOffset = true
         roomsServer.serverMaxPage = 3
         roomsServer.rooms = named(9)
 
-        val result = repository.refreshRooms()
+        repository.refreshRooms()
+        repository.loadMoreRooms()
 
-        assertEquals("duplicates were not collapsed", 3, result!!.size)
-        assertTrue("kept requesting: ${roomsServer.requests}", roomsServer.requests.size <= 2)
+        assertEquals("duplicates were not collapsed", 3, cache.conversations("bot-1").first().size)
     }
 
     @Test
-    fun `a failure on a later page fails the whole refresh and leaves the cached list untouched`() = runTest {
+    fun `refresh after loading more re-fetches what was already loaded so the list does not collapse`() = runTest {
+        roomsServer.rooms = named(120)
+        repository.refreshRooms()
+        repository.loadMoreRooms() // 100 loaded
+
+        repository.refreshRooms()
+
+        assertEquals("100" to "0", roomsServer.requests.last())
+        assertEquals(100, cache.conversations("bot-1").first().size)
+    }
+
+    @Test
+    fun `a failed load more reports failure and leaves the list as it was`() = runTest {
+        roomsServer.rooms = named(120)
+        repository.refreshRooms()
+        roomsServer.failFromOffset = 50
+
+        assertFalse(repository.loadMoreRooms())
+
+        assertEquals(50, cache.conversations("bot-1").first().size)
+        assertTrue("retry must still be offered", repository.hasMoreRooms)
+    }
+
+    @Test
+    fun `a failed refresh returns null and leaves the cached list untouched`() = runTest {
         roomsServer.rooms = named(4)
-        assertEquals(4, repository.refreshRooms()!!.size) // the local list now holds all four
+        assertEquals(4, repository.refreshRooms()!!.size)
 
-        roomsServer.rooms = named(250)
-        roomsServer.failFromOffset = 100 // page 2 blows up
+        roomsServer.failFromOffset = 0
 
-        assertNull("a partial list was returned as if it were complete", repository.refreshRooms())
-
-        // The sync deletes cached rooms missing from the fetched list - a partial result would have
-        // wiped everything on the pages that never loaded.
+        assertNull(repository.refreshRooms())
         assertEquals(4, cache.conversations("bot-1").first().size)
     }
 
     @Test
-    fun `soft-deleted rooms are still dropped after paging`() = runTest {
+    fun `inactive rooms are listed along with active ones`() = runTest {
         roomsServer.rooms = named(3) + (1..3).map { Room("gone-$it", "Deleted $it", status = "INACTIVE") }
 
         val result = repository.refreshRooms()
 
-        assertEquals(listOf("Chat 1", "Chat 2", "Chat 3"), result!!.map { it.title }.sorted())
+        assertEquals(listOf("Chat 1", "Chat 2", "Chat 3", "Deleted 1", "Deleted 2", "Deleted 3"), result!!.map { it.title }.sorted())
+    }
+
+    @Test
+    fun `a room the server sends with a null name does not fail the whole list`() = runTest {
+        // The server sends `"room_name": null` for a never-named room; that used to fail the decode of
+        // the entire rooms/list response, so no server room ever loaded.
+        roomsServer.rooms = listOf(Room("named", "Creta"), Room("unnamed", null))
+
+        val result = repository.refreshRooms()
+
+        assertNotNull("a null room_name failed the whole fetch", result)
+        assertEquals(listOf("Conversation", "Creta"), result!!.map { it.title }.sorted())
     }
 }
