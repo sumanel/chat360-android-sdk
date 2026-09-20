@@ -69,10 +69,33 @@ class ChatRepository(
      * flow's `@`-variables (e.g. `@dealer_id`) are pre-seeded the same way the legacy WebView
      * path gets for free via `/web_bot/?h=...&meta=...`. See [Chat360ApiService.getSession]. */
     private val meta: Map<String, String>? = null,
+    /** Variables of the selected Assistant Mode option, merged over [meta] (they win on key clashes)
+     * when a new session is created - never when one is resumed (see [sessionMeta]).
+     * Changed at runtime through [setAssistantVariables]. */
+    assistantVariables: Map<String, String> = emptyMap(),
     /** Where the heartbeat, reconnect backoff and ack-retry timers run. Must be the thread the rest
      * of this class assumes it is confined to (see [repoScope]); a seam so tests can drive time. */
     timerDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
 ) {
+    @Volatile private var assistantVars: Map<String, String> = assistantVariables
+
+    /** Called when a brand-new session (not a resumed one) is created, with the Assistant Mode variables it was created with,
+     * so the caller can remember which role the room belongs to before the server lists it. */
+    @Volatile var onFreshSession: (roomId: String, variables: Map<String, String>) -> Unit = { _, _ -> }
+
+    /**
+     * Host [meta], plus the Assistant Mode variables only for a brand-new session. A resumed session
+     * (reopening the chat, or opening an older room) keeps the role it was created with - sending the
+     * currently selected option's variables again would switch it.
+     */
+    internal fun sessionMeta(resuming: Boolean): Map<String, String>? =
+        ((meta ?: emptyMap()) + if (resuming) emptyMap() else assistantVars).takeIf { it.isNotEmpty() }
+
+    /** Takes effect from the next session-init, so callers follow it with [startNewSession]. */
+    fun setAssistantVariables(variables: Map<String, String>) {
+        assistantVars = variables
+    }
+
     // encodeDefaults is essential: most wire fields (type/user/replyType/chat_msg_id/...) are
     // Kotlin default values, and kotlinx.serialization omits defaults unless told otherwise -
     // the server silently ignores frames missing them. explicitNulls=false keeps absent
@@ -321,9 +344,9 @@ class ChatRepository(
      * ("Session ID not sent") and an unknown/expired token gets a different room allocated. The web
      * widget doesn't need a token to be in a room either - its socket is just
      * `ws/chat_updated/{ownerId}/{roomId}` - so that is what is used here: the socket joins the same
-     * room and the flow starts again from the bot's opening node, which begins a new session inside
-     * the room and keeps its history. Returns false only when there is no owner id to connect with
-     * (no session has ever been established), so callers can fall back.
+     * room and the flow starts again from the bot's opening node, which keeps its history. Returns
+     * false only when there is no owner id to connect with (no session has ever been established),
+     * so callers can fall back.
      */
     suspend fun switchToRoom(targetRoomId: String, onConversationStarted: suspend (roomId: String) -> Boolean = { false }): Boolean {
         val persisted = sessionStore?.loadForRoom(botId, targetRoomId)
@@ -338,28 +361,33 @@ class ChatRepository(
         }
         val owner = ownerId ?: sessionStore?.load(botId)?.ownerId ?: return false
         sessionMutex.withLock {
-            Log.i(TAG, "Joining room=$targetRoomId directly, no saved session (tearing down room=$roomId)")
             awaitPendingReplyBeforeTeardown()
-            teardownForResession()
-            ownerId = owner
-            roomId = targetRoomId
-            // No session id is known for a room joined this way; the same fallback the feedback API gets elsewhere.
-            sessionId = targetRoomId
-            try {
-                onConversationStarted(targetRoomId)
-                seedOpeningNode()
-                // The room already exists server-side, so its session_time can be asked for on open.
-                sessionEverStarted = true
-                openSocket()
-            } finally {
-                sessionPrepDone = true
-                if (kickoffPending) {
-                    kickoffPending = false
-                    performPostOpenKickoff()
-                }
-            }
+            joinRoomDirectly(owner, targetRoomId, onConversationStarted)
         }
         return true
+    }
+
+    // Must run under [sessionMutex].
+    private suspend fun joinRoomDirectly(owner: String, targetRoomId: String, onConversationStarted: suspend (roomId: String) -> Boolean) {
+        Log.i(TAG, "Joining room=$targetRoomId directly, no saved session (tearing down room=$roomId)")
+        teardownForResession()
+        ownerId = owner
+        roomId = targetRoomId
+        // No session id is known for a room joined this way; the same fallback the feedback API gets elsewhere.
+        sessionId = targetRoomId
+        try {
+            onConversationStarted(targetRoomId)
+            seedOpeningNode()
+            // The room already exists server-side, so its session_time can be asked for on open.
+            sessionEverStarted = true
+            openSocket()
+        } finally {
+            sessionPrepDone = true
+            if (kickoffPending) {
+                kickoffPending = false
+                performPostOpenKickoff()
+            }
+        }
     }
 
     /** Points [currentTargetId]/[lastBotNode] at the bot's opening node, without showing it: the next
@@ -434,16 +462,19 @@ class ChatRepository(
             // website_url/current_url must be URL-shaped - the backend 400s on non-URL-shaped
             // values like a bare app identifier, so the bot host itself is sent here.
             val host = baseUrl.substringAfter("://")
+            // What this request carries, read once: a button tapped while it is in flight must not relabel the room it creates.
+            val sentVariables = if (persisted == null) assistantVars else emptyMap()
             val session = apiService.getSession(
                 botId = botId,
                 websiteUrl = host,
                 currentUrl = "$baseUrl/web_bot/?h=$botId",
                 roomId = persisted?.roomId,
                 sessionId = persisted?.sessionToken,
-                meta = meta,
+                meta = ((meta ?: emptyMap()) + sentVariables).takeIf { it.isNotEmpty() },
             )
             ownerId = session.owner_id
             roomId = session.room_id
+            if (persisted == null) onFreshSession(session.room_id, sentVariables)
             sessionId = session.session_id ?: session.session_token
             currentTargetId = session.targetId
             Log.i(TAG, "Session established: owner=${session.owner_id} room=${session.room_id}")

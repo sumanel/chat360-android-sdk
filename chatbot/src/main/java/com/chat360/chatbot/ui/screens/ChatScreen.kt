@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -43,12 +45,14 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.chat360.chatbot.model.wire.AssignedAgent
 import com.chat360.chatbot.model.wire.BotContent
 import com.chat360.chatbot.ui.ChatMessage
 import com.chat360.chatbot.ui.ChatViewModel
+import com.chat360.chatbot.ui.components.chrome.ActiveRed
 import com.chat360.chatbot.ui.components.chrome.HeaderBar
 import com.chat360.chatbot.ui.components.chrome.ChatHistorySidebar
 import com.chat360.chatbot.ui.components.chrome.StatusBanner
@@ -62,7 +66,6 @@ import com.chat360.chatbot.ui.components.feedback.FeedbackFormDialog
 import com.chat360.chatbot.ui.components.feedback.PeriodicFeedbackDialog
 import com.chat360.chatbot.ui.components.input.ChatInputBar
 import com.chat360.chatbot.ui.components.input.EmojiPickerPanel
-import com.chat360.chatbot.ui.components.input.SpeechToTextBar
 import com.chat360.chatbot.ui.components.input.VoiceRecorderBar
 import com.chat360.chatbot.ui.components.messages.BotMessageRow
 import com.chat360.chatbot.ui.components.messages.UserMessageRow
@@ -133,10 +136,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
         val speechToText = rememberSpeechToTextController()
         var showEmojiPicker by remember { mutableStateOf(false) }
         var showHistorySidebar by remember { mutableStateOf(false) }
-        var isTrainingMode by remember { mutableStateOf(false) }
         val themeController = LocalChat360ThemeController.current
         val sdkConfig = LocalChat360UIConfig.current
         val features = sdkConfig.features
+        val assistantModes = features.effectiveAssistantModes
+        val assistantModeIndex by viewModel.assistantModeIndex.collectAsState()
+        val roomRoles by viewModel.roomRoles.collectAsState()
         val focusManager = LocalFocusManager.current
         val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -151,8 +156,19 @@ fun ChatScreen(viewModel: ChatViewModel) {
         // consecutive messages.
         val listRows = remember(listMessages) { buildChatListRows(listMessages) }
 
+        // Dictation errors (e.g. permission denied) clear themselves after a few seconds.
+        LaunchedEffect(speechToText.error) {
+            if (speechToText.error != null) {
+                delay(4000)
+                speechToText.dismissError()
+            }
+        }
+        // Text already in the box when dictation starts; the live transcript is appended to it.
+        var dictationBase by remember { mutableStateOf("") }
         LaunchedEffect(speechToText.transcript) {
-            if (speechToText.isListening) viewModel.onInputChange(speechToText.transcript)
+            if (speechToText.isListening) {
+                viewModel.onInputChange(listOf(dictationBase, speechToText.transcript).filter { it.isNotBlank() }.joinToString(" "))
+            }
         }
 
         // Keyed on the tail message's id (not messages.size) so loadMoreHistory() prepending
@@ -340,20 +356,23 @@ fun ChatScreen(viewModel: ChatViewModel) {
                         viewModel.cancelVoiceDraft()
                     },
                 )
-            } else if (speechToText.isListening) {
-                SpeechToTextBar(
-                    isListening = true,
-                    error = speechToText.error,
-                    onStop = { speechToText.stop() },
-                )
             } else {
                 if (showEmojiPicker) {
                     EmojiPickerPanel(onEmojiSelected = { emoji -> viewModel.onInputChange(state.inputText + emoji) })
+                }
+                speechToText.error?.let { dictationError ->
+                    Text(
+                        text = dictationError,
+                        fontSize = 12.sp,
+                        color = ActiveRed,
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp),
+                    )
                 }
                 sdkConfig.ui.footer?.invoke() ?: ChatInputBar(
                     value = state.inputText,
                     onValueChange = viewModel::onInputChange,
                     onSend = {
+                        speechToText.stop()
                         keyboardController?.hide()
                         focusManager.clearFocus(force = true)
                         viewModel.sendMessage()
@@ -361,7 +380,12 @@ fun ChatScreen(viewModel: ChatViewModel) {
                     onAttachmentClick = pickAttachment,
                     onMicClick = { voiceRecorder.requestStart() },
                     showDictationIcon = features.showSpeechToText && speechToText.isSupported(),
-                    onDictateClick = { speechToText.requestStart() },
+                    onDictateClick = {
+                        dictationBase = state.inputText
+                        speechToText.requestStart()
+                    },
+                    isDictating = speechToText.isListening,
+                    onDictateStop = { speechToText.stop() },
                     onEmojiClick = { showEmojiPicker = !showEmojiPicker },
                     showAttachment = features.showAttachment,
                     showEmoji = features.showEmoji,
@@ -396,12 +420,16 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 viewModel.startNewChat()
                                 showHistorySidebar = false
                             },
-                            isTrainingMode = isTrainingMode,
-                            onAssistantModeChanged = { isTrainingMode = it },
+                            assistantModes = assistantModes,
+                            selectedAssistantMode = assistantModeIndex,
+                            roomRoles = roomRoles,
+                            onAssistantModeSelected = { index ->
+                                viewModel.selectAssistantMode(index, assistantModes[index].variables)
+                                showHistorySidebar = false
+                            },
                             isDarkTheme = themeController?.isDarkTheme == true,
                             onThemeChanged = { themeController?.selectDarkTheme(it) },
                             showAssistantMode = features.showAssistantMode,
-                            trainingModeEnabled = features.enableTrainingMode,
                             showAppearanceSwitcher = features.showAppearanceSwitcher && sdkConfig.theme.allowThemeSwitch,
                             conversations = conversations,
                             activeConversationId = state.activeConversationId,

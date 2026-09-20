@@ -24,6 +24,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chat360.chatbot.R
+import com.chat360.chatbot.ui.components.chrome.ActiveRed
 import com.chat360.chatbot.ui.components.icons.ArrowUpIcon
 import com.chat360.chatbot.ui.theme.LocalChat360Branding
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
@@ -38,6 +39,10 @@ fun ChatInputBar(
     onMicClick: () -> Unit,
     showDictationIcon: Boolean = false,
     onDictateClick: () -> Unit = {},
+    /** True while speech-to-text is running: the transcript streams into [value], so the field
+     * turns read-only and the dictate icon becomes a stop button. */
+    isDictating: Boolean = false,
+    onDictateStop: () -> Unit = {},
     onEmojiClick: () -> Unit = {},
     showAttachment: Boolean = true,
     showEmoji: Boolean = true,
@@ -72,10 +77,10 @@ fun ChatInputBar(
         if (showDictationIcon) {
             Icon(
                 imageVector = com.chat360.chatbot.ui.components.icons.DictateIcon,
-                contentDescription = "Dictate message",
-                tint = if (enabled) colors.textSecondary else colors.textDisabled,
+                contentDescription = if (isDictating) "Stop dictation" else "Dictate message",
+                tint = if (isDictating) ActiveRed else if (enabled) colors.textSecondary else colors.textDisabled,
                 modifier = Modifier
-                    .clickable(enabled = enabled, onClick = onDictateClick)
+                    .clickable(enabled = enabled, onClick = if (isDictating) onDictateStop else onDictateClick)
                     .padding(8.dp)
                     .size(22.dp),
             )
@@ -92,6 +97,7 @@ fun ChatInputBar(
                 value = value,
                 onValueChange = onValueChange,
                 enabled = enabled,
+                readOnly = isDictating,
                 textStyle = TextStyle(
                     fontFamily = typography.textFamily,
                     fontSize = 15.sp,
@@ -119,7 +125,7 @@ fun ChatInputBar(
                                 }
                             } else {
                                 Text(
-                                    text = placeholder,
+                                    text = if (isDictating) "Listening…" else placeholder,
                                     fontFamily = typography.textFamily,
                                     fontSize = 15.sp,
                                     color = colors.textSecondary,

@@ -105,6 +105,7 @@ class GhostRoomTest {
     private lateinit var dao: FakeChatCacheDao
     private lateinit var sessionStore: InMemorySessionStore
     private lateinit var viewModel: ChatViewModel
+    private lateinit var repository: ChatRepository
 
     /** room_id query param of every session-init request, null when the app asked for a new room. */
     private val sessionRequests = CopyOnWriteArrayList<String?>()
@@ -159,6 +160,7 @@ class GhostRoomTest {
             botId = botId,
             sessionStore = sessionStore,
         )
+        this.repository = repository
         return ChatViewModel(repository = repository, botId = botId, cache = ChatCacheRepository(dao), welcomeTextRepository = welcome, salesExecutiveGate = gate)
     }
 
@@ -284,6 +286,71 @@ class GhostRoomTest {
         viewModel.openConversation("conv-old")
         settle()
         assertEquals("typed in the old room", viewModel.uiState.value.inputText)
+    }
+
+    // --- a reply still in flight from the room the user just left ---
+    // The repository keeps the old room's socket open (up to 10s) for a reply the bot hasn't sent yet, so it can
+    // still arrive after the user has moved on - and it must neither show up in the chat now on screen nor be
+    // saved under it. It belongs to the room it was sent in.
+
+    private var liveFrameCounter = 0
+
+    /** A live bot frame from [room], handed to the repository the way the socket would - its callbacks are the view model's. */
+    private fun liveReply(room: String) {
+        liveFrameCounter++
+        val raw = """{"user":"bot","room_id":"$room","timestamp_int":"${1_700_000_000 + liveFrameCounter}","data":{"nodeType":"TEXT","nodeId":"n$liveFrameCounter","questionText":"live-$room-$liveFrameCounter"}}"""
+        val rawCallback = ChatRepository::class.java.getDeclaredField("onRawIncoming").apply { isAccessible = true }.get(repository)
+        ChatRepository::class.java.getDeclaredMethod("handleIncoming", String::class.java, Function1::class.java)
+            .apply { isAccessible = true }
+            .invoke(repository, raw, rawCallback)
+    }
+
+    private fun savedPayloads(conversationId: String) = kotlinx.coroutines.runBlocking { dao.messages(conversationId) }.map { it.payload }
+
+    private fun markConversationUsed() {
+        ChatViewModel::class.java.getDeclaredField("conversationPersisted").apply { isAccessible = true }.setBoolean(viewModel, true)
+    }
+
+    @Test
+    fun `a reply still in flight from the room just left never lands in the new chat`() {
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        val oldConversation = viewModel.uiState.value.activeConversationId!!
+        markConversationUsed() // not a blank room New chat would reuse
+        repository.sendFreeText("And what about the price?") // the bot's reply to this is now outstanding on room-1
+
+        viewModel.startNewChat()
+        awaitUntil("the new chat is on screen") { viewModel.uiState.value.activeConversationId != oldConversation }
+        val newConversation = viewModel.uiState.value.activeConversationId!!
+
+        liveReply("room-1") // the reply to the question, from the room that was just left
+        assertTrue("the old room's reply appeared in the new chat: ${transcript()}", transcript().none { it.contains("live-room-1") })
+        settle()
+
+        assertTrue("the old room's reply is in the new chat: ${transcript()}", transcript().none { it.contains("live-room-1") })
+        assertTrue("the old room's reply was saved under the new chat", savedPayloads(newConversation).none { it.contains("live-room-1") })
+        assertTrue("the reply was not kept with the room it belongs to: ${savedPayloads(oldConversation)}", savedPayloads(oldConversation).any { it.contains("live-room-1") })
+    }
+
+    @Test
+    fun `a reply still in flight from the room just left stays out of the conversation opened next`() {
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        val oldConversation = viewModel.uiState.value.activeConversationId!!
+        sessionStore.save(botId, PersistedSession("room-a", "tok-room-a", "owner-1"))
+        kotlinx.coroutines.runBlocking {
+            dao.upsertConversation(CachedConversationEntity(id = "conv-a", botId = botId, roomId = "room-a", title = "Room A", createdAt = 1, updatedAt = 1))
+        }
+        awaitUntil("conversation listed") { viewModel.conversations.value.any { it.id == "conv-a" } }
+        markConversationUsed()
+        repository.sendFreeText("And what about the price?") // the bot's reply to this is now outstanding on room-1
+
+        viewModel.openConversation("conv-a")
+        liveReply("room-1")
+        assertTrue("the old room's reply appeared in the opened conversation: ${transcript()}", transcript().none { it.contains("live-room-1") })
+        settle()
+
+        assertTrue("the old room's reply is in the opened conversation: ${transcript()}", transcript().none { it.contains("live-room-1") })
+        assertTrue("the old room's reply was saved under the opened conversation", savedPayloads("conv-a").none { it.contains("live-room-1") })
+        assertTrue("the reply was not kept with the room it belongs to: ${savedPayloads(oldConversation)}", savedPayloads(oldConversation).any { it.contains("live-room-1") })
     }
 
     // --- an older room this device has no saved session for ---
@@ -443,7 +510,8 @@ class GhostRoomTest {
         settle()
         settle()
 
-        assertEquals("polled for a message that was never going to be answered", 1, historyFetches())
+        // One fetch to show the room plus one to recover its flow position on resume - not a poll loop.
+        assertTrue("polled for a message that was never going to be answered: ${historyFetches()} fetches", historyFetches() <= 2)
     }
 
     // --- server-configured welcome text ---

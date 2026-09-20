@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import com.chat360.chatbot.config.AssistantModeOption
 import com.chat360.chatbot.config.BehaviorConfig
 import com.chat360.chatbot.config.BrandingConfig
 import com.chat360.chatbot.config.Chat360UIConfig
@@ -118,7 +119,11 @@ val HyundaiConfig = Chat360UIConfig(
         showVoiceInput = false, 
         showSpeechToText = true,
         showAssistantMode = true, 
-        enableTrainingMode = false, 
+        assistantModes = listOf(
+            AssistantModeOption("Training", variables = mapOf("agent_role" to "training")),
+            AssistantModeOption("Customer", variables = mapOf("agent_role" to "customer")),
+        ),
+        defaultAssistantMode = 1,
         showAppearanceSwitcher = true,
         showBotAvatar = false,
         showSessionTimer = true,

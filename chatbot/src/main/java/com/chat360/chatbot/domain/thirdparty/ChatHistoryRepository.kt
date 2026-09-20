@@ -1,6 +1,9 @@
 package com.chat360.chatbot.domain.thirdparty
 
 import android.util.Log
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import com.chat360.chatbot.cache.CachedConversationEntity
 import com.chat360.chatbot.cache.ChatCacheRepository
@@ -28,7 +31,51 @@ class ChatHistoryRepository(
      * the `agent_id` query parameter (the backend's own naming - see [ThirdPartyTasksApiService]).
      * Required - see class doc. */
     private val endUserId: String,
+    /** Where the room -> agent role lookup is kept between launches; null keeps it in memory only. */
+    private val roleStore: RoomRoleStore? = null,
 ) {
+    // What `rooms/list` last said, and what this device itself sent when it created a room. The server is the
+    // source of truth, so a role it returns always wins; the local one only fills in until it does (a room made a
+    // moment ago may not be in the list yet, or may come back without a role).
+    private var serverRoles: Map<String, String> = roleStore?.load(botId).orEmpty()
+    private var localRoles: Map<String, String> = roleStore?.loadLocal(botId).orEmpty()
+    private val _roomRoles = MutableStateFlow(localRoles + serverRoles)
+
+    /** roomId -> trimmed `agent_role` (server's, else the one this device sent), available before the first fetch. */
+    val roomRoles: StateFlow<Map<String, String>> = _roomRoles.asStateFlow()
+
+    /** For every room in [rooms], the server's role replaces what was kept, and a room it now returns without one loses
+     * the server role (a locally known one stays). Rooms not in this page are left alone. */
+    private fun rememberRoles(rooms: List<RoomDto>) = synchronized(this) {
+        val server = serverRoles.toMutableMap()
+        val local = localRoles.toMutableMap()
+        rooms.forEach { room ->
+            val role = room.agentRole?.trim()?.takeIf { it.isNotEmpty() }
+            if (role != null) {
+                server[room.roomId] = role
+                local.remove(room.roomId)
+            } else {
+                server.remove(room.roomId)
+            }
+        }
+        commit(server, local)
+    }
+
+    /** The role this device just sent when it created [roomId]; used until `rooms/list` returns one for that room. */
+    fun rememberLocalRole(roomId: String, role: String?) = synchronized(this) {
+        val trimmed = role?.trim()?.takeIf { it.isNotEmpty() } ?: return@synchronized
+        if (serverRoles.containsKey(roomId)) return@synchronized
+        commit(serverRoles, localRoles + (roomId to trimmed))
+    }
+
+    private fun commit(server: Map<String, String>, local: Map<String, String>) {
+        if (server != serverRoles) roleStore?.save(botId, server)
+        if (local != localRoles) roleStore?.saveLocal(botId, local)
+        serverRoles = server
+        localRoles = local
+        _roomRoles.value = local + server
+    }
+
     // How many rooms the server has handed over so far (the next page's offset), and whether it says
     // there are more. Counted as returned by the server, not as shown: empty rooms are dropped from the
     // list, and a server may cap a page below the size asked for.
@@ -51,6 +98,7 @@ class ChatHistoryRepository(
             .getOrNull() ?: return null
         loadedCount = page.rooms.size
         hasMoreRooms = page.hasMore && page.rooms.isNotEmpty()
+        rememberRoles(page.rooms)
         cache.syncLocalConversations(botId, page.rooms)
         // Replaces the synced rooms: any cached one missing from the top of the list is dropped, and
         // reappears once its page is loaded again.
@@ -75,6 +123,7 @@ class ChatHistoryRepository(
         // A page with nothing in it ends the list even if the server still claims more, so a server
         // that misreports has_more can't keep the button alive forever.
         hasMoreRooms = page.hasMore && page.rooms.isNotEmpty()
+        rememberRoles(page.rooms)
         cache.syncLocalConversations(botId, page.rooms)
         cache.mergeAgentRooms(botId, cache.thirdPartyRoomConversations(botId, page.rooms))
         return true

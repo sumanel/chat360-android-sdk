@@ -26,7 +26,14 @@ import java.util.Locale
  * each utterance rather than listening continuously, so [onResults] immediately starts a fresh
  * session while still [isListening] to keep the dictation going.
  */
-class SpeechToTextController(private val context: Context) {
+class SpeechToTextController(
+    private val context: Context,
+    // Injectable so the permission flow can be unit tested without a device.
+    private val recognitionAvailable: () -> Boolean = { SpeechRecognizer.isRecognitionAvailable(context) },
+    private val audioPermissionGranted: () -> Boolean = {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    },
+) {
     var isListening by mutableStateOf(false)
         private set
     var transcript by mutableStateOf("")
@@ -41,15 +48,21 @@ class SpeechToTextController(private val context: Context) {
     private var pendingStart = false
     private var language = Locale.getDefault().toLanguageTag()
 
-    fun isSupported(): Boolean = SpeechRecognizer.isRecognitionAvailable(context)
+    companion object {
+        const val PERMISSION_DENIED_MESSAGE = "Speech recognition needs microphone access. Enable it in Settings."
+    }
 
-    fun hasPermission(): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    fun dismissError() { error = null }
+
+    fun isSupported(): Boolean = recognitionAvailable()
+
+    fun hasPermission(): Boolean = audioPermissionGranted()
 
     /** Starts listening immediately if permission is already granted, otherwise prompts first. */
     fun requestStart(languageTag: String = Locale.getDefault().toLanguageTag()) {
         if (isListening || !isSupported()) return
         language = languageTag
+        error = null
         if (!hasPermission()) {
             pendingStart = true
             requestPermissionLauncher()
@@ -61,7 +74,8 @@ class SpeechToTextController(private val context: Context) {
     fun onPermissionResult(granted: Boolean) {
         val wasPending = pendingStart
         pendingStart = false
-        if (granted && wasPending) start()
+        if (!wasPending) return
+        if (granted) start() else error = PERMISSION_DENIED_MESSAGE
     }
 
     private fun start() {

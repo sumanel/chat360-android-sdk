@@ -29,4 +29,6 @@ data class RoomDto(
     @SerialName("session_ids") val sessionIds: List<String> = emptyList(),
     /** How many sessions (chats with a user message) the room has; null when the server omits it. 0 means an empty, never-used room. */
     @SerialName("session_count") val sessionCount: Int? = null,
+    /** The agent role the room was created for (the `agent_role` sent in session-init `meta`); null when the server omits it. */
+    @SerialName("agent_role") val agentRole: String? = null,
 )

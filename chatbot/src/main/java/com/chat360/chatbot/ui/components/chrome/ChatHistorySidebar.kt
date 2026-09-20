@@ -2,6 +2,8 @@ package com.chat360.chatbot.ui.components.chrome
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -57,6 +59,10 @@ import com.chat360.chatbot.ui.components.icons.ChatBubbleIcon
 import com.chat360.chatbot.ui.components.icons.LightModeIcon
 import com.chat360.chatbot.ui.components.icons.MoreIcon
 import com.chat360.chatbot.ui.components.icons.PersonIcon
+import com.chat360.chatbot.config.AssistantModeOption
+import com.chat360.chatbot.config.AssistantRoleBadge
+import com.chat360.chatbot.config.badgeForRole
+import com.chat360.chatbot.ui.components.icons.TagIcon
 import com.chat360.chatbot.ui.components.icons.TrainingIcon
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
@@ -70,12 +76,14 @@ import java.util.Locale
 fun ChatHistorySidebar(
     onDismiss: () -> Unit,
     onNewChat: () -> Unit,
-    isTrainingMode: Boolean,
-    onAssistantModeChanged: (Boolean) -> Unit,
+    assistantModes: List<AssistantModeOption>,
+    selectedAssistantMode: Int,
+    onAssistantModeSelected: (Int) -> Unit,
+    /** roomId -> `agent_role`; a room whose role matches one of [assistantModes] gets that button's icon on its chat bubble. */
+    roomRoles: Map<String, String> = emptyMap(),
     isDarkTheme: Boolean,
     onThemeChanged: (Boolean) -> Unit,
     showAssistantMode: Boolean,
-    trainingModeEnabled: Boolean = true,
     showAppearanceSwitcher: Boolean,
     conversations: List<CachedConversationEntity>,
     activeConversationId: String? = null,
@@ -193,6 +201,9 @@ fun ChatHistorySidebar(
                     hasMoreRooms = hasMoreRooms,
                     isLoadingMoreRooms = isLoadingMoreRooms,
                     onLoadMoreRooms = onLoadMoreRooms,
+                    roleBadgeFor = { conversation ->
+                        if (!showAssistantMode) null else assistantModes.badgeForRole(conversation.roomId?.let { roomRoles[it] })
+                    },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -215,19 +226,15 @@ fun ChatHistorySidebar(
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth()) {
-                    ModeOption(
-                        text = "Training",
-                        icon = TrainingIcon,
-                        modifier = Modifier.weight(1f),
-                        selected = isTrainingMode,
-                        enabled = trainingModeEnabled,
-                    ) { onAssistantModeChanged(true) }
-                    ModeOption(
-                        text = "Customer",
-                        icon = PersonIcon,
-                        modifier = Modifier.weight(1f),
-                        selected = !isTrainingMode,
-                    ) { onAssistantModeChanged(false) }
+                    assistantModes.forEachIndexed { index, option ->
+                        ModeOption(
+                            text = option.label,
+                            icon = if (index == 0) TrainingIcon else PersonIcon,
+                            modifier = Modifier.weight(1f),
+                            selected = index == selectedAssistantMode,
+                            enabled = option.enabled,
+                        ) { onAssistantModeSelected(index) }
+                    }
                 }
             }
             Spacer(Modifier.height(18.dp))
@@ -345,6 +352,8 @@ private fun HistoryTimeline(
     hasMoreRooms: Boolean,
     isLoadingMoreRooms: Boolean,
     onLoadMoreRooms: () -> Unit,
+    /** The badge for a conversation's room role (null = no role, so no badge). */
+    roleBadgeFor: (CachedConversationEntity) -> AssistantRoleBadge?,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalChat360Colors.current
@@ -371,6 +380,7 @@ private fun HistoryTimeline(
             ) { conversation ->
                 ConversationItem(
                     conversation = conversation,
+                    roleBadge = roleBadgeFor(conversation),
                     isActive = conversation.id == activeConversationId,
                     onSelected = { onConversationSelected(conversation.id) },
                     onRenamed = { onConversationRenamed(conversation.id, it) },
@@ -401,6 +411,8 @@ private fun HistoryTimeline(
 @Composable
 private fun ConversationItem(
     conversation: CachedConversationEntity,
+    /** The room role's badge; null shows none. */
+    roleBadge: AssistantRoleBadge?,
     isActive: Boolean,
     onSelected: () -> Unit,
     onRenamed: (String) -> Unit,
@@ -430,7 +442,25 @@ private fun ConversationItem(
                 .padding(horizontal = 6.dp, vertical = 2.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            Icon(ChatBubbleIcon, contentDescription = null, tint = if (isActive) colors.accent else colors.textSecondary)
+            Box {
+                Icon(ChatBubbleIcon, contentDescription = null, tint = if (isActive) colors.accent else colors.textSecondary)
+                if (roleBadge != null) {
+                    Icon(
+                        when (roleBadge.modeIndex) {
+                            null -> TagIcon
+                            0 -> TrainingIcon
+                            else -> PersonIcon
+                        },
+                        contentDescription = roleBadge.label,
+                        tint = colors.accent,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(13.dp)
+                            .background(if (isActive) colors.backgroundSunken else colors.backgroundElevated, CircleShape)
+                            .padding(1.dp),
+                    )
+                }
+            }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(displayTitle, fontFamily = typography.textFamily, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = itemColor, maxLines = 1, overflow = TextOverflow.Ellipsis)

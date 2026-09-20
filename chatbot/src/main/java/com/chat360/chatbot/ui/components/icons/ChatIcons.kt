@@ -149,6 +149,13 @@ val PersonIcon: ImageVector by lazy {
     }
 }
 
+/** A plain price-tag shape: the badge for a room role that none of the Assistant Mode buttons sends. */
+val TagIcon: ImageVector by lazy {
+    materialIcon("Tag") {
+        filledPath { moveTo(3f, 5f); lineTo(14f, 5f); lineTo(21f, 12f); lineTo(14f, 19f); lineTo(3f, 19f); close() }
+    }
+}
+
 val TrainingIcon: ImageVector by lazy {
     materialIcon("Training") {
         filledPath { moveTo(2f, 7f); lineTo(12f, 2f); lineTo(22f, 7f); lineTo(12f, 12f); close() }

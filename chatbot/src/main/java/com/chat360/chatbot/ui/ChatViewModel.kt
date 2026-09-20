@@ -11,7 +11,9 @@ import com.chat360.chatbot.cache.ChatCacheRepository
 import com.chat360.chatbot.domain.BlankRoomRegistry
 import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.SharedPreferencesSessionStore
+import com.chat360.chatbot.config.FeatureConfig
 import com.chat360.chatbot.domain.thirdparty.ChatHistoryRepository
+import com.chat360.chatbot.domain.thirdparty.SharedPreferencesRoomRoleStore
 import com.chat360.chatbot.domain.thirdparty.SalesExecutiveGate
 import com.chat360.chatbot.domain.thirdparty.SharedPreferencesWelcomeTextStore
 import com.chat360.chatbot.domain.thirdparty.WelcomeTextRepository
@@ -56,12 +58,31 @@ class ChatViewModel(
     private val salesExecutiveGate: SalesExecutiveGate? = null,
     private val suppressInitialBotMessages: Boolean = false,
     private val enablePeriodicFeedback: Boolean = false,
+    initialAssistantModeIndex: Int = 0,
 ) : ViewModel() {
+
+    private val _assistantModeIndex = MutableStateFlow(initialAssistantModeIndex)
+    /** Index of the selected Assistant Mode option. Lives here (not in the screen) so it survives rotation. */
+    val assistantModeIndex: StateFlow<Int> = _assistantModeIndex.asStateFlow()
+
+    /**
+     * Selects an Assistant Mode option: its [variables] are merged into the session-init `meta`, and a
+     * fresh session is started so the bot sees them. A blank room is never reused, since it was created
+     * under the previous variables. No-op when [index] is already selected.
+     */
+    fun selectAssistantMode(index: Int, variables: Map<String, String>) {
+        if (index == _assistantModeIndex.value) return
+        _assistantModeIndex.value = index
+        repository.setAssistantVariables(variables)
+        startNewChat(allowReuse = false)
+    }
 
     private var hasStartedConversation = false
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+    /** roomId -> `agent_role` for the history list's role badges; empty when history isn't configured. */
+    val roomRoles: StateFlow<Map<String, String>> = chatHistoryRepository?.roomRoles ?: MutableStateFlow<Map<String, String>>(emptyMap())
     private val _conversations = MutableStateFlow<List<CachedConversationEntity>>(emptyList())
     val conversations: StateFlow<List<CachedConversationEntity>> = _conversations.asStateFlow()
     /** label -> targetId, from session-init's `bot_settings.bot_shortcuts`. Empty when the
@@ -169,6 +190,9 @@ class ChatViewModel(
     private val drafts = mutableMapOf<String, String>()
 
     init {
+        chatHistoryRepository?.let { history ->
+            repository.onFreshSession = { roomId, variables -> history.rememberLocalRole(roomId, variables[FeatureConfig.ASSISTANT_ROLE_KEY]) }
+        }
         // Local Room cache is the primary source for the sidebar; when a third-party
         // chatHistoryRepository is also configured (below), its refreshRooms() result can
         // overwrite this with the live agent-room list instead.
@@ -1141,7 +1165,7 @@ class ChatViewModel(
         }
     }
 
-    fun startNewChat() {
+    fun startNewChat(allowReuse: Boolean = true) {
         // Gated the same as init{}'s first connect - a "new chat" the maintenance flag would
         // immediately block is worse than no-op: it would wipe whatever conversation/history was
         // already on screen for an empty room that can never actually connect. Checked first,
@@ -1155,7 +1179,7 @@ class ChatViewModel(
                 neverConnected = false
                 connectFirstTime()
             } else {
-                startNewChatNow()
+                startNewChatNow(allowReuse)
             }
         }
     }
@@ -1830,6 +1854,9 @@ class ChatViewModel(
          * flow's `@`-variables are pre-seeded the same way the legacy WebView path gets for
          * free. See [ChatRepository] and [Chat360ApiService.getSession]. */
         private val meta: Map<String, String>? = null,
+        /** See [com.chat360.chatbot.config.AssistantModeOption]: the initially selected option's index and variables. */
+        private val assistantModeIndex: Int = 0,
+        private val assistantVariables: Map<String, String> = emptyMap(),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1859,6 +1886,7 @@ class ChatViewModel(
                     historyEnabled = historyEnabled,
                     sessionStore = SharedPreferencesSessionStore(context),
                     meta = meta,
+                    assistantVariables = assistantVariables,
                 ),
                 botId = botId,
                 cache = cache,
@@ -1868,6 +1896,7 @@ class ChatViewModel(
                 salesExecutiveGate = salesExecutiveGate,
                 suppressInitialBotMessages = suppressInitialBotMessages,
                 enablePeriodicFeedback = enablePeriodicFeedback,
+                initialAssistantModeIndex = assistantModeIndex,
             ) as T
         }
 
@@ -1917,6 +1946,7 @@ class ChatViewModel(
                 clientId = clientId,
                 botId = botId,
                 endUserId = endUserId,
+                roleStore = SharedPreferencesRoomRoleStore(context),
             )
         }
     }

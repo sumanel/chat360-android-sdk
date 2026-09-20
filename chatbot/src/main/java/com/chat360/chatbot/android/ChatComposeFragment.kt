@@ -23,7 +23,7 @@ class ChatComposeFragment : Fragment() {
     private val config: ResolvedChatConfig by lazy { resolveChatConfig(arguments) }
 
     private val viewModel: ChatViewModel by viewModels {
-        ChatViewModel.Factory(context = requireContext().applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, clientId = config.clientId, apiKey = config.apiKey, endUserId = config.endUserId, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages, enablePeriodicFeedback = config.Chat360UIConfig.behavior.enablePeriodicFeedback, meta = config.meta, salesExecutive = config.salesExecutive)
+        ChatViewModel.Factory(context = requireContext().applicationContext, baseUrl = config.baseUrl, botId = config.botId, historyEnabled = config.historyEnabled, clientId = config.clientId, apiKey = config.apiKey, endUserId = config.endUserId, suppressInitialBotMessages = config.Chat360UIConfig.behavior.suppressInitialBotMessages, enablePeriodicFeedback = config.Chat360UIConfig.behavior.enablePeriodicFeedback, meta = config.meta, salesExecutive = config.salesExecutive, assistantModeIndex = config.Chat360UIConfig.features.initialAssistantModeIndex, assistantVariables = config.Chat360UIConfig.features.initialAssistantVariables)
     }
 
     override fun onCreateView(
