@@ -9,6 +9,7 @@ import com.chat360.chatbot.cache.CachedConversationEntity
 import com.chat360.chatbot.cache.ChatCacheDatabase
 import com.chat360.chatbot.cache.ChatCacheRepository
 import com.chat360.chatbot.domain.BlankRoomRegistry
+import com.chat360.chatbot.domain.ChatIdentityGuard
 import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.SharedPreferencesSessionStore
 import com.chat360.chatbot.config.FeatureConfig
@@ -1860,6 +1861,8 @@ class ChatViewModel(
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            // Before anything reads the per-bot local data: a different user must not inherit the last one's history.
+            ChatIdentityGuard.forContext(context).apply(botId, endUserId)
             val cache = ChatCacheRepository(ChatCacheDatabase.get(context).dao())
             val trimmedClientId = clientId?.trim()?.takeIf { it.isNotEmpty() }
             val trimmedApiKey = apiKey?.trim()?.takeIf { it.isNotEmpty() }

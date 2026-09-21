@@ -28,6 +28,10 @@ class SharedPreferencesRoomRoleStore(context: Context) : RoomRoleStore {
     override fun loadLocal(botId: String) = read("$botId#local")
     override fun saveLocal(botId: String, roles: Map<String, String>) = write("$botId#local", roles)
 
+    fun clear(botId: String) {
+        prefs.edit().remove(botId).remove("$botId#local").apply()
+    }
+
     private fun read(key: String): Map<String, String> {
         val raw = prefs.getString(key, null) ?: return emptyMap()
         return runCatching { Json.decodeFromString(serializer, raw) }.getOrDefault(emptyMap())

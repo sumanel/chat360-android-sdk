@@ -108,6 +108,11 @@ class FakeChatCacheDao : ChatCacheDao {
         publish(botId)
     }
 
+    override suspend fun deleteBotConversations(botId: String) {
+        conversations.entries.removeAll { it.value.botId == botId }
+        publish(botId)
+    }
+
     override suspend fun touch(conversationId: String, updatedAt: Long) {
         val existing = conversations[conversationId] ?: return
         conversations[conversationId] = existing.copy(updatedAt = updatedAt)

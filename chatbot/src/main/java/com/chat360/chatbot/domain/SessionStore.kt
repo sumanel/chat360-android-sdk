@@ -41,6 +41,13 @@ class SharedPreferencesSessionStore(context: Context) : SessionStore {
         editor.apply()
     }
 
+    /** Forgets the last room and every per-room session of [botId], so the next connect starts a new one. */
+    fun clear(botId: String) {
+        val editor = prefs.edit()
+        prefs.all.keys.filter { it.startsWith("$botId.") }.forEach { editor.remove(it) }
+        editor.apply()
+    }
+
     private fun read(prefix: String): PersistedSession? {
         val roomId = prefs.getString("$prefix.roomId", null) ?: return null
         val ownerId = prefs.getString("$prefix.ownerId", null) ?: return null

@@ -157,6 +157,10 @@ interface ChatCacheDao {
     @Query("DELETE FROM chat_conversations WHERE id = :conversationId")
     suspend fun deleteConversation(conversationId: String)
 
+    /** Every conversation of [botId]; its messages go with it (cascade). */
+    @Query("DELETE FROM chat_conversations WHERE botId = :botId")
+    suspend fun deleteBotConversations(botId: String)
+
     @Query("UPDATE chat_conversations SET updatedAt = :updatedAt WHERE id = :conversationId")
     suspend fun touch(conversationId: String, updatedAt: Long)
 }

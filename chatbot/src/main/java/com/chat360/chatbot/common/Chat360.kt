@@ -26,6 +26,11 @@ class Chat360 {
         ConfigService.getInstance()?.setBaseUrl(url)
     }
 
+    /** Call when the user signs out: removes that bot's local conversations, saved session and room roles from this device. */
+    fun clearUserData(context: Context, botId: String) {
+        com.chat360.chatbot.domain.ChatIdentityGuard.forContext(context).reset(botId)
+    }
+
     /** Applies reusable Compose UI configuration without changing any SDK source. */
     fun initialize(config: Chat360UIConfig) {
         val current = coreConfig ?: throw IllegalStateException("Set CoreConfigs before calling initialize.")
