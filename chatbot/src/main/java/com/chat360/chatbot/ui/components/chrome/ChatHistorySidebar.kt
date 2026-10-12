@@ -93,6 +93,7 @@ fun ChatHistorySidebar(
     languages: List<SessionLanguage> = emptyList(),
     onLanguageSelected: (String) -> Unit = {},
     isHistoryUnavailable: Boolean = false,
+    isLoadingRooms: Boolean = false,
     onRetryHistory: () -> Unit = {},
     hasMoreRooms: Boolean = false,
     isLoadingMoreRooms: Boolean = false,
@@ -186,7 +187,7 @@ fun ChatHistorySidebar(
 
             if (conversations.isEmpty()) {
                 Text(
-                    "No saved conversations yet",
+                    if (isLoadingRooms) "Loading your chats…" else "No saved conversations yet",
                     fontFamily = typography.textFamily,
                     fontSize = 14.sp,
                     color = colors.textSecondary
@@ -304,13 +305,17 @@ private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
 
 /**
  * Buckets conversations into timeline sections (Today / Yesterday / Previous 7 Days / ...)
- * based on [CachedConversationEntity.createdAt], preserving each bucket's incoming order
- * (conversations already arrive newest-first from the repository).
+ * based on [CachedConversationEntity.updatedAt] - the same field the list is ordered by, so a chat
+ * that just got a message lands at the top of "Today" instead of the top of whichever section its
+ * creation date falls in - preserving each bucket's incoming order (conversations already arrive
+ * newest-first from the repository).
  */
-private fun groupConversationsByDate(
-    conversations: List<CachedConversationEntity>
+internal fun groupConversationsByDate(
+    conversations: List<CachedConversationEntity>,
+    nowMs: Long = System.currentTimeMillis(),
 ): List<Pair<String, List<CachedConversationEntity>>> {
     val todayStart = Calendar.getInstance().apply {
+        timeInMillis = nowMs
         set(Calendar.HOUR_OF_DAY, 0)
         set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0)
@@ -330,10 +335,10 @@ private fun groupConversationsByDate(
 
     conversations.forEach { conversation ->
         val bucketKey = when {
-            conversation.createdAt >= todayStart -> "Today"
-            conversation.createdAt >= yesterdayStart -> "Yesterday"
-            conversation.createdAt >= last7Start -> "Previous 7 Days"
-            conversation.createdAt >= last30Start -> "Previous 30 Days"
+            conversation.updatedAt >= todayStart -> "Today"
+            conversation.updatedAt >= yesterdayStart -> "Yesterday"
+            conversation.updatedAt >= last7Start -> "Previous 7 Days"
+            conversation.updatedAt >= last30Start -> "Previous 30 Days"
             else -> "Older"
         }
         buckets.getValue(bucketKey).add(conversation)

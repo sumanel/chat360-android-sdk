@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <ImageView
+        android:id="@+id/cha360logo"
+        android:layout_width="300dp"
+        android:layout_height="100dp"
+        android:layout_marginTop="20dp"
+        android:contentDescription="@string/chat360"
+        android:src="@drawable/chat360_logo"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonOpenActivity"
+        android:visibility="gone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="200dp"
+        android:paddingVertical="16dp"
+        android:text="@string/open_activity"
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toTopOf="parent" />
+
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/floatingActionButton"
+        android:visibility="gone"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="30dp"
+        android:backgroundTint="#FF337ACC"
+        android:contentDescription="@string/floating_chat_button"
+        android:src="@drawable/chat360logo"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonOpenActivityFragment"
+        android:visibility="gone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="20dp"
+        android:backgroundTint="@color/purple_700"
+        android:contentDescription="@string/chatbot"
+        android:paddingVertical="16dp"
+        android:text="@string/open_activity_fragment"
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toBottomOf="@id/buttonOpenActivity" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonOpenNativePoc"
+        android:visibility="gone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="20dp"
+        android:backgroundTint="@color/teal_700"
+        android:paddingVertical="16dp"
+        android:text="@string/open_native_poc"
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toBottomOf="@id/buttonOpenActivityFragment" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonOpenNativePocHyundai"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="20dp"
+        android:backgroundTint="@color/purple_500"
+        android:paddingVertical="16dp"
+        android:text="@string/open_native_poc_hyundai"
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toBottomOf="@id/cha360logo" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonOpenNativePocMaruti"
+        android:visibility="gone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="20dp"
+        android:backgroundTint="#005BAC"
+        android:paddingVertical="16dp"
+        android:text="@string/open_native_poc_maruti"
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toBottomOf="@id/buttonOpenNativePocHyundai" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonOpenLoginTest"
+        android:visibility="gone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="20dp"
+        android:backgroundTint="#2E7D32"
+        android:paddingVertical="16dp"
+        android:text="@string/open_login_test"
+        android:textAllCaps="false"
+        android:textColor="@color/white"
+        app:layout_constraintTop_toBottomOf="@id/buttonOpenNativePocMaruti" />
+</androidx.constraintlayout.widget.ConstraintLayout>

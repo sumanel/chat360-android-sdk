@@ -103,22 +103,26 @@ fun HeaderBar(
         }
         Spacer(modifier = Modifier.weight(1f))
         if (sessionCreatedAtMs != null) {
-            val remainingText by produceState(initialValue = formatSessionCountdown(sessionCreatedAtMs), sessionCreatedAtMs) {
+            val remainingText by produceState<String?>(initialValue = formatSessionCountdown(sessionCreatedAtMs), sessionCreatedAtMs) {
                 while (true) {
                     val text = formatSessionCountdown(sessionCreatedAtMs)
                     value = text
-                    if (text == "00:00") break
+                    if (text == null) break
                     delay(1_000)
                 }
             }
-            Text(
-                text = remainingText,
-                color = colors.textPrimary,
-                fontFamily = typography.textFamily,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Spacer(modifier = Modifier.width(16.dp))
+            // Null once the hour has run out: the timer disappears rather than sitting on 00:00, and comes back
+            // when the next message starts a new session (a fresh SessionTime arrives).
+            remainingText?.let { text ->
+                Text(
+                    text = text,
+                    color = colors.textPrimary,
+                    fontFamily = typography.textFamily,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+            }
         }
         if (showNewChat) Icon(
             imageVector = AddIcon,
@@ -131,9 +135,11 @@ fun HeaderBar(
     }
 }
 
-private fun formatSessionCountdown(createdAtMs: Long): String {
-    val elapsedSeconds = ((System.currentTimeMillis() - createdAtMs) / 1000).coerceAtLeast(0)
-    val remainingSeconds = (3_600 - elapsedSeconds).coerceAtLeast(0)
+/** "MM:SS" left of the session's hour, or null once none is left (the timer is then hidden, not shown as 00:00). */
+internal fun formatSessionCountdown(createdAtMs: Long, nowMs: Long = System.currentTimeMillis()): String? {
+    val elapsedSeconds = ((nowMs - createdAtMs) / 1000).coerceAtLeast(0)
+    val remainingSeconds = 3_600 - elapsedSeconds
+    if (remainingSeconds <= 0) return null
     val minutes = remainingSeconds / 60
     val seconds = remainingSeconds % 60
     return String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)

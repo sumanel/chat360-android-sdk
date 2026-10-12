@@ -14,6 +14,7 @@ import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.SharedPreferencesSessionStore
 import com.chat360.chatbot.config.FeatureConfig
 import com.chat360.chatbot.domain.thirdparty.ChatHistoryRepository
+import com.chat360.chatbot.domain.thirdparty.SharedPreferencesDeletedRoomStore
 import com.chat360.chatbot.domain.thirdparty.SharedPreferencesRoomRoleStore
 import com.chat360.chatbot.domain.thirdparty.SalesExecutiveGate
 import com.chat360.chatbot.domain.thirdparty.SharedPreferencesWelcomeTextStore
@@ -167,6 +168,12 @@ class ChatViewModel(
      * posted to the main thread (see Chat360WebSocketClient) - the actual cross-thread races this
      * class used to be exposed to. */
     private var loadGeneration = 0
+
+    /** Live (not replayed) bot bubbles rendered into the transcript so far. [refreshConversationHistory] compares it
+     * before and after its REST round trip: a reply that landed in between is newer than that response, and writing
+     * the (older) response over the screen and the cache would wipe it until the room was next reopened - the "reply
+     * was generated but only showed up after switching rooms" bug. */
+    private var liveBotBubbleCount = 0
 
     private fun beginLoad(): Int = ++loadGeneration
     private fun isCurrentLoad(generation: Int) = generation == loadGeneration
@@ -342,6 +349,7 @@ class ChatViewModel(
                         },
                     )
                 }
+                if (!restoringFromCache) liveBotBubbleCount++
                 // A chatgpt_message streaming chunk concatenates onto the existing bubble sharing
                 // its streamId instead of appending a new one; the flow stays paused (handled by
                 // the always-open input bar already) until a chunk arrives with streamEnded=true.
@@ -1146,11 +1154,12 @@ class ChatViewModel(
 
     fun refreshRoomsList() {
         val repo = chatHistoryRepository ?: return
+        _uiState.update { it.copy(isLoadingRooms = true) }
         viewModelScope.launch(Dispatchers.IO) {
             val refreshed = repo.refreshRooms()
             if (refreshed != null) _conversations.value = refreshed
             _uiState.update {
-                it.copy(isHistoryUnavailable = refreshed == null, hasMoreRooms = if (refreshed != null) repo.hasMoreRooms else it.hasMoreRooms)
+                it.copy(isLoadingRooms = false, isHistoryUnavailable = refreshed == null, hasMoreRooms = if (refreshed != null) repo.hasMoreRooms else it.hasMoreRooms)
             }
         }
     }
@@ -1343,6 +1352,8 @@ class ChatViewModel(
         // cache.deleteConversation's DB write and the Room flow's own (slightly async)
         // invalidation-triggered re-query to catch up.
         _conversations.update { it.filterNot { conversation -> conversation.id == conversationId } }
+        // Before the launches below: a rooms/list refresh racing right behind this must already leave it out.
+        if (roomId != null) chatHistoryRepository?.forgetRoom(roomId)
         viewModelScope.launch {
             cache.deleteConversation(conversationId)
             if (roomId != null && chatHistoryRepository != null) {
@@ -1495,6 +1506,7 @@ class ChatViewModel(
      * backend hiccup than a room that genuinely lost all its history, and blindly wiping local
      * data on that response would be a real data-loss bug. */
     private suspend fun refreshConversationHistory(conversationId: String, roomId: String, generation: Int): Boolean {
+        val liveBubblesBefore = liveBotBubbleCount
         val response = runCatching { repository.fetchHistory(roomId) }.getOrNull() ?: return false
         val history = response.history
         // repository.fetchHistory is a real network round trip - the suspension point a newer
@@ -1504,6 +1516,9 @@ class ChatViewModel(
         // (later) load makes activeConversationId equal A a second time.
         if (!isCurrentLoad(generation)) return history.isNotEmpty()
         if (history.isEmpty() && _uiState.value.messages.isNotEmpty()) return false
+        // A live reply arrived while this was in flight - the response predates it (the server may not have indexed it
+        // yet), so applying it would erase what the user is already looking at. The next entry to the room re-syncs.
+        if (liveBotBubbleCount != liveBubblesBefore) return history.isNotEmpty()
         // Persisted first (rather than rendered straight from `history`) so the render loop below
         // can source each bubble from its real Room row - carrying over the row id (for feedback
         // taps) and any thumbs up/down replaceRawHistory just carried forward from the old cache.
@@ -1655,10 +1670,26 @@ class ChatViewModel(
             _uiState.update { it.copy(isArchived = false, needsNewSession = false, isLiveChat = false, assignedAgent = null, isAgentTyping = false, sessionCreatedAtMs = null) }
             val roomId = _conversations.value.firstOrNull { it.id == conversationId }?.roomId
             restoreConversation(conversationId, roomId, generation)
-            // Reconnect the live socket to this room right away (when this device can resume it -
-            // see switchToActiveRoomIfResumable's doc) instead of waiting for the user to hit send,
-            // so a re-opened conversation is already live the moment it's on screen.
-            switchToActiveRoomIfResumable(generation)
+            // Only looking at an old room must not touch the server's session for it: reconnecting runs
+            // session-init, which renews an expired session (a "new session" in the logs, and a running
+            // countdown) for a room the user has not written to. So the reconnect waits for the first send
+            // (see sendMessage) - unless something on screen can be acted on without typing: a live chat
+            // (the agent's messages arrive on the socket) or a bot message with buttons/forms/prompts,
+            // whose taps go straight to whichever socket is connected and must reach this room.
+            if (needsLiveSocketToInteract()) switchToActiveRoomIfResumable(generation)
+        }
+    }
+
+    /** Whether the conversation on screen can be interacted with without typing, so its room has to be the connected one. */
+    private fun needsLiveSocketToInteract(): Boolean {
+        val state = _uiState.value
+        if (state.isLiveChat) return true
+        val last = state.messages.lastOrNull() ?: return false
+        if (last.fromUser) return false
+        return when (last.content) {
+            is BotContent.PlainText, is BotContent.Media, is BotContent.Carousel, is BotContent.DownloadMedia, is BotContent.LinkCard,
+            is BotContent.AgentTransferNotice, is BotContent.Unsupported, is BotContent.WindowEvent -> false
+            else -> true
         }
     }
 
@@ -1734,7 +1765,11 @@ class ChatViewModel(
             // didn't happen yet (e.g. the reconnect from opening is still in flight, or this is
             // the very first send right after connect()); appendMessage's snap-back remains the
             // fallback for a room this device can't resume this way (see the doc below).
-            switchToActiveRoomIfResumable()
+            val switched = switchToActiveRoomIfResumable()
+            // A reconnect that just began is not up yet - a send now would be dropped on the old socket and
+            // retried into a reconnect. Wait for it (bounded: a send that cannot connect is still handed to
+            // the repository, whose retries cover a slow connection).
+            if (switched) withTimeoutOrNull(roomSwitchSendTimeoutMs) { _uiState.first { it.isConnected } }
             // Even with no connectivity right now, still hand this to the repository rather than
             // failing it immediately - AckTracker retries the send for a couple of minutes, which
             // covers the common case of a blip that clears before the retries run out. The bubble
@@ -1777,8 +1812,8 @@ class ChatViewModel(
      * history) can't be resumed this way - there is no way to rejoin a room without its session
      * token, confirmed against the live API - so this is a no-op for it, same as before this
      * existed. */
-    private suspend fun switchToActiveRoomIfResumable(generation: Int = loadGeneration) {
-        val active = activeConversationId ?: return
+    private suspend fun switchToActiveRoomIfResumable(generation: Int = loadGeneration): Boolean {
+        val active = activeConversationId ?: return false
         if (active == connectedConversationId) {
             // Same room the ViewModel believes it's bound to - but the live socket may have
             // been torn down since without connectedConversationId ever being cleared (e.g. a
@@ -1787,9 +1822,9 @@ class ChatViewModel(
             // the same way a manual retry/foreground resume would; if the socket is genuinely
             // still live this stays a no-op.
             if (!_uiState.value.isConnected) reconnectUnlessUnderMaintenance(generation)
-            return
+            return false
         }
-        val targetRoomId = _conversations.value.firstOrNull { it.id == active }?.roomId ?: return
+        val targetRoomId = _conversations.value.firstOrNull { it.id == active }?.roomId ?: return false
         // Leaving a room nobody has typed in: remember it so "New chat" can come back to it
         // rather than creating another empty room (see [blankRoom]).
         val leavingId = connectedConversationId
@@ -1821,6 +1856,7 @@ class ChatViewModel(
         // anything sent from here used to be routed into whichever room *is* connected - merging two chats into
         // one. Sending instead starts a fresh session (see sendMessage), so the room stays a view of its history.
         if (!switched && isCurrentLoad(generation)) _uiState.update { it.copy(isConnected = true, needsNewSession = true) }
+        return switched
     }
 
     override fun onCleared() {
@@ -1835,6 +1871,8 @@ class ChatViewModel(
         private const val MISSED_REPLY_MAX_POLLS = 30
         /** How long a send from an unresumable old room waits for its fresh session to connect. */
         internal var newSessionSendTimeoutMs = 20_000L
+        /** How long a first send into an old room waits for that room's reconnect before handing the message over anyway. */
+        internal var roomSwitchSendTimeoutMs = 10_000L
         /** A message older than this is treated as one nobody is going to answer. */
         private const val MISSED_REPLY_WINDOW_MS = 90_000L
     }
@@ -1950,6 +1988,7 @@ class ChatViewModel(
                 botId = botId,
                 endUserId = endUserId,
                 roleStore = SharedPreferencesRoomRoleStore(context),
+                deletedRoomStore = SharedPreferencesDeletedRoomStore(context),
             )
         }
     }

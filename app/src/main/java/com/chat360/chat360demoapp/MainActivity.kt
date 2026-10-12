@@ -141,6 +141,9 @@ class MainActivity : AppCompatActivity() {
             chat360.startBot(this)
 
         }
+        findViewById<MaterialButton>(R.id.buttonOpenLoginTest).setOnClickListener {
+            startActivity(Intent(this, LoginTestActivity::class.java))
+        }
         findViewById<MaterialButton>(R.id.buttonOpenNativePocMaruti).setOnClickListener {
             chat360.coreConfig = CoreConfigs(nativePocBotId, applicationContext, flutter, meta, false, true).apply {
                 themePreset = Chat360ThemePreset.CUSTOM

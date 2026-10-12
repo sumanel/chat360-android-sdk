@@ -64,6 +64,9 @@ class GhostRoomTest {
     private val scheduler = TestCoroutineScheduler()
     private val historyRequestsByRoom = java.util.concurrent.ConcurrentHashMap<String, Int>()
     @Volatile private var historyWithoutReply = 0
+    /** A room whose history response is slow and already out of date: only the user's message, no reply. */
+    @Volatile private var slowStaleHistoryRoom: String? = null
+    private val slowStaleHistoryDelayMs = 1_500L
     @Volatile private var userMessageAgeSeconds = 0L
     private val roomUnderTest = "room-a"
     private fun historyFetches() = historyRequestsByRoom[roomUnderTest] ?: 0
@@ -117,6 +120,8 @@ class GhostRoomTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(scheduler))
         // awaitUntil runs virtual time ~10x faster than real time, so the real-world 20s wait would expire in ~2s here.
         ChatViewModel.newSessionSendTimeoutMs = 10 * 60_000L
+        // The test socket never opens, so a first send into an old room would wait out this whole bound.
+        ChatViewModel.roomSwitchSendTimeoutMs = 500L
         server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -135,6 +140,12 @@ class GhostRoomTest {
                 if (path.contains("/chatbox/messages/")) {
                     val room = path.substringAfterLast('/')
                     val count = historyRequestsByRoom.merge(room, 1, Int::plus)!!
+                    if (room == slowStaleHistoryRoom) {
+                        val user = RawSocketEnvelope(user = "end_user", message = JsonPrimitive("What is the price?"), chat_msg_id = "stale-user-1", timestamp_int = (System.currentTimeMillis() / 1000).toString())
+                        val row = Json { explicitNulls = false }.encodeToString(RawSocketEnvelope.serializer(), user)
+                        return MockResponse().setBody("""{"history":[$row],"previous_cursor":null}""")
+                            .setBodyDelay(slowStaleHistoryDelayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    }
                     return MockResponse().setBody(historyJson(room, includeReply = room == roomUnderTest && count > historyWithoutReply))
                 }
                 if (!path.contains("/session/")) return MockResponse().setResponseCode(404)
@@ -170,6 +181,7 @@ class GhostRoomTest {
         server.shutdown()
         Dispatchers.resetMain()
         ChatViewModel.newSessionSendTimeoutMs = 20_000L
+        ChatViewModel.roomSwitchSendTimeoutMs = 10_000L
     }
 
     private fun awaitUntil(what: String, timeoutMs: Long = 5_000, condition: () -> Boolean) {
@@ -179,6 +191,14 @@ class GhostRoomTest {
             scheduler.advanceTimeBy(200)
             Thread.sleep(20)
         }
+    }
+
+    /** Opening an older room only shows it - the server is not asked for its session until something is sent in it
+     * (see ChatViewModel.openConversation). This is that first send, which resumes the room and makes it the connected one. */
+    private fun sendInOpenedRoom(room: String, text: String = "hello") {
+        viewModel.onInputChange(text)
+        viewModel.sendMessage()
+        awaitUntil("$room resumed") { room in sessionRequests }
     }
 
     private fun settle() {
@@ -202,7 +222,7 @@ class GhostRoomTest {
         }
         awaitUntil("old conversation listed") { viewModel.conversations.value.any { it.id == "conv-old" } }
         viewModel.openConversation("conv-old")
-        awaitUntil("old room resumed") { "room-old" in sessionRequests }
+        sendInOpenedRoom("room-old")
         settle()
 
         // 3. New chat, twice. Neither may ask the server for a new room.
@@ -215,6 +235,31 @@ class GhostRoomTest {
         val freshRoomsRequested = sessionRequests.count { it == null }
         assertEquals("ghost rooms were created: $sessionRequests", 1, freshRoomsRequested)
         assertEquals("New chat must show the original first screen again", firstScreenId, viewModel.uiState.value.activeConversationId)
+    }
+
+    @Test
+    fun `opening an old room does not ask the server for its session until something is sent`() {
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        sessionStore.save(botId, PersistedSession("room-old", "tok-room-old", "owner-1"))
+        kotlinx.coroutines.runBlocking {
+            dao.upsertConversation(
+                CachedConversationEntity(id = "conv-old", botId = botId, roomId = "room-old", title = "Old chat", createdAt = 1, updatedAt = 1),
+            )
+        }
+        awaitUntil("old conversation listed") { viewModel.conversations.value.any { it.id == "conv-old" } }
+
+        viewModel.openConversation("conv-old")
+        settle()
+
+        // Session-init renews an expired session - a "new session" in the logs and a running timer for a room the
+        // user has only looked at.
+        assertEquals("looking at an old room contacted the server: $sessionRequests", listOf<String?>(null), sessionRequests.toList())
+        assertEquals("conv-old", viewModel.uiState.value.activeConversationId)
+        assertNull("no countdown for a room nobody has written to", viewModel.uiState.value.sessionCreatedAtMs)
+
+        sendInOpenedRoom("room-old", "my first question")
+
+        assertEquals("the first send resumes that room, and only that", listOf<String?>(null, "room-old"), sessionRequests.toList())
     }
 
     @Test
@@ -248,7 +293,7 @@ class GhostRoomTest {
         }
         awaitUntil("old conversation listed") { viewModel.conversations.value.any { it.id == "conv-old" } }
         viewModel.openConversation("conv-old")
-        awaitUntil("old room resumed") { "room-old" in sessionRequests }
+        sendInOpenedRoom("room-old")
         settle()
 
         // The host closes and reopens the chat screen while the app keeps running.
@@ -274,7 +319,7 @@ class GhostRoomTest {
         }
         awaitUntil("old conversation listed") { viewModel.conversations.value.any { it.id == "conv-old" } }
         viewModel.openConversation("conv-old")
-        awaitUntil("old room resumed") { "room-old" in sessionRequests }
+        sendInOpenedRoom("room-old")
         settle()
         assertEquals("the other room must not inherit the text", "", viewModel.uiState.value.inputText)
 
@@ -406,7 +451,7 @@ class GhostRoomTest {
         }
         awaitUntil("old conversation listed") { viewModel.conversations.value.any { it.id == "conv-old" } }
         viewModel.openConversation("conv-old")
-        awaitUntil("old room resumed") { "room-old" in sessionRequests }
+        sendInOpenedRoom("room-old")
         settle()
         assertEquals(false, viewModel.uiState.value.needsNewSession)
 
@@ -430,6 +475,25 @@ class GhostRoomTest {
     }
 
     private fun transcript() = viewModel.uiState.value.messages.map { it.text }
+
+    @Test
+    fun `a reply that arrives while an older history response is in flight is not wiped by it`() {
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        // The user reopens the chat: room-1 is resumed, and its history request answers late with a page that
+        // predates the reply the bot is about to send (the server had not indexed it yet).
+        slowStaleHistoryRoom = "room-1"
+        viewModel = makeViewModel()
+        awaitUntil("history requested for the resumed room") { (historyRequestsByRoom["room-1"] ?: 0) >= 2 }
+
+        liveReply("room-1") // the bot's answer lands on the socket while that response is still on its way
+        assertTrue("the live reply is not on screen: ${transcript()}", transcript().any { it.contains("live-room-1") })
+
+        val until = System.currentTimeMillis() + slowStaleHistoryDelayMs + 1_000
+        awaitUntil("the late history response to be applied", timeoutMs = 10_000) { System.currentTimeMillis() > until }
+        settle()
+
+        assertTrue("the older history response wiped the live reply: ${transcript()}", transcript().any { it.contains("live-room-1") })
+    }
 
     @Test
     fun `a reply stored after the first check on return still appears`() {

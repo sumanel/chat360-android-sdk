@@ -99,6 +99,8 @@ data class ChatUiState(
     val hasMoreHistory: Boolean = false,
     val isLoadingMoreHistory: Boolean = false,
     val isHistoryUnavailable: Boolean = false,
+    /** The server room list is being fetched; the history menu says so instead of "No saved conversations yet". */
+    val isLoadingRooms: Boolean = false,
     /** The server has older rooms than the history list holds so far; the sidebar offers "Load more". */
     val hasMoreRooms: Boolean = false,
     val isLoadingMoreRooms: Boolean = false,

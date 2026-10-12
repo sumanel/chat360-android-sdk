@@ -33,7 +33,16 @@ class ChatHistoryRepository(
     private val endUserId: String,
     /** Where the room -> agent role lookup is kept between launches; null keeps it in memory only. */
     private val roleStore: RoomRoleStore? = null,
+    /** Rooms the user deleted on this device; never shown again even though `rooms/list` still returns them. Null keeps nothing. */
+    private val deletedRoomStore: DeletedRoomStore? = null,
 ) {
+
+    @Volatile private var deletedRooms: Set<String> = deletedRoomStore?.load(botId).orEmpty()
+
+    /** A page without the rooms the user deleted here. */
+    private fun withoutDeleted(rooms: List<RoomDto>): List<RoomDto> =
+        if (deletedRooms.isEmpty()) rooms else rooms.filterNot { it.roomId in deletedRooms }
+
     // What `rooms/list` last said, and what this device itself sent when it created a room. The server is the
     // source of truth, so a role it returns always wins; the local one only fills in until it does (a room made a
     // moment ago may not be in the list yet, or may come back without a role).
@@ -96,13 +105,15 @@ class ChatHistoryRepository(
         }
             .onFailure { error -> Log.e("Chat360", "third-party-tasks rooms/list failed: ${error.message}", error) }
             .getOrNull() ?: return null
+        // Counted as returned by the server, before the rooms deleted here are dropped from what is shown.
         loadedCount = page.rooms.size
         hasMoreRooms = page.hasMore && page.rooms.isNotEmpty()
-        rememberRoles(page.rooms)
-        cache.syncLocalConversations(botId, page.rooms)
+        val rooms = withoutDeleted(page.rooms)
+        rememberRoles(rooms)
+        cache.syncLocalConversations(botId, rooms)
         // Replaces the synced rooms: any cached one missing from the top of the list is dropped, and
         // reappears once its page is loaded again.
-        cache.syncAgentRooms(botId, cache.thirdPartyRoomConversations(botId, page.rooms))
+        cache.syncAgentRooms(botId, cache.thirdPartyRoomConversations(botId, rooms))
         // Read back from the DB (already ORDER BY updatedAt DESC) rather than returning the raw
         // server mapping: it carries the merged newest-wins timestamps, so a chat just sent from
         // this device isn't demoted by a response that hasn't caught up with it yet.
@@ -123,9 +134,10 @@ class ChatHistoryRepository(
         // A page with nothing in it ends the list even if the server still claims more, so a server
         // that misreports has_more can't keep the button alive forever.
         hasMoreRooms = page.hasMore && page.rooms.isNotEmpty()
-        rememberRoles(page.rooms)
-        cache.syncLocalConversations(botId, page.rooms)
-        cache.mergeAgentRooms(botId, cache.thirdPartyRoomConversations(botId, page.rooms))
+        val rooms = withoutDeleted(page.rooms)
+        rememberRoles(rooms)
+        cache.syncLocalConversations(botId, rooms)
+        cache.mergeAgentRooms(botId, cache.thirdPartyRoomConversations(botId, rooms))
         return true
     }
 
@@ -135,8 +147,17 @@ class ChatHistoryRepository(
             .onFailure { error -> Log.e("Chat360", "third-party-tasks room/update failed: ${error.message}", error) }
     }
 
-    /** Best-effort remote "mark inactive" - the counterpart of deleting a conversation from history. */
+    /** Hides [roomId] from every later `rooms/list` on this device. Cheap and non-blocking, so a delete can call it
+     * before anything else and a list refresh racing right behind it already leaves the room out. */
+    fun forgetRoom(roomId: String) {
+        deletedRooms = deletedRooms + roomId
+        deletedRoomStore?.add(botId, roomId)
+    }
+
+    /** Best-effort remote "mark inactive" - the counterpart of deleting a conversation from history. Also forgets the
+     * room locally, which does not depend on the request succeeding. */
     suspend fun markRoomInactive(roomId: String) {
+        forgetRoom(roomId)
         runCatching { withAuthRetry { token -> apiService.updateRoomStatus(roomId, clientId, token) } }
             .onFailure { error -> Log.e("Chat360", "third-party-tasks room/update/status failed: ${error.message}", error) }
     }

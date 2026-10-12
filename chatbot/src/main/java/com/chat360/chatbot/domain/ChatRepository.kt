@@ -193,6 +193,15 @@ class ChatRepository(
      * by the BotMessage branch below, which then emits a SessionTime(now) itself instead of
      * waiting on another round trip to the server. */
     private var pendingSessionResetOnNextBotMessage = false
+    /** The `created_at` of the last SessionTime dispatched to the UI for the connected room, null until one is. Lets
+     * [sendTracked] notice that the hour has run out by the time the user sends again - the backend then renews the
+     * session silently, so the countdown has to be restarted from that reply (see [pendingSessionResetOnNextBotMessage]). */
+    private var lastSessionCreatedAtMs: Long? = null
+    /** Host [meta] to attach to the next outgoing message, as flow variables. Set when the room's session did not get
+     * it from session-init: a room joined without one ([joinRoomDirectly] - session-init cannot resume it), or a session
+     * that expired and was renewed by the backend, which starts without the host's variables (`@emp_id` and the like).
+     * Without them the bot flow cannot answer ("we could not fetch response"). Cleared once sent. */
+    private var pendingHostContext: Map<String, String>? = null
     /** Completed once the bot's full reply to the most recently sent user message arrives (see
      * [sendTracked]/[handleIncoming]'s BotMessage branch) - null when no reply is currently
      * outstanding. Awaited by [awaitPendingReplyBeforeTeardown] so switching rooms/starting a new
@@ -375,6 +384,8 @@ class ChatRepository(
         roomId = targetRoomId
         // No session id is known for a room joined this way; the same fallback the feedback API gets elsewhere.
         sessionId = targetRoomId
+        // No session-init ran for this room, so nothing carried the host's variables (emp id, dealer id, ...) into it.
+        pendingHostContext = sessionMeta(resuming = true)
         try {
             onConversationStarted(targetRoomId)
             seedOpeningNode()
@@ -447,6 +458,8 @@ class ChatRepository(
         awaitingImmediateSessionTimeCheck = false
         awaitingSessionTimeResponse = false
         pendingSessionResetOnNextBotMessage = false
+        lastSessionCreatedAtMs = null
+        pendingHostContext = null
         sessionPrepDone = false
         kickoffPending = false
     }
@@ -764,10 +777,11 @@ class ChatRepository(
             requestSessionTime()
         } else {
             // A genuinely new room has no session_time to ask about yet - the timer must stay
-            // hidden/not-running until the user sends something new and a bot reply actually
-            // arrives live on this connection (see handleIncoming's BotMessage case, which fires
-            // the request once this is consumed).
-            awaitingFirstBotReplySessionTime = true
+            // hidden/not-running until the user sends something and a bot reply actually arrives
+            // (see handleIncoming's BotMessage case). Deliberately NOT armed here: the bot's own
+            // opening message (delivered by the INIT jump below) is a live bot reply too, and
+            // arming on connect made that welcome message start the countdown before the user
+            // had typed anything. sendTracked arms it on the first user message instead.
         }
         pendingInitJumpTargetId?.let { targetId ->
             pendingInitJumpTargetId = null
@@ -924,7 +938,9 @@ class ChatRepository(
                 if (pendingSessionResetOnNextBotMessage) {
                     pendingSessionResetOnNextBotMessage = false
                     Log.d(SESSION_TIME_TAG, "Applying deferred session time reset on this bot reply - countdown restarts at 59:59 (room=$roomId)")
-                    onEvent(IncomingSocketEvent.SessionTime(System.currentTimeMillis()))
+                    val restartedAt = System.currentTimeMillis()
+                    lastSessionCreatedAtMs = restartedAt
+                    onEvent(IncomingSocketEvent.SessionTime(restartedAt))
                 }
                 handleWindowEventNode(event.node.content)
                 // END-node side effects - not about rendering. urlMessage opens externally in
@@ -981,6 +997,7 @@ class ChatRepository(
             }
             else -> Unit
         }
+        if (event is IncomingSocketEvent.SessionTime) lastSessionCreatedAtMs = event.createdAtMs
         onEvent(event)
     }
 
@@ -1444,7 +1461,25 @@ class ChatRepository(
         return sendTracked(outgoing)
     }
 
-    private fun sendTracked(outgoing: OutgoingMessage): String {
+    private fun sendTracked(message: OutgoingMessage): String {
+        val now = System.currentTimeMillis()
+        // The first thing the user sends is what starts the session clock - see performPostOpenKickoff.
+        if (!sessionEverStarted) awaitingFirstBotReplySessionTime = true
+        // The hour ran out since the timer was last set: the backend renews the session for this message, so the
+        // countdown restarts from the bot's reply to it, and the host's variables have to go with it again.
+        lastSessionCreatedAtMs?.let { startedAt ->
+            if (now - startedAt >= SESSION_LENGTH_MS) {
+                pendingSessionResetOnNextBotMessage = true
+                pendingHostContext = sessionMeta(resuming = true)
+                lastSessionCreatedAtMs = null
+            }
+        }
+        val hostContext = pendingHostContext
+        val outgoing = if (hostContext == null) message else {
+            pendingHostContext = null
+            // The node's own variable (the answer being submitted) wins over a host key of the same name.
+            message.copy(variables = hostContext + (message.variables ?: emptyMap()))
+        }
         Log.i(
             TAG,
             "User message sent: chat_msg_id=${outgoing.chat_msg_id} nodeType=${outgoing.nodeType} " +
@@ -1492,6 +1527,8 @@ class ChatRepository(
          * (the backend minting a brand new one for this very query) rather than its true start
          * time - see [awaitingImmediateSessionTimeCheck]. */
         const val FRESHLY_CREATED_SESSION_WINDOW_SECONDS = 15L
+        /** How long the backend keeps one session going - the countdown in the header runs down from this. */
+        const val SESSION_LENGTH_MS = 3_600_000L
         /** Bot ids that have already run [connect] at least once during this process's lifetime.
          * Deliberately an in-memory set rather than anything persisted - it must reset when the
          * process is killed and relaunched, so a genuine cold app launch starts a brand new

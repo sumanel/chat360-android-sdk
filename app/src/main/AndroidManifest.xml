@@ -33,6 +33,9 @@
                 android:value="" />
         </activity>
         <activity
+            android:name=".LoginTestActivity"
+            android:exported="false" />
+        <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>

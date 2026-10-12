@@ -2,6 +2,7 @@ package com.chat360.chatbot.domain
 
 import android.content.Context
 import com.chat360.chatbot.cache.ChatCacheDatabase
+import com.chat360.chatbot.domain.thirdparty.SharedPreferencesDeletedRoomStore
 import com.chat360.chatbot.domain.thirdparty.SharedPreferencesRoomRoleStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -56,6 +57,7 @@ class ChatIdentityGuard(
                     runBlocking(Dispatchers.IO) { ChatCacheDatabase.get(app).dao().deleteBotConversations(botId) }
                     SharedPreferencesSessionStore(app).clear(botId)
                     SharedPreferencesRoomRoleStore(app).clear(botId)
+                    SharedPreferencesDeletedRoomStore(app).clear(botId)
                 },
             )
         }

@@ -445,6 +445,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
                                 showHistorySidebar = false
                             },
                             isHistoryUnavailable = state.isHistoryUnavailable,
+                            isLoadingRooms = state.isLoadingRooms,
                             onRetryHistory = viewModel::refreshRoomsList,
                             hasMoreRooms = state.hasMoreRooms,
                             isLoadingMoreRooms = state.isLoadingMoreRooms,

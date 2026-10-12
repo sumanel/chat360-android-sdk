@@ -29,3 +29,12 @@ Conversation titles are derived from the latest non-empty user message (trimmed 
 ## Gradle JDK requirement
 
 AGP 8.5.2 and Kotlin 1.9.0 in this project must run Gradle on Java 17 or Java 21. Java 25 is unsupported and causes the KAPT `IllegalAccessError` shown in the original build log (and can also fail AGP before compilation). In Android Studio, select a Java 17/21 JDK under **Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK**.
+
+## History list, room resume and session timer behaviour (SDK feedback fixes)
+
+- **Opening an older room only shows it.** The SDK no longer reconnects to a room (session-init, which renews an expired session on the server) just because the user opened it from the drawer. The room is resumed by the first thing the user sends in it. Exceptions that reconnect immediately: a live chat, and a room whose last bot message has buttons/forms/prompts (a tap there goes straight to the connected socket and must reach that room).
+- **Session timer** starts only from the bot's reply to the user's message, never from the bot's own opening message. It disappears when the hour runs out (no frozen `00:00`) and restarts from the bot's reply to the next message.
+- **Host variables (`meta`)** are sent again as flow variables with the first message of a room that never went through session-init (an older room joined directly) and with the first message after a session expired and was renewed by the backend. Ordinary messages carry no extra variables.
+- **Rename** counts as activity: the renamed chat moves to the top, the same as the server does (it bumps `updated_at` on rename), so every device shows the same order. The list is sectioned (Today / Yesterday / ...) by last activity (`updatedAt`), the same field it is ordered by.
+- **Delete** is remembered on the device (`chat360_deleted_rooms`, cleared with the rest of a bot's data by `ChatIdentityGuard`) and filtered from every `rooms/list` page, because the server keeps listing rooms it has marked inactive.
+- A history refresh that started before a live reply arrived no longer overwrites the screen and the cache with its older page.
