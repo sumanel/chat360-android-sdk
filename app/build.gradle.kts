@@ -42,10 +42,10 @@ android {
         }
         create("staging") {
             dimension = "environment"
-            buildConfigField("String", "BOT_ID", "\"87a0f7c9-3499-4887-998b-0ca3c0d33834\"")
+            buildConfigField("String", "BOT_ID", "\"111268fe-8bc8-4e47-99df-f35cc21b6784\"")
             buildConfigField("String", "BASE_URL", "\"https://staging.chat360.io\"")
-            buildConfigField("String", "CLIENT_ID", "\"c7b9a9a6-1ea9-41cc-a9e5-325489c83efb\"")
-            buildConfigField("String", "API_KEY", "\"X4XcW5Z6.7FbJfyoX2g3roXAcRy9shhaXxgSR0Zxi\"")
+            buildConfigField("String", "CLIENT_ID", "\"69a7d5b0-6942-4024-945a-1bd64a33f3c4\"")
+            buildConfigField("String", "API_KEY", "\"Xrgasqj9.dVCafhhbNB9rRMJ85px2C6AbSOuP4V4f\"")
             buildConfigField("String", "DEALER_ID", "\"D1\"")
             buildConfigField("String", "EMP_ID", "\"EMP1\"")
             buildConfigField("String", "SALES_DEALER_CODE", "\"D1\"")

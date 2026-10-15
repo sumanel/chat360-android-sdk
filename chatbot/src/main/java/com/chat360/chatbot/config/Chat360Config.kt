@@ -104,6 +104,9 @@ data class FeatureConfig(
      * centered logo is unaffected, this only covers the active-conversation chrome. */
     val showBotAvatar: Boolean = true,
     val showSessionTimer: Boolean = false,
+    /** A feedback icon in the drawer's header. It opens a popup, and its text is stored for the whole application
+     * (by employee id), not for a single message. Needs history (clientId, apiKey, endUserId) to be configured. */
+    val showAppFeedback: Boolean = false,
 ) {
     /** [assistantModes] capped at [MAX_ASSISTANT_MODES], with the legacy [enableTrainingMode] flag applied to the first option. */
     val effectiveAssistantModes: List<AssistantModeOption>

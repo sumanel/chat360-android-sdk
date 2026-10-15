@@ -80,7 +80,7 @@ sealed interface IncomingSocketEvent {
     data object LiveChatEnded : IncomingSocketEvent
     /** A `chat_inactivity_message` frame - [message] only set for its `type:'message'` sub-case; [autoArchive] mirrors `auto_archival` (session is being closed for inactivity). */
     data class InactivityNotice(val message: String?, val autoArchive: Boolean) : IncomingSocketEvent
-    /** A `session_time_hyundai` response - [createdAtMs] is the session's `created_at`, epoch ms UTC. */
+    /** A `session_time_hyundai` response - [createdAtMs] is the session's `updated_at` (the countdown's start), epoch ms UTC. */
     data class SessionTime(val createdAtMs: Long) : IncomingSocketEvent
     data class Unhandled(val raw: RawSocketEnvelope) : IncomingSocketEvent
 }
@@ -99,7 +99,9 @@ fun RawSocketEnvelope.toIncomingEvent(): IncomingSocketEvent {
     val timestampMs = serverTimestampMs()
 
     if (data_type == "session_time_hyundai") {
-        val createdAtMs = session?.string("created_at")?.parseIsoUtcTimestamp()
+        // The countdown runs from `updated_at`, which stays fixed once the session exists. `created_at` is deliberately
+        // not a fallback: a reply without `updated_at` starts no timer.
+        val createdAtMs = session?.string("updated_at")?.parseIsoUtcTimestamp()
         if (createdAtMs != null) return IncomingSocketEvent.SessionTime(createdAtMs)
     }
 

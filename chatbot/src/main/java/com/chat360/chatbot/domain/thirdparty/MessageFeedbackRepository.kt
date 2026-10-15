@@ -31,6 +31,20 @@ class MessageFeedbackRepository(
         }.onFailure { error -> Log.e("Chat360", "third-party-tasks feedback failed: ${error.message}", error) }
     }
 
+    /** Sends application-wide feedback; true once the server accepted it. Blank text is never sent. */
+    suspend fun submitAppFeedback(roomId: String, feedback: String, dealerId: String?, empId: String?): Boolean {
+        val text = feedback.trim().takeIf { it.isNotEmpty() } ?: return false
+        return try {
+            withAuthRetry { token -> apiService.submitAppFeedback(roomId, text, dealerId, empId, token) }
+            true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("Chat360", "third-party-tasks app-feedback failed: ${e.message}", e)
+            false
+        }
+    }
+
     private suspend fun <T> withAuthRetry(block: suspend (token: String) -> T): T {
         val token = tokenManager.validToken()
         return try {

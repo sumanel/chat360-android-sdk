@@ -6,7 +6,10 @@ import com.chat360.chatbot.model.wire.BotNode
 import com.chat360.chatbot.model.wire.FeedbackConfig
 import com.chat360.chatbot.domain.thirdparty.WelcomeText
 import com.chat360.chatbot.ui.theme.Chat360ColorOverrides
+import com.chat360.chatbot.network.rest.dto.BotAppearanceDetails
 import com.chat360.chatbot.ui.theme.Chat360Logo
+import com.chat360.chatbot.ui.theme.toColorOverrides
+import com.chat360.chatbot.ui.theme.toLogoOverride
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -74,6 +77,18 @@ data class ChatMessage(
 fun formatMessageTime(timestampMs: Long? = null): String =
     SimpleDateFormat("h:mm a", Locale.getDefault()).format(timestampMs?.let(::Date) ?: Date())
 
+/**
+ * Applies a (re)loaded bot appearance. The logo is sticky: a failed fetch (`details == null`, e.g. right after a dropped
+ * socket or a wake from sleep) or a response with no logo keeps the one already resolved instead of falling back to
+ * whatever sits underneath.
+ */
+internal fun ChatUiState.withAppearance(details: BotAppearanceDetails?, chatboxName: String?): ChatUiState = copy(
+    colorOverrides = details?.toColorOverrides(),
+    logoOverride = details?.toLogoOverride() ?: logoOverride,
+    botTitleOverride = chatboxName?.takeIf { it.isNotBlank() },
+    feedbackConfig = details?.feedback_config ?: feedbackConfig,
+)
+
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val isConnected: Boolean = false,
@@ -106,6 +121,11 @@ data class ChatUiState(
     val isLoadingMoreRooms: Boolean = false,
     val activeConversationId: String? = null,
     val sessionCreatedAtMs: Long? = null,
+    /** The drawer's application-wide feedback popup. `isSendingAppFeedback` disables Submit while the request is out; a
+     * failure keeps the popup open with [appFeedbackError] so the text is not lost. */
+    val showAppFeedbackDialog: Boolean = false,
+    val isSendingAppFeedback: Boolean = false,
+    val appFeedbackError: String? = null,
     /** Server-sent fallback text from a terminal `close_connection` frame (dealer/SE
      * deactivation or maintenance-mode activation). Non-null means the session is over: chats,
      * nudges, the text input, and the timer all stay disabled for the rest of this room. */

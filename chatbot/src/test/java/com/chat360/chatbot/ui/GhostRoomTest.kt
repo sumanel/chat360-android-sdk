@@ -7,6 +7,9 @@ import com.chat360.chatbot.domain.thirdparty.SalesExecutiveGate
 import com.chat360.chatbot.domain.thirdparty.WelcomeText
 import com.chat360.chatbot.domain.thirdparty.WelcomeTextRepository
 import com.chat360.chatbot.domain.thirdparty.WelcomeTextStore
+import com.chat360.chatbot.domain.thirdparty.AppFeedbackIdentity
+import com.chat360.chatbot.domain.thirdparty.MessageFeedbackRepository
+import com.chat360.chatbot.domain.thirdparty.ThirdPartyTokenManager
 import com.chat360.chatbot.network.rest.thirdparty.ThirdPartyTasksApiService
 import com.chat360.chatbot.domain.ChatRepository
 import com.chat360.chatbot.domain.PersistedSession
@@ -22,6 +25,8 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import kotlinx.coroutines.test.TestCoroutineScheduler
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -30,6 +35,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -131,6 +137,13 @@ class GhostRoomTest {
                     return MockResponse().setResponseCode(salesStatus).setBody(salesBody)
                         .setBodyDelay(salesDelayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
                 }
+                if (path.endsWith("/api/third-party-tasks/auth/token")) {
+                    return MockResponse().setBody("""{"success":true,"data":{"bearer_token":"tok-1","token_type":"Bearer","expires_in":3600}}""")
+                }
+                if (path.endsWith("/api/third-party-tasks/app-feedback")) {
+                    appFeedbackBodies += request.body.readUtf8()
+                    return MockResponse().setResponseCode(appFeedbackStatus).setBody("{}")
+                }
                 if (path.endsWith("/api/third-party-tasks/maintainance")) return MockResponse().setBody(maintenanceBody)
                 if (path.endsWith("/api/third-party-tasks/welcome-text")) {
                     welcomeClientIds += request.getHeader("Client-Id")
@@ -165,14 +178,18 @@ class GhostRoomTest {
     }
 
     /** A fresh view model over the same cache/session store - what reopening the chat screen builds. */
-    private fun makeViewModel(welcome: WelcomeTextRepository? = null, gate: SalesExecutiveGate? = null): ChatViewModel {
+    private fun makeViewModel(welcome: WelcomeTextRepository? = null, gate: SalesExecutiveGate? = null, feedback: MessageFeedbackRepository? = null): ChatViewModel {
         val repository = ChatRepository(
             baseUrl = server.url("/").toString().trimEnd('/'),
             botId = botId,
             sessionStore = sessionStore,
         )
         this.repository = repository
-        return ChatViewModel(repository = repository, botId = botId, cache = ChatCacheRepository(dao), welcomeTextRepository = welcome, salesExecutiveGate = gate)
+        return ChatViewModel(
+            repository = repository, botId = botId, cache = ChatCacheRepository(dao), messageFeedbackRepository = feedback,
+            welcomeTextRepository = welcome, salesExecutiveGate = gate,
+            appFeedbackIdentity = AppFeedbackIdentity(dealerId = "D1", empId = "12345"),
+        )
     }
 
     @After
@@ -203,6 +220,83 @@ class GhostRoomTest {
 
     private fun settle() {
         repeat(20) { scheduler.advanceTimeBy(200); Thread.sleep(20) }
+    }
+
+    // --- application-wide feedback (drawer) ---
+
+    private val appFeedbackBodies = java.util.concurrent.CopyOnWriteArrayList<String>()
+    @Volatile private var appFeedbackStatus = 200
+
+    private fun feedbackRepository(): MessageFeedbackRepository {
+        val api = ThirdPartyTasksApiService(server.url("/").toString())
+        return MessageFeedbackRepository(api, ThirdPartyTokenManager(api, clientId = "client-1", apiKey = "api-key-1"))
+    }
+
+    private fun reopenWithFeedback() {
+        viewModel = makeViewModel(feedback = feedbackRepository())
+        awaitUntil("room opened with feedback") { sessionRequests.size >= 2 && viewModel.uiState.value.activeConversationId != null }
+        settle()
+    }
+
+    @Test
+    fun `the feedback icon needs third-party-tasks to be configured`() {
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        assertFalse("without third-party-tasks there is nowhere to store the feedback", viewModel.canSendAppFeedback)
+        reopenWithFeedback()
+        assertTrue(viewModel.canSendAppFeedback)
+    }
+
+    @Test
+    fun `the feedback popup opens and closes`() {
+        awaitUntil("initial room") { sessionRequests.size == 1 && viewModel.uiState.value.activeConversationId != null }
+        viewModel.openAppFeedback()
+        assertTrue(viewModel.uiState.value.showAppFeedbackDialog)
+        viewModel.dismissAppFeedback()
+        assertFalse(viewModel.uiState.value.showAppFeedbackDialog)
+    }
+
+    @Test
+    fun `submitting sends the text with the room, the dealer and the employee, then closes`() {
+        reopenWithFeedback()
+        viewModel.openAppFeedback()
+
+        viewModel.submitAppFeedback("Search results are very helpful")
+        awaitUntil("feedback sent and popup closed") { !viewModel.uiState.value.showAppFeedbackDialog }
+
+        val body = Json.parseToJsonElement(appFeedbackBodies.first()).jsonObject
+        assertEquals("Search results are very helpful", body["feedback"]!!.jsonPrimitive.content)
+        assertEquals("D1", body["dealer_id"]!!.jsonPrimitive.content)
+        assertEquals("12345", body["emp_id"]!!.jsonPrimitive.content)
+        assertTrue("the room the user is in is sent", body["room_id"]!!.jsonPrimitive.content.isNotEmpty())
+        assertFalse(viewModel.uiState.value.isSendingAppFeedback)
+        assertNull(viewModel.uiState.value.appFeedbackError)
+    }
+
+    @Test
+    fun `a failed submit keeps the popup open with an error`() {
+        reopenWithFeedback()
+        appFeedbackStatus = 500
+        viewModel.openAppFeedback()
+
+        viewModel.submitAppFeedback("Nice app")
+        awaitUntil("failure shown") { viewModel.uiState.value.appFeedbackError != null }
+
+        assertTrue("the text must not be lost", viewModel.uiState.value.showAppFeedbackDialog)
+        assertFalse("the user can try again", viewModel.uiState.value.isSendingAppFeedback)
+    }
+
+    @Test
+    fun `reopening the popup clears the old error`() {
+        reopenWithFeedback()
+        appFeedbackStatus = 500
+        viewModel.openAppFeedback()
+        viewModel.submitAppFeedback("Nice app")
+        awaitUntil("failure shown") { viewModel.uiState.value.appFeedbackError != null }
+        viewModel.dismissAppFeedback()
+
+        viewModel.openAppFeedback()
+
+        assertNull(viewModel.uiState.value.appFeedbackError)
     }
 
     @Test

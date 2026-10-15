@@ -32,11 +32,30 @@ import com.chat360.chatbot.ui.ChatMessage
 import com.chat360.chatbot.config.LocalChat360UIConfig
 import com.chat360.chatbot.ui.components.common.LogoBadge
 import com.chat360.chatbot.ui.components.feedback.FeedbackRemarksDialog
+import com.chat360.chatbot.ui.components.feedback.LikeRemarksDialog
 import com.chat360.chatbot.ui.components.messages.content.BotContentActions
 import com.chat360.chatbot.ui.components.messages.content.BotContentBody
 import com.chat360.chatbot.ui.components.messages.content.copyText
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.LocalChat360Typography
+
+/** What a tap on a rating icon does. */
+internal enum class ReactionTap { OPEN_LIKE_POPUP, OPEN_DISLIKE_POPUP, CLEAR, IGNORE }
+
+/**
+ * A dislike is final: once set (it already came with its mandatory reason) the message can be neither liked nor
+ * un-disliked. A like can still be taken back, or changed to a dislike.
+ */
+internal fun likeTap(current: Boolean?): ReactionTap = when (current) {
+    false -> ReactionTap.IGNORE
+    true -> ReactionTap.CLEAR
+    null -> ReactionTap.OPEN_LIKE_POPUP
+}
+
+internal fun dislikeTap(current: Boolean?): ReactionTap = when (current) {
+    false -> ReactionTap.IGNORE
+    else -> ReactionTap.OPEN_DISLIKE_POPUP
+}
 
 @Composable
 fun BotMessageRow(
@@ -55,6 +74,7 @@ fun BotMessageRow(
     val clipboard = LocalClipboardManager.current
     val feedback = message.liked
     var showDislikeDialog by remember(message.id) { mutableStateOf(false) }
+    var showLikeDialog by remember(message.id) { mutableStateOf(false) }
     Column {
         if (config.features.showBotAvatar) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -97,15 +117,11 @@ fun BotMessageRow(
                 ),
                 contentDescription = "Helpful",
                 tint = if (feedback == true) colors.accent else colors.textSecondary,
-                modifier = if (feedback == false) {
-                    Modifier.size(18.dp)
-                } else {
-                    Modifier.size(18.dp).clickable {
-                        if (feedback == true) {
-                            onClearFeedback()
-                        } else {
-                            onFeedback(true, null)
-                        }
+                modifier = Modifier.size(18.dp).clickable {
+                    when (likeTap(feedback)) {
+                        ReactionTap.CLEAR -> onClearFeedback()
+                        ReactionTap.OPEN_LIKE_POPUP -> showLikeDialog = true
+                        else -> Unit
                     }
                 },
             )
@@ -119,15 +135,25 @@ fun BotMessageRow(
                 contentDescription = "Not helpful",
                 tint = if (feedback == false) colors.accent else colors.textSecondary,
                 modifier = Modifier.size(18.dp).clickable {
-                    if (feedback == false) {
-                        onClearFeedback()
-                    } else {
-                        showDislikeDialog = true
-                    }
+                    if (dislikeTap(feedback) == ReactionTap.OPEN_DISLIKE_POPUP) showDislikeDialog = true
                 },
             )
             }
         }
+    }
+    if (showLikeDialog) {
+        // The remark is optional: submitting records the like with whatever was typed, and closing the popup
+        // without typing still records the like - it never gets lost, unlike a dislike, which needs its reason.
+        LikeRemarksDialog(
+            onSubmit = { remarks ->
+                showLikeDialog = false
+                onFeedback(true, remarks)
+            },
+            onDismiss = {
+                showLikeDialog = false
+                onFeedback(true, null)
+            },
+        )
     }
     if (showDislikeDialog) {
         FeedbackRemarksDialog(

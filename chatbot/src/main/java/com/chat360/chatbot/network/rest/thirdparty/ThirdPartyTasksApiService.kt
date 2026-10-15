@@ -269,6 +269,32 @@ class ThirdPartyTasksApiService(
         execute(request)
     }
 
+    /**
+     * Application-wide feedback (not tied to a message): `POST /api/third-party-tasks/app-feedback`. A dealer or
+     * employee the host never set is left out of the body.
+     */
+    suspend fun submitAppFeedback(
+        roomId: String,
+        feedback: String,
+        dealerId: String?,
+        empId: String?,
+        bearerToken: String,
+    ) {
+        val url = "${baseUrl.trimEnd('/')}/api/third-party-tasks/app-feedback"
+        val body = buildJsonObject {
+            put("room_id", roomId)
+            put("feedback", feedback)
+            dealerId?.let { put("dealer_id", it) }
+            empId?.let { put("emp_id", it) }
+        }.toString().toRequestBody(jsonMediaType)
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $bearerToken")
+            .post(body)
+            .build()
+        execute(request)
+    }
+
     private suspend fun execute(request: Request): String = suspendCancellableCoroutine { cont ->
         val call = client.newCall(request)
         cont.invokeOnCancellation { call.cancel() }

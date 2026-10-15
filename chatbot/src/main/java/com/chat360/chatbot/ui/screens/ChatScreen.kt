@@ -62,6 +62,7 @@ import com.chat360.chatbot.ui.components.chrome.chatDateSeparatorLabel
 import com.chat360.chatbot.ui.components.chrome.TypingIndicatorRow
 import com.chat360.chatbot.ui.components.chrome.MaintenanceScreen
 import com.chat360.chatbot.ui.components.chrome.WelcomeSplash
+import com.chat360.chatbot.ui.components.feedback.AppFeedbackDialog
 import com.chat360.chatbot.ui.components.feedback.FeedbackFormDialog
 import com.chat360.chatbot.ui.components.feedback.PeriodicFeedbackDialog
 import com.chat360.chatbot.ui.components.input.ChatInputBar
@@ -71,6 +72,7 @@ import com.chat360.chatbot.ui.components.messages.BotMessageRow
 import com.chat360.chatbot.ui.components.messages.UserMessageRow
 import com.chat360.chatbot.ui.components.messages.content.BotContentActions
 import com.chat360.chatbot.ui.theme.LocalChat360Branding
+import com.chat360.chatbot.ui.theme.resolveLogo
 import com.chat360.chatbot.ui.theme.withWelcome
 import com.chat360.chatbot.ui.theme.LocalChat360Colors
 import com.chat360.chatbot.ui.theme.resolvedStatusBar
@@ -105,7 +107,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
 //    val effectiveColors = baseColors.applyOverrides(state.colorOverrides)
     val effectiveBranding = baseBranding.copy(
         botTitle = state.botTitleOverride ?: baseBranding.botTitle,
-        logo = state.logoOverride ?: baseBranding.logo,
+        logo = resolveLogo(configured = baseBranding.logo, fromServer = state.logoOverride),
     ).withWelcome(state.welcomeOverride)
 
 //    val state by viewModel.uiState.collectAsState()
@@ -450,10 +452,25 @@ fun ChatScreen(viewModel: ChatViewModel) {
                             hasMoreRooms = state.hasMoreRooms,
                             isLoadingMoreRooms = state.isLoadingMoreRooms,
                             onLoadMoreRooms = viewModel::loadMoreRooms,
+                            showAppFeedback = features.showAppFeedback && viewModel.canSendAppFeedback,
+                            onAppFeedback = {
+                                showHistorySidebar = false
+                                viewModel.openAppFeedback()
+                            },
                         )
                     }
                 }
             }
+        }
+
+        // The drawer's application-wide feedback popup. Can be dismissed (tap outside or the X) - nothing is owed.
+        if (state.showAppFeedbackDialog) {
+            AppFeedbackDialog(
+                isSending = state.isSendingAppFeedback,
+                errorMessage = state.appFeedbackError,
+                onSubmit = viewModel::submitAppFeedback,
+                onDismiss = viewModel::dismissAppFeedback,
+            )
         }
 
         val feedbackConfig = state.feedbackConfig

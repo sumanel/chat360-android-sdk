@@ -15,6 +15,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -35,13 +36,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Test screen for login / logout / switching user under the same dealer: pick EMP1001 or EMP1002, open the
- * chat (its menu is the history), switch, and see that the other user's history does not carry over.
- * "Server history" asks `rooms/list` for the signed-in user directly, to compare with what the menu shows.
+ * Test-user form: type any employee id/code and dealer id/code, sign in as them, open the chat (its menu is the
+ * history), then switch to another employee and see that the previous one's history does not carry over. Recent users
+ * are listed for one-tap switching. "Server history" asks `rooms/list` for the signed-in employee directly, to compare
+ * with what the menu shows. The main screen's chat buttons run as the same user (see [DemoUserStore]).
  */
 class LoginTestActivity : ComponentActivity() {
-    private val users = listOf("EMP1001", "EMP1002")
-    private val prefs by lazy { getSharedPreferences("demo_login_test", Context.MODE_PRIVATE) }
+    private val store by lazy { DemoUserStore(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,35 +55,81 @@ class LoginTestActivity : ComponentActivity() {
 
     @androidx.compose.runtime.Composable
     private fun Screen() {
-        var user by remember { mutableStateOf(prefs.getString("user", null)) }
+        var user by remember { mutableStateOf(if (store.isSignedIn()) store.current() else null) }
+        var recents by remember { mutableStateOf(store.recents()) }
+        // The form starts on whoever was used last (or the build's default), so a small edit is all a switch needs.
+        var empField by remember { mutableStateOf(store.current().empId) }
+        var dealerField by remember { mutableStateOf(store.current().dealerId) }
+        var formError by remember { mutableStateOf<String?>(null) }
         val log = remember { mutableStateListOf<String>() }
         val scope = rememberCoroutineScope()
 
         fun note(line: String) = log.add(0, line)
 
+        fun signIn(next: DemoUser) {
+            val from = user
+            store.signIn(next)
+            user = next
+            recents = store.recents()
+            empField = next.empId
+            dealerField = next.dealerId
+            formError = null
+            note(
+                when {
+                    from == null -> "Signed in as ${next.empId} (dealer ${next.dealerId})"
+                    from == next -> "Still ${next.empId} (dealer ${next.dealerId})"
+                    else -> "Switched ${from.empId} -> ${next.empId} (local history of ${from.empId} is cleared when the chat opens)"
+                },
+            )
+        }
+
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Login / history test", style = MaterialTheme.typography.headlineSmall)
-            Text("Dealer: ${BuildConfig.DEALER_ID}   Base URL: ${BuildConfig.BASE_URL}")
+            Text("Test user", style = MaterialTheme.typography.headlineSmall)
+            Text("Base URL: ${BuildConfig.BASE_URL}\nBot: ${BuildConfig.BOT_ID}", style = MaterialTheme.typography.bodySmall)
             Text(
-                if (user == null) "Not logged in" else "Logged in as: $user",
+                user?.let { "Signed in as: ${it.empId}  (dealer ${it.dealerId})" } ?: "Not signed in",
                 style = MaterialTheme.typography.titleMedium,
             )
 
-            users.forEach { emp ->
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = user != emp,
-                    onClick = {
-                        val from = user
-                        user = emp
-                        prefs.edit().putString("user", emp).apply()
-                        note(if (from == null) "Logged in as $emp" else "Switched $from -> $emp (local history of $from is cleared when the chat opens)")
-                    },
-                ) { Text("Login as $emp") }
+            OutlinedTextField(
+                value = empField,
+                onValueChange = { empField = it; formError = null },
+                label = { Text("Employee ID / code (emp_id)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = dealerField,
+                onValueChange = { dealerField = it; formError = null },
+                label = { Text("Dealer ID / code (dealer_id)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            formError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    val parsed = DemoUser.parse(dealer = dealerField, emp = empField)
+                    if (parsed == null) formError = "Enter both an employee and a dealer id (no spaces)." else signIn(parsed)
+                },
+            ) { Text("Sign in as this employee") }
+
+            if (recents.isNotEmpty()) {
+                Text("Recent", style = MaterialTheme.typography.titleSmall)
+                recents.forEach { recent ->
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = user != recent,
+                        onClick = { signIn(recent) },
+                    ) { Text("${recent.empId}  ·  dealer ${recent.dealerId}") }
+                }
             }
+
+            HorizontalDivider()
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
@@ -94,7 +141,7 @@ class LoginTestActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth(),
                 enabled = user != null,
                 onClick = {
-                    val emp = user!!
+                    val emp = user!!.empId
                     note("Checking server history for $emp ...")
                     scope.launch { note(fetchServerHistory(emp)) }
                 },
@@ -105,9 +152,9 @@ class LoginTestActivity : ComponentActivity() {
                 enabled = user != null,
                 onClick = {
                     Chat360().getInstance().clearUserData(applicationContext, BuildConfig.BOT_ID)
-                    note("Logged out $user - local conversations, saved session and roles removed")
+                    note("Logged out ${user?.empId} - local conversations, saved session and roles removed")
                     user = null
-                    prefs.edit().remove("user").apply()
+                    store.signOut()
                 },
             ) { Text("Logout") }
 
@@ -117,14 +164,14 @@ class LoginTestActivity : ComponentActivity() {
         }
     }
 
-    private fun openChat(emp: String) {
+    private fun openChat(user: DemoUser) {
         val chat360 = Chat360().getInstance()
         chat360.setBaseUrl(BuildConfig.BASE_URL)
         chat360.coreConfig = CoreConfigs(
             BuildConfig.BOT_ID,
             applicationContext,
             false,
-            mapOf("dealer_id" to BuildConfig.DEALER_ID, "emp_id" to emp),
+            user.meta(),
             false,
             true,
         ).apply {
@@ -136,8 +183,8 @@ class LoginTestActivity : ComponentActivity() {
             Chat360UIConfig = HyundaiConfig
             apiKey = BuildConfig.API_KEY
             clientId = BuildConfig.CLIENT_ID
-            endUserId = emp
-            salesExecutive = mapOf("dealer_code" to BuildConfig.DEALER_ID, "emp_code" to emp)
+            endUserId = user.empId
+            salesExecutive = user.salesExecutive()
         }
         chat360.startBot(this)
     }

@@ -22,6 +22,12 @@ fun BotAppearanceDetails.toColorOverrides(): Chat360ColorOverrides = Chat360Colo
 fun BotAppearanceDetails.toLogoOverride(): Chat360Logo? =
     chatboxHeader?.chatboxAvatar?.takeIf { it.isNotBlank() }?.let { Chat360Logo.Remote(it) }
 
+/**
+ * The logo to show: the host's configured one always wins, so a brand's own logo (Hyundai's) is never replaced by the
+ * bot's server-side avatar. The server's logo only fills in when the host configured none.
+ */
+fun resolveLogo(configured: Chat360Logo?, fromServer: Chat360Logo?): Chat360Logo? = configured ?: fromServer
+
 /** Parses a "#RRGGBB"/"#AARRGGBB" hex string - shared by appearance-API overrides and any bot-supplied color (e.g. TEXT_CAROUSEL card colors). */
 fun String.toColorOrNull(): Color? {
     if (!startsWith("#")) return null

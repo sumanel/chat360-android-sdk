@@ -119,6 +119,103 @@ class SessionContextTest {
         assertEquals(0, sent.sessionTimeRequests())
     }
 
+    private fun frame(repo: ChatRepository, raw: String) {
+        ChatRepository::class.java.getDeclaredMethod("handleIncoming", String::class.java, Function1::class.java)
+            .apply { isAccessible = true }
+            .invoke(repo, raw, field(repo, "onRawIncoming").get(repo))
+    }
+
+    /** The server's answer to our session-time request, [ageSeconds] after the session started. */
+    private fun sessionTimeAnswer(repo: ChatRepository, ageSeconds: Long) {
+        val createdAt = java.time.Instant.now().minusSeconds(ageSeconds).toString()
+        frame(repo, """{"data_type":"session_time_hyundai","session":{"room_id":"room-1","created_at":"2020-01-01T00:00:00Z","updated_at":"$createdAt"}}""")
+    }
+
+    // --- an old chat: no timer until the user sends ---
+
+    @Test
+    fun `opening an old chat does not ask for its session time`() {
+        val repo = repository()
+        val sent = connected(repo, sessionEverStarted = true) // a resumed room, history already loaded
+
+        kickoff(repo)
+
+        assertEquals("the timer would show before the user has written: $sent", 0, sent.sessionTimeRequests())
+    }
+
+    @Test
+    fun `a bot message in an old chat before the user sends does not start the timer`() {
+        val repo = repository()
+        val sent = connected(repo, sessionEverStarted = true)
+        val received = events(repo)
+        kickoff(repo)
+
+        botReply(repo)
+
+        assertEquals(0, sent.sessionTimeRequests())
+        assertTrue(received.none { it is IncomingSocketEvent.SessionTime })
+    }
+
+    @Test
+    fun `after the user sends in an old chat the bot's reply asks for the real session time`() {
+        val repo = repository()
+        val sent = connected(repo, sessionEverStarted = true)
+        val received = events(repo)
+        kickoff(repo)
+
+        repo.sendFreeText("Where is my order")
+        assertEquals("not before the bot has replied", 0, sent.sessionTimeRequests())
+        botReply(repo)
+        assertEquals(1, sent.sessionTimeRequests())
+        sessionTimeAnswer(repo, ageSeconds = 20 * 60) // the session is 20 minutes old
+
+        val shown = received.filterIsInstance<IncomingSocketEvent.SessionTime>().single()
+        val elapsed = System.currentTimeMillis() - shown.createdAtMs
+        assertTrue("the timer anchors to the server's start, not to now: ${elapsed}ms", elapsed in 19 * 60_000L..21 * 60_000L)
+    }
+
+    @Test
+    fun `a second send in the same old chat does not ask again`() {
+        val repo = repository()
+        val sent = connected(repo, sessionEverStarted = true)
+        events(repo)
+        kickoff(repo)
+        repo.sendFreeText("first")
+        botReply(repo)
+        sessionTimeAnswer(repo, ageSeconds = 600)
+
+        repo.sendFreeText("second")
+        botReply(repo)
+
+        assertEquals(1, sent.sessionTimeRequests())
+    }
+
+    @Test
+    fun `a reconnect of a chat whose timer is already showing still re-checks immediately`() {
+        val repo = repository()
+        val sent = connected(repo, sessionEverStarted = true)
+        field(repo, "lastSessionCreatedAtMs").set(repo, System.currentTimeMillis() - 60_000L)
+
+        kickoff(repo)
+
+        assertEquals(1, sent.sessionTimeRequests())
+    }
+
+    @Test
+    fun `an expired old chat restarts the countdown from the reply to the user's send`() {
+        val repo = repository()
+        val sent = connected(repo, sessionEverStarted = true)
+        val received = events(repo)
+        kickoff(repo)
+        repo.sendFreeText("hello again")
+        botReply(repo)
+        sessionTimeAnswer(repo, ageSeconds = 2) // the backend renewed the session for this very message
+
+        val shown = received.filterIsInstance<IncomingSocketEvent.SessionTime>().single()
+        assertTrue("a renewed session counts down from its fresh start", System.currentTimeMillis() - shown.createdAtMs < 10_000)
+        assertEquals(1, sent.sessionTimeRequests())
+    }
+
     // --- coming back after the hour ---
 
     @Test

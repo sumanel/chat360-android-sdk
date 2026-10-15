@@ -197,6 +197,9 @@ class ChatRepository(
      * [sendTracked] notice that the hour has run out by the time the user sends again - the backend then renews the
      * session silently, so the countdown has to be restarted from that reply (see [pendingSessionResetOnNextBotMessage]). */
     private var lastSessionCreatedAtMs: Long? = null
+    /** Set when the user sends into a room that has no timer on screen yet (an old chat opened from history): its bot
+     * reply is what asks the server for the session's real start, so the timer appears only once the user has written. */
+    private var awaitingReplyToShowSessionTime = false
     /** Host [meta] to attach to the next outgoing message, as flow variables. Set when the room's session did not get
      * it from session-init: a room joined without one ([joinRoomDirectly] - session-init cannot resume it), or a session
      * that expired and was renewed by the backend, which starts without the host's variables (`@emp_id` and the like).
@@ -459,6 +462,7 @@ class ChatRepository(
         awaitingSessionTimeResponse = false
         pendingSessionResetOnNextBotMessage = false
         lastSessionCreatedAtMs = null
+        awaitingReplyToShowSessionTime = false
         pendingHostContext = null
         sessionPrepDone = false
         kickoffPending = false
@@ -767,8 +771,12 @@ class ChatRepository(
      * of two places for any given connection: onOpen directly (prep was already done), or
      * establishSession's prep-done step (onOpen already fired and set [kickoffPending]). */
     private fun performPostOpenKickoff() {
-        if (sessionEverStarted) {
-            // A resumed room, or a reconnect of a room already past its first reply - its
+        if (sessionEverStarted && lastSessionCreatedAtMs == null) {
+            // A resumed room nobody has written to in this visit: its timer stays hidden until the user sends - see
+            // sendTracked and awaitingReplyToShowSessionTime.
+            Log.d(SESSION_TIME_TAG, "Resumed room - session time withheld until the user sends (room=$roomId)")
+        } else if (sessionEverStarted) {
+            // A reconnect of a room already past its first reply - its
             // session_time is safe to ask about right away. handleIncoming decides whether the
             // answer is fresh enough to show immediately or stale enough to hold back - see
             // awaitingImmediateSessionTimeCheck.
@@ -933,6 +941,11 @@ class ChatRepository(
                     sessionEverStarted = true
                     overrideNextSessionTimeWithNow = true
                     Log.d(SESSION_TIME_TAG, "First live bot reply on this connection - requesting session time, countdown will start at 59:59 (room=$roomId)")
+                    requestSessionTime()
+                }
+                if (awaitingReplyToShowSessionTime) {
+                    awaitingReplyToShowSessionTime = false
+                    Log.d(SESSION_TIME_TAG, "Bot replied to the first send in a resumed room - requesting its real session time (room=$roomId)")
                     requestSessionTime()
                 }
                 if (pendingSessionResetOnNextBotMessage) {
@@ -1465,6 +1478,7 @@ class ChatRepository(
         val now = System.currentTimeMillis()
         // The first thing the user sends is what starts the session clock - see performPostOpenKickoff.
         if (!sessionEverStarted) awaitingFirstBotReplySessionTime = true
+        else if (lastSessionCreatedAtMs == null && !pendingSessionResetOnNextBotMessage) awaitingReplyToShowSessionTime = true
         // The hour ran out since the timer was last set: the backend renews the session for this message, so the
         // countdown restarts from the bot's reply to it, and the host's variables have to go with it again.
         lastSessionCreatedAtMs?.let { startedAt ->

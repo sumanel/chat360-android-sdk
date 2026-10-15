@@ -2,7 +2,7 @@
     <string name="app_name">Chat360DemoApp</string>
     <string name="open_activity">Open Activity</string>
     <string name="open_activity_fragment">Open Activity + Fragment</string>
-    <string name="open_login_test">Login / history test (EMP1001 / EMP1002)</string>
+    <string name="open_login_test">Test user (employee / dealer form)</string>
     <string name="open_native_poc">Open Native POC (Default theme)</string>
     <string name="open_native_poc_hyundai">Open Native POC (Hyundai theme)</string>
     <string name="open_native_poc_maruti">Open Native POC (Maruti Suzuki theme)</string>

@@ -102,7 +102,6 @@
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/buttonOpenLoginTest"
-        android:visibility="gone"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="16dp"
@@ -112,5 +111,5 @@
         android:text="@string/open_login_test"
         android:textAllCaps="false"
         android:textColor="@color/white"
-        app:layout_constraintTop_toBottomOf="@id/buttonOpenNativePocMaruti" />
+        app:layout_constraintTop_toBottomOf="@id/buttonOpenNativePocHyundai" />
 </androidx.constraintlayout.widget.ConstraintLayout>

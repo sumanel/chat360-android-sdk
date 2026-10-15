@@ -98,6 +98,8 @@ fun ChatHistorySidebar(
     hasMoreRooms: Boolean = false,
     isLoadingMoreRooms: Boolean = false,
     onLoadMoreRooms: () -> Unit = {},
+    showAppFeedback: Boolean = false,
+    onAppFeedback: () -> Unit = {},
 ) {
     val colors = LocalChat360Colors.current
     val typography = LocalChat360Typography.current
@@ -128,12 +130,26 @@ fun ChatHistorySidebar(
                 color = colors.accent
             )
             Spacer(Modifier.weight(1f))
-            Text(
-                "v${BuildConfig.SDK_VERSION}",
-                fontFamily = typography.textFamily,
-                fontSize = 12.sp,
-                color = colors.textSecondary
-            )
+            // Right-most: the version, with the application-wide "Feedback" button underneath it.
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    "v${BuildConfig.SDK_VERSION}",
+                    fontFamily = typography.textFamily,
+                    fontSize = 12.sp,
+                    color = colors.textSecondary
+                )
+                if (showAppFeedback) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Feedback",
+                        fontFamily = typography.textFamily,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.accent,
+                        modifier = Modifier.clickable(onClick = onAppFeedback),
+                    )
+                }
+            }
         }
 
         // Main Content Area

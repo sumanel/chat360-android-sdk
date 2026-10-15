@@ -127,6 +127,7 @@ val HyundaiConfig = Chat360UIConfig(
         showAppearanceSwitcher = true,
         showBotAvatar = false,
         showSessionTimer = true,
+        showAppFeedback = true,
     ),
     behavior = BehaviorConfig(suppressInitialBotMessages = true, enablePeriodicFeedback = false),
 )

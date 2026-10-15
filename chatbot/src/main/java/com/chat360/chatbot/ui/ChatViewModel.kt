@@ -31,8 +31,6 @@ import com.chat360.chatbot.model.wire.RawSocketEnvelope
 import com.chat360.chatbot.model.wire.toIncomingEvent
 import com.chat360.chatbot.network.rest.dto.SessionLanguage
 import com.chat360.chatbot.ui.components.messages.content.copyText
-import com.chat360.chatbot.ui.theme.toColorOverrides
-import com.chat360.chatbot.ui.theme.toLogoOverride
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +38,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.chat360.chatbot.domain.thirdparty.AppFeedbackIdentity
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -61,6 +61,7 @@ class ChatViewModel(
     private val suppressInitialBotMessages: Boolean = false,
     private val enablePeriodicFeedback: Boolean = false,
     initialAssistantModeIndex: Int = 0,
+    private val appFeedbackIdentity: AppFeedbackIdentity = AppFeedbackIdentity(dealerId = null, empId = null),
 ) : ViewModel() {
 
     private val _assistantModeIndex = MutableStateFlow(initialAssistantModeIndex)
@@ -80,6 +81,38 @@ class ChatViewModel(
     }
 
     private var hasStartedConversation = false
+
+    /** The drawer's feedback icon only shows when feedback can actually be stored: it goes through third-party-tasks. */
+    val canSendAppFeedback: Boolean get() = messageFeedbackRepository != null
+
+    fun openAppFeedback() = _uiState.update { it.copy(showAppFeedbackDialog = true, appFeedbackError = null) }
+
+    fun dismissAppFeedback() =
+        _uiState.update { it.copy(showAppFeedbackDialog = false, appFeedbackError = null, isSendingAppFeedback = false) }
+
+    /**
+     * Closes the popup once the server has accepted [text]. On a failure it stays open, with the text intact and an
+     * error shown, rather than losing what the user wrote.
+     */
+    fun submitAppFeedback(text: String) {
+        if (_uiState.value.isSendingAppFeedback) return
+        val repo = messageFeedbackRepository
+        val roomId = connectedRoomId
+        if (repo == null || roomId == null) {
+            _uiState.update { it.copy(appFeedbackError = APP_FEEDBACK_FAILED) }
+            return
+        }
+        _uiState.update { it.copy(isSendingAppFeedback = true, appFeedbackError = null) }
+        viewModelScope.launch {
+            val sent = withContext(Dispatchers.IO) {
+                repo.submitAppFeedback(roomId, text, appFeedbackIdentity.dealerId, appFeedbackIdentity.empId)
+            }
+            _uiState.update {
+                if (sent) it.copy(isSendingAppFeedback = false, showAppFeedbackDialog = false)
+                else it.copy(isSendingAppFeedback = false, appFeedbackError = APP_FEEDBACK_FAILED)
+            }
+        }
+    }
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -269,16 +302,7 @@ class ChatViewModel(
             },
             onSlowConnectionChanged = { slow -> _uiState.update { it.copy(isSlowConnection = slow) } },
             onMessageTimedOut = ::handleMessageTimedOut,
-            onAppearanceLoaded = { details, chatboxName ->
-                _uiState.update {
-                    it.copy(
-                        colorOverrides = details?.toColorOverrides(),
-                        logoOverride = details?.toLogoOverride(),
-                        botTitleOverride = chatboxName?.takeIf { name -> name.isNotBlank() },
-                        feedbackConfig = details?.feedback_config ?: it.feedbackConfig,
-                    )
-                }
-            },
+            onAppearanceLoaded = { details, chatboxName -> _uiState.update { it.withAppearance(details, chatboxName) } },
             onConversationStarted = { roomId -> activateConversation(roomId, generation) },
             onRawIncoming = ::cacheIncomingEnvelope,
             onOpenUrl = { url -> _uiState.update { it.copy(pendingUrlToOpen = url) } },
@@ -1865,6 +1889,7 @@ class ChatViewModel(
     }
 
     companion object {
+        internal const val APP_FEEDBACK_FAILED = "Couldn't send feedback right now. Please try again."
         /** Gap between background history checks for a reply that was generated while away. */
         internal var missedReplyPollIntervalMs = 3_000L
         /** 30 checks at the default 3s is about 90s, the same give-up point iOS uses. */
@@ -1938,6 +1963,7 @@ class ChatViewModel(
                 suppressInitialBotMessages = suppressInitialBotMessages,
                 enablePeriodicFeedback = enablePeriodicFeedback,
                 initialAssistantModeIndex = assistantModeIndex,
+                appFeedbackIdentity = AppFeedbackIdentity.resolve(meta, trimmedEndUserId),
             ) as T
         }
 

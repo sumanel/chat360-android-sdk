@@ -46,17 +46,15 @@ class MainActivity : AppCompatActivity() {
     private val nativePocBotId = BuildConfig.BOT_ID
     private val botId = nativePocBotId
     private val flutter = false
-    private val meta = mapOf(
-        "dealer_id" to BuildConfig.DEALER_ID,
-        "emp_id" to BuildConfig.EMP_ID,
-    )
+    // The employee and dealer the chat runs as: whoever was chosen in the "Test user" form, else the flavor's own
+    // (see DemoUserStore). Read at click time, so a change in the form applies to the next chat opened.
+    private val userStore by lazy { DemoUserStore(applicationContext) }
+    private val user get() = userStore.current()
+    private val meta get() = user.meta()
     // The sales executive using the chat, sent as the JSON body of `third-party-tasks/sales-exectives`. If the server
     // reports them INACTIVE the chat closes with its message; any failure of the check lets the chat run as normal.
     // Watch it with: adb logcat -s Chat360SalesExec
-    private val salesExecutive = mapOf(
-        "dealer_code" to BuildConfig.SALES_DEALER_CODE,
-        "emp_code" to BuildConfig.SALES_EMP_CODE,
-    )
+    private val salesExecutive get() = user.salesExecutive()
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         // non-empty return value to the bot on its own, so calling chat360.sendEventToBot(...)
         // here too would send it twice.
         chat360.setHandleWindowEvent { eventData ->
+            val meta = this.meta
             when (eventData["type"]) {
                 "get_auth_chat360" -> meta + mapOf("token" to "New Token from app")
                 "get_date" -> meta + mapOf("dynamic_date" to java.time.ZonedDateTime.now().toString())
@@ -99,12 +98,18 @@ class MainActivity : AppCompatActivity() {
          * */
         chat360.coreConfig!!.closeButtonColorFromHex = "#ffffff"
 
-        findViewById<MaterialButton>(R.id.buttonOpenActivity).setOnClickListener {
+        // Starts the chat as the current test user: the SDK reads the config as it is when the chat opens.
+        fun startBotAsCurrentUser() {
+            chat360.coreConfig = CoreConfigs(botId, applicationContext, flutter, meta, false, true).apply {
+                statusBarColor = R.color.purple_500
+                closeButtonColor = R.color.white
+                statusBarColorFromHex = "#4299E1"
+                closeButtonColorFromHex = "#ffffff"
+            }
             chat360.startBot(this)
         }
-        findViewById<FloatingActionButton>(R.id.floatingActionButton).setOnClickListener {
-            chat360.startBot(this)
-        }
+        findViewById<MaterialButton>(R.id.buttonOpenActivity).setOnClickListener { startBotAsCurrentUser() }
+        findViewById<FloatingActionButton>(R.id.floatingActionButton).setOnClickListener { startBotAsCurrentUser() }
         findViewById<MaterialButton>(R.id.buttonOpenActivityFragment).setOnClickListener {
             startActivity(Intent(this, ChatBotDemoActivity::class.java))
         }
@@ -116,7 +121,7 @@ class MainActivity : AppCompatActivity() {
                 themePreset = Chat360ThemePreset.DEFAULT,
                 clientId = BuildConfig.CLIENT_ID,
                 apiKey = BuildConfig.API_KEY,
-                endUserId = BuildConfig.EMP_ID,
+                endUserId = user.empId,
                 meta = meta,
                 salesExecutive = salesExecutive,
             )
@@ -135,7 +140,7 @@ class MainActivity : AppCompatActivity() {
                         Chat360UIConfig = HyundaiConfig
                         apiKey = BuildConfig.API_KEY
                         clientId = BuildConfig.CLIENT_ID
-                        endUserId = BuildConfig.EMP_ID
+                        endUserId = this@MainActivity.user.empId
                         salesExecutive = this@MainActivity.salesExecutive
             }
             chat360.startBot(this)
